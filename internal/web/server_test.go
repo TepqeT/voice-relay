@@ -620,3 +620,23 @@ func TestAnimationsScopedToScenes(t *testing.T) {
 		}
 	}
 }
+
+// Every sub-template a page calls is defined in an embedded file (a file once
+// ignored by git, coverage.html, existed only locally).
+func TestCalledTemplatesExist(t *testing.T) {
+	subs, _ := subscription.Open("")
+	s, err := New(Config{BaseURL: "https://relais.example"}, &fakeBackend{}, subs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`\{\{template "([a-z0-9-]+)"`)
+	entries, _ := assets.ReadDir("templates")
+	for _, e := range entries {
+		b, _ := assets.ReadFile("templates/" + e.Name())
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			if s.tmpls["fr"].Lookup(m[1]) == nil {
+				t.Errorf("%s calls undefined template %q", e.Name(), m[1])
+			}
+		}
+	}
+}
