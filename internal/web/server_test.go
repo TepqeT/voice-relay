@@ -27,6 +27,7 @@ type fakeBackend struct {
 	canManage map[snowflake.ID]bool        // absent = unknown
 	setups    []snowflake.ID
 	removed   []snowflake.ID
+	panel     string // PanelChannel reported for every server
 	unFailed  []string // relay bots the next uninstall reports as stuck
 	srv       *Server
 	subs      *subscription.Store
@@ -49,6 +50,7 @@ func (f *fakeBackend) GuildStatus(id snowflake.ID) GuildStatus {
 		BotInviteURL: "https://discord.com/oauth2/authorize?client_id=1&guild_id=" + id.String(),
 		Heralds:      []BotStatus{{Name: "Héraut 1", Present: true}, {Name: "Héraut 2", InviteURL: "https://discord.com/oauth2/authorize?client_id=2"}},
 		Roles:        []RoleStatus{{Purpose: "raid_lead", Name: "Raid Lead", Exists: true}, {Purpose: "class", Name: "Clerc"}},
+		PanelChannel: f.panel,
 	}
 }
 func (f *fakeBackend) CanManage(g, _ snowflake.ID) (bool, bool) {
@@ -764,5 +766,18 @@ func TestEnglishByDefault(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.Header.Get("Content-Language") != "en" {
 		t.Fatalf("Content-Language = %q, want en", resp.Header.Get("Content-Language"))
+	}
+}
+
+func TestGuildPageNamesPanelChannel(t *testing.T) {
+	site, be, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	if _, page := get(t, c, site.URL+"/servers/111"); !strings.Contains(page, "/panneau") {
+		t.Fatalf("without a panel channel the page must name the command:\n%s", page)
+	}
+	be.panel = "raid-panel"
+	_, page := get(t, c, site.URL+"/servers/111")
+	if !strings.Contains(page, "#raid-panel") || strings.Contains(page, "/panneau") {
+		t.Fatalf("panel channel not shown:\n%s", page)
 	}
 }

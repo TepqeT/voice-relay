@@ -1,0 +1,233 @@
+package bot
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"github.com/disgoorg/disgo/cache"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/rest"
+	"github.com/disgoorg/snowflake/v2"
+)
+
+// Panel channel: a text channel (PANEL_CHANNEL) where the control panel is
+// always shown, so raid leads never type a command. The bot creates the
+// channel when missing (read-only for members), keeps a single panel message
+// in it, refreshes it at every start (language or settings changed) and
+// recreates the channel if someone deletes it.
+
+// panelState is what is remembered per guild, across restarts.
+type panelState struct {
+	ChannelID snowflake.ID `json:"channel_id"`
+	MessageID snowflake.ID `json:"message_id"`
+	Created   bool         `json:"created"` // the bot created the channel: removed on uninstall
+}
+
+// panelRest is the part of the Discord REST API the panel channel uses.
+type panelRest interface {
+	CreateGuildChannel(guildID snowflake.ID, c discord.GuildChannelCreate, opts ...rest.RequestOpt) (discord.GuildChannel, error)
+	DeleteChannel(channelID snowflake.ID, opts ...rest.RequestOpt) error
+	CreateMessage(channelID snowflake.ID, m discord.MessageCreate, opts ...rest.RequestOpt) (*discord.Message, error)
+	UpdateMessage(channelID, messageID snowflake.ID, m discord.MessageUpdate, opts ...rest.RequestOpt) (*discord.Message, error)
+}
+
+type panelKeeper struct {
+	name   string // configured channel name or ID
+	rest   panelRest
+	caches cache.Caches
+	selfID func() snowflake.ID
+	build  func(guildID snowflake.ID) discord.MessageCreate
+	file   string // JSON state, "" keeps it in memory
+
+	mu    sync.Mutex
+	state map[snowflake.ID]panelState
+	busy  map[snowflake.ID]bool // an Ensure is running for the guild
+}
+
+func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func() snowflake.ID, build func(snowflake.ID) discord.MessageCreate, file string) *panelKeeper {
+	k := &panelKeeper{name: strings.TrimSpace(name), rest: r, caches: caches, selfID: selfID, build: build, file: file,
+		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}}
+	if file != "" {
+		if b, err := os.ReadFile(file); err == nil {
+			if err := json.Unmarshal(b, &k.state); err != nil {
+				slog.Warn("panel channel: unreadable state, starting fresh", slog.String("file", file), slog.Any("err", err))
+				k.state = map[snowflake.ID]panelState{}
+			}
+		}
+	}
+	return k
+}
+
+// ChannelName is the configured panel channel, shown on the site.
+func (k *panelKeeper) ChannelName() string { return k.name }
+
+// Ensure makes sure guildID has the panel channel and an up-to-date panel
+// message. Concurrent calls for the same guild collapse into one.
+func (k *panelKeeper) Ensure(ctx context.Context, guildID snowflake.ID) {
+	k.mu.Lock()
+	if k.busy[guildID] {
+		k.mu.Unlock()
+		return
+	}
+	k.busy[guildID] = true
+	st := k.state[guildID]
+	k.mu.Unlock()
+	defer func() {
+		k.mu.Lock()
+		delete(k.busy, guildID)
+		k.mu.Unlock()
+	}()
+
+	channelID := k.findChannel(guildID, st.ChannelID)
+	if channelID == 0 {
+		ch, err := k.rest.CreateGuildChannel(guildID, discord.GuildTextChannelCreate{
+			Name:                 k.name,
+			PermissionOverwrites: k.overwrites(guildID),
+		}, rest.WithCtx(ctx), rest.WithReason("Voice Relay control panel"))
+		if err != nil {
+			slog.Warn("panel channel: creation refused", slog.String("guildID", guildID.String()), slog.Any("err", err))
+			return
+		}
+		channelID = ch.ID()
+		st = panelState{ChannelID: channelID, Created: true}
+	} else if channelID != st.ChannelID {
+		st = panelState{ChannelID: channelID} // an existing channel the server made
+	}
+
+	msg := k.build(guildID)
+	if st.MessageID != 0 {
+		_, err := k.rest.UpdateMessage(channelID, st.MessageID, discord.MessageUpdate{
+			Content:         &msg.Content,
+			Components:      &msg.Components,
+			AllowedMentions: msg.AllowedMentions,
+		}, rest.WithCtx(ctx))
+		if err == nil {
+			k.save(guildID, st)
+			return
+		}
+		if !isUnknownMessage(err) {
+			slog.Warn("panel channel: panel update failed", slog.String("guildID", guildID.String()), slog.Any("err", err))
+			return
+		}
+	}
+	m, err := k.rest.CreateMessage(channelID, msg, rest.WithCtx(ctx))
+	if err != nil {
+		slog.Warn("panel channel: panel post failed", slog.String("guildID", guildID.String()), slog.Any("err", err))
+		return
+	}
+	st.MessageID = m.ID
+	k.save(guildID, st)
+	slog.Info("panel channel: panel posted", slog.String("guildID", guildID.String()), slog.String("channelID", channelID.String()))
+}
+
+// OnChannelDeleted recreates the panel when its channel was deleted.
+func (k *panelKeeper) OnChannelDeleted(ctx context.Context, guildID, channelID snowflake.ID) {
+	k.mu.Lock()
+	st, ok := k.state[guildID]
+	k.mu.Unlock()
+	if !ok || st.ChannelID != channelID {
+		return
+	}
+	k.save(guildID, panelState{})
+	k.Ensure(ctx, guildID)
+}
+
+// Remove deletes the panel channel when the bot created it (uninstall) and
+// forgets the guild.
+func (k *panelKeeper) Remove(ctx context.Context, guildID snowflake.ID) {
+	k.mu.Lock()
+	st, ok := k.state[guildID]
+	delete(k.state, guildID)
+	k.mu.Unlock()
+	k.persist()
+	if !ok || !st.Created || st.ChannelID == 0 {
+		return
+	}
+	if err := k.rest.DeleteChannel(st.ChannelID, rest.WithCtx(ctx), rest.WithReason("Voice Relay uninstalled")); err != nil {
+		slog.Warn("panel channel: deletion refused", slog.String("guildID", guildID.String()), slog.Any("err", err))
+	}
+}
+
+// IsPanelChannel reports whether channelID is guildID's panel channel.
+func (k *panelKeeper) IsPanelChannel(guildID, channelID snowflake.ID) bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return channelID != 0 && k.state[guildID].ChannelID == channelID
+}
+
+// findChannel returns the panel channel: the remembered one if it still
+// exists, else a text channel matching the configured name or ID.
+func (k *panelKeeper) findChannel(guildID, remembered snowflake.ID) snowflake.ID {
+	if remembered != 0 {
+		if ch, ok := k.caches.Channel(remembered); ok && ch.Type() == discord.ChannelTypeGuildText {
+			return remembered
+		}
+	}
+	id, idErr := snowflake.Parse(k.name)
+	want := strings.ToLower(strings.ReplaceAll(k.name, " ", "-"))
+	for ch := range k.caches.ChannelsForGuild(guildID) {
+		if ch.Type() != discord.ChannelTypeGuildText {
+			continue
+		}
+		if (idErr == nil && ch.ID() == id) || strings.EqualFold(ch.Name(), want) {
+			return ch.ID()
+		}
+	}
+	return 0
+}
+
+// overwrites make the created channel read-only for members (they still see
+// the panel and click its buttons) and writable for the bot.
+func (k *panelKeeper) overwrites(guildID snowflake.ID) []discord.PermissionOverwrite {
+	ow := []discord.PermissionOverwrite{
+		discord.RolePermissionOverwrite{RoleID: guildID, Deny: discord.PermissionSendMessages | discord.PermissionCreatePublicThreads | discord.PermissionCreatePrivateThreads | discord.PermissionAddReactions},
+	}
+	if self := k.selfID(); self != 0 {
+		ow = append(ow, discord.MemberPermissionOverwrite{UserID: self, Allow: discord.PermissionViewChannel | discord.PermissionSendMessages | discord.PermissionEmbedLinks})
+	}
+	return ow
+}
+
+func (k *panelKeeper) save(guildID snowflake.ID, st panelState) {
+	k.mu.Lock()
+	if st == (panelState{}) {
+		delete(k.state, guildID)
+	} else {
+		k.state[guildID] = st
+	}
+	k.mu.Unlock()
+	k.persist()
+}
+
+func (k *panelKeeper) persist() {
+	if k.file == "" {
+		return
+	}
+	k.mu.Lock()
+	b, err := json.MarshalIndent(k.state, "", "  ")
+	k.mu.Unlock()
+	if err != nil {
+		return
+	}
+	tmp := k.file + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(k.file), 0o755); err == nil {
+		if err = os.WriteFile(tmp, b, 0o600); err == nil {
+			err = os.Rename(tmp, k.file)
+		}
+		if err != nil {
+			slog.Warn("panel channel: state not saved", slog.String("file", k.file), slog.Any("err", err))
+		}
+	}
+}
+
+// isUnknownMessage reports Discord's "Unknown Message" or "Unknown Channel".
+func isUnknownMessage(err error) bool {
+	var re *rest.Error
+	return errors.As(err, &re) && (re.Code == 10008 || re.Code == 10003)
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -272,6 +273,31 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		client.AddEventListeners(bot.NewListenerFunc(cmdHandlers.OnAccessMessage))
 	}
 
+	// Panel channel: the control panel always on display (PANEL_CHANNEL), in
+	// the server's language, English by default.
+	var panel *panelKeeper
+	if name := cfg.RvR.PanelChannel; name != "" {
+		panel = newPanelKeeper(name, client.Rest, client.Caches,
+			func() snowflake.ID {
+				if u, ok := client.Caches.SelfUser(); ok {
+					return u.ID
+				}
+				return 0
+			},
+			func(guildID snowflake.ID) discord.MessageCreate {
+				return cmdHandlers.buildPanel(guildID, bundle.For(managerSvc.GetLocale(guildID), ""))
+			},
+			filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "panel.json"))
+		client.AddEventListeners(
+			bot.NewListenerFunc(func(e *events.GuildReady) { go panel.Ensure(context.Background(), e.GuildID) }),
+			bot.NewListenerFunc(func(e *events.GuildJoin) { go panel.Ensure(context.Background(), e.GuildID) }),
+			bot.NewListenerFunc(func(e *events.GuildChannelDelete) {
+				go panel.OnChannelDeleted(context.Background(), e.GuildID, e.ChannelID)
+			}),
+		)
+		slog.Info("panel channel enabled", slog.String("channel", name))
+	}
+
 	if cfg.RvR.ReportToDiscord {
 		lang := cfg.RvR.ReportLang
 		managerSvc.SetReportSink(func(rep quality.Report) {
@@ -331,6 +357,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			}
 			return ""
 		}, cfg.SpeakerTokens)
+		backend.panel = panel
 		var admins []snowflake.ID
 		for _, a := range cfg.Web.Admins {
 			if id, err := snowflake.Parse(a); err == nil {

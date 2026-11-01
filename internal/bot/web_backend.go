@@ -36,6 +36,7 @@ type webBackend struct {
 	ownerID  snowflake.ID
 	botName  func() string  // owner bot display name, known once connected
 	speakers []snowflake.ID // Héraut application IDs, in token order
+	panel    *panelKeeper   // nil when PANEL_CHANNEL is off
 }
 
 func newWebBackend(m siteManager, ownerID snowflake.ID, botName func() string, speakerTokens []string) *webBackend {
@@ -80,6 +81,9 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 		}
 		st.Heralds = append(st.Heralds, web.BotStatus{Name: name, Present: present, InviteURL: lockedInvite(id, guildID, botPermissions)})
 	}
+	if b.panel != nil {
+		st.PanelChannel = b.panel.ChannelName()
+	}
 	if !st.BotPresent {
 		return st
 	}
@@ -112,6 +116,9 @@ func (b *webBackend) ServerFacts(guildID, userID snowflake.ID) web.ServerFacts {
 }
 
 func (b *webBackend) Uninstall(ctx context.Context, guildID snowflake.ID) (web.UninstallReport, error) {
+	if b.panel != nil {
+		b.panel.Remove(ctx, guildID) // while the bot can still delete it
+	}
 	rep, err := b.m.Uninstall(ctx, guildID)
 	return web.UninstallReport{Left: rep.Left, Failed: rep.Failed, OwnerLeft: rep.OwnerLeft}, err
 }
