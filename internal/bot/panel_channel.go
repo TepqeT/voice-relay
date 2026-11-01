@@ -54,6 +54,9 @@ type panelKeeper struct {
 	// onboard, when set, adds the category and the panel channel to the
 	// server's onboarding default channels so members see them.
 	onboard func(ctx context.Context, guildID snowflake.ID, ids ...snowflake.ID)
+	// viewRole, when set and non-zero, makes the panel channel private to
+	// that role (the access role every member holds).
+	viewRole func(guildID snowflake.ID) snowflake.ID
 
 	mu    sync.Mutex
 	state map[snowflake.ID]panelState
@@ -132,10 +135,12 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 		st = panelState{ChannelID: channelID} // an existing channel the server made
 	}
 
-	k.refreshOverwrites(ctx, guildID, channelID, st.Created)
+	// Onboarding first: a channel leaving the defaults before it turns
+	// private, so Discord never sees a private default channel.
 	if k.onboard != nil {
 		k.onboard(ctx, guildID, parent, channelID)
 	}
+	k.refreshOverwrites(ctx, guildID, channelID, st.Created)
 
 	msg := k.build(guildID)
 	sig := panelSignature(msg)
@@ -316,18 +321,34 @@ func (k *panelKeeper) findChannel(guildID, remembered snowflake.ID) snowflake.ID
 // overwrites make the created channel read-only for members (they still see
 // the panel and click its buttons) and writable for the bot.
 func (k *panelKeeper) overwrites(guildID snowflake.ID) []discord.PermissionOverwrite {
-	ow := []discord.PermissionOverwrite{
+	const noWrite = discord.PermissionSendMessages | discord.PermissionCreatePublicThreads | discord.PermissionCreatePrivateThreads | discord.PermissionAddReactions
+	const read = discord.PermissionViewChannel | discord.PermissionReadMessageHistory
+	var ow []discord.PermissionOverwrite
+	if role := k.privateTo(guildID); role != 0 {
+		// Private to the role every member holds: Discord always shows such
+		// a channel to those who can see it, even when onboarding hides the
+		// channels members did not pick.
+		ow = []discord.PermissionOverwrite{
+			discord.RolePermissionOverwrite{RoleID: guildID, Deny: discord.PermissionViewChannel | noWrite},
+			discord.RolePermissionOverwrite{RoleID: role, Allow: read, Deny: noWrite},
+		}
+	} else {
 		// View is allowed explicitly: on servers where @everyone cannot see
-		// channels by default, the panel would stay hidden, and Discord
-		// refuses an onboarding default channel @everyone cannot see.
-		discord.RolePermissionOverwrite{RoleID: guildID,
-			Allow: discord.PermissionViewChannel | discord.PermissionReadMessageHistory,
-			Deny:  discord.PermissionSendMessages | discord.PermissionCreatePublicThreads | discord.PermissionCreatePrivateThreads | discord.PermissionAddReactions},
+		// channels by default, the panel would stay hidden.
+		ow = []discord.PermissionOverwrite{discord.RolePermissionOverwrite{RoleID: guildID, Allow: read, Deny: noWrite}}
 	}
 	if self := k.selfID(); self != 0 {
 		ow = append(ow, discord.MemberPermissionOverwrite{UserID: self, Allow: discord.PermissionViewChannel | discord.PermissionSendMessages | discord.PermissionEmbedLinks})
 	}
 	return maskPanelOverwrites(ow, k.grantable(guildID))
+}
+
+// privateTo is the role the panel channel is private to, 0 for public.
+func (k *panelKeeper) privateTo(guildID snowflake.ID) snowflake.ID {
+	if k.viewRole == nil {
+		return 0
+	}
+	return k.viewRole(guildID)
 }
 
 // refreshOverwrites sets, once per run, the current overwrites on a panel

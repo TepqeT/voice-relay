@@ -142,6 +142,10 @@ func (m *Service) CreateMissingRoles(ctx context.Context, guildID snowflake.ID) 
 			}
 		}
 	}
+	if len(rep.Created) > 0 {
+		// The access role may have just been created: hand it out now.
+		go m.GrantAccessToAll(context.Background(), guildID)
+	}
 	slog.Info("setup: roles checked", slog.String("guildID", guildID.String()),
 		slog.Int("created", len(rep.Created)), slog.Int("existing", len(rep.Existing)), slog.Int("failed", len(rep.Failed)))
 	return rep, nil

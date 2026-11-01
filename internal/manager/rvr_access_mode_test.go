@@ -78,52 +78,22 @@ func TestLeadersApproveAccess(t *testing.T) {
 	}
 }
 
-func TestAccessModeRestrictedByDefaultAndSaved(t *testing.T) {
-	m, rr := accessModeService(t)
+// With an access role, the channels stay private to it whatever was saved:
+// every member holds the role, and Discord always shows private channels
+// to those who can see them, onboarding or not.
+func TestAccessAlwaysRestrictedWithAccessRole(t *testing.T) {
+	m, _ := accessModeService(t)
 	if m.AccessOpen(amGuild) || m.viewRoleName(amGuild) != "Raid Access" {
 		t.Fatal("restricted by default")
 	}
-	m.rememberChannels(amGuild, RaidChannels{Category: 50, RaidLead: 51, Squads: []snowflake.ID{52}})
-
 	if _, err := m.SetAccessOpen(context.Background(), amGuild, true); err != nil {
 		t.Fatal(err)
 	}
-	if !m.AccessOpen(amGuild) || m.viewRoleName(amGuild) != "" {
-		t.Fatal("open: everyone sees the channels")
-	}
-	// Squads and category: @everyone overwrite removed. Raid lead channel:
-	// still closed to non raid leads (Connect denied), now visible.
-	if !slices.Contains(rr.removed, [2]snowflake.ID{52, amGuild}) || !slices.Contains(rr.removed, [2]snowflake.ID{50, amGuild}) {
-		t.Fatalf("open squads: removed %v", rr.removed)
-	}
-	if u, ok := rr.set[[2]snowflake.ID{51, amGuild}]; !ok || u.Deny.Has(discord.PermissionViewChannel) || !u.Deny.Has(discord.PermissionConnect) {
-		t.Fatalf("raid lead channel when open: %+v", u)
-	}
-
-	// Saved: a fresh service reads the choice back.
-	m2, _ := accessModeService(t)
-	m2.channels.opts.StateFile = m.channels.opts.StateFile
-	if !m2.AccessOpen(amGuild) {
-		t.Fatal("open mode lost on restart")
-	}
-
-	if _, err := m.SetAccessOpen(context.Background(), amGuild, false); err != nil {
-		t.Fatal(err)
-	}
-	u := rr.set[[2]snowflake.ID{52, amGuild}]
-	if u.Deny == nil || !u.Deny.Has(discord.PermissionViewChannel) {
-		t.Fatalf("restricted squad must hide from @everyone: %+v", u)
-	}
-	if a := rr.set[[2]snowflake.ID{52, amAccess}]; a.Allow == nil || !a.Allow.Has(discord.PermissionConnect) {
-		t.Fatalf("restricted squad must let the access role in: %+v", a)
-	}
-	if rc, _ := m.RaidChannelsOf(amGuild); rc.ViewRole != amAccess {
-		t.Fatalf("remembered view role = %d", rc.ViewRole)
+	if m.AccessOpen(amGuild) || m.viewRoleName(amGuild) != "Raid Access" {
+		t.Fatal("an old open choice must not make the channels public")
 	}
 }
 
-// Restricting during a raid moves out the people without access, but not the
-// leaders nor the bots; they can then ask for access.
 func TestRestrictDisconnectsMembersWithoutAccess(t *testing.T) {
 	m, rr := accessModeService(t)
 	ctx := context.Background()

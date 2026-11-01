@@ -46,11 +46,11 @@ func TestPanelShowsLiveState(t *testing.T) {
 
 	h.SetRvR(liveRvR{})
 	msg := h.buildPanel(1, loc)
-	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelHelpID+" "+panelAccessID+" "+panelOpenID {
-		t.Fatalf("idle buttons = %s, want Start, Status | Request access, Open", got)
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelHelpID {
+		t.Fatalf("idle buttons = %s, want Start, Status, Help only: every member holds the access role", got)
 	}
-	if len(msg.Components) != 2 {
-		t.Fatalf("rows = %d, want raid row and players row", len(msg.Components))
+	if len(msg.Components) != 1 {
+		t.Fatalf("rows = %d, want the session row only", len(msg.Components))
 	}
 	text := panelText(msg)
 	for _, want := range []string{"No session running", "Restricted", "<@&902>"} {
@@ -70,8 +70,8 @@ func TestPanelShowsLiveState(t *testing.T) {
 		Squads:   []manager.ChannelCount{{ChannelID: 8, Members: 5}, {ChannelID: 9, Members: 0}},
 	}})
 	msg = h.buildPanel(1, loc)
-	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStopID+" "+panelStatusID+" "+panelHelpID+" "+panelAccessID+" "+panelOpenID {
-		t.Fatalf("running buttons = %s, want Stop, Status | Request access, Open", got)
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStopID+" "+panelStatusID+" "+panelHelpID {
+		t.Fatalf("running buttons = %s, want Stop, Status, Help", got)
 	}
 	text = panelText(msg)
 	for _, want := range []string{"Session running", "<t:1793550000:R>", "<#7>  **2**", "<#8>  **5**", "<#9>  **0**"} {
@@ -81,16 +81,6 @@ func TestPanelShowsLiveState(t *testing.T) {
 	}
 	if msg.Embeds[0].Color != panelColorRunning {
 		t.Error("running colour expected")
-	}
-
-	// Open to everyone: no request button, the switch offers to restrict.
-	h.SetRvR(liveRvR{open: true})
-	msg = h.buildPanel(1, loc)
-	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelHelpID+" "+panelRestrictID {
-		t.Fatalf("open buttons = %s, want Start, Status | Restrict", got)
-	}
-	if !strings.Contains(panelText(msg), "Open: anyone") {
-		t.Fatalf("open panel %q", panelText(msg))
 	}
 }
 
@@ -139,7 +129,10 @@ func TestPanelHelpButton(t *testing.T) {
 		t.Fatal("the help must only be visible to the person who asked")
 	}
 	text := panelText(help)
-	for _, want := range []string{"What each button does", "Start session / Stop session", "Request access", "Open to everyone / Restrict access", "Who does what"} {
+	if strings.Contains(text, "Request access") {
+		t.Fatal("no access to request any more: the help must not mention it")
+	}
+	for _, want := range []string{"What each button does", "Start session / Stop session", "Who does what"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("help lacks %q:\n%s", want, text)
 		}

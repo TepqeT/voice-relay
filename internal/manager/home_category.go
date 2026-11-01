@@ -77,6 +77,9 @@ func (m *Service) EnsureHomeCategory(ctx context.Context, guildID snowflake.ID) 
 	homes := m.homeLocked()
 	if h, ok := homes[guildID]; ok {
 		if ch, ok := m.ownerClient.Caches.Channel(h.ID); ok && ch.Type() == discord.ChannelTypeGuildCategory {
+			if h.Created {
+				m.refreshHomeOverwrites(ctx, guildID, h.ID)
+			}
 			return h.ID, nil
 		}
 	}
@@ -88,22 +91,15 @@ func (m *Service) EnsureHomeCategory(ctx context.Context, guildID snowflake.ID) 
 			return ch.ID(), nil
 		}
 	}
-	// The bots get on the category what they need in its channels: Discord
-	// checks a new channel's overwrites against the bot's rights in the
-	// parent.
-	botAllow := voiceMember | discord.PermissionPrioritySpeaker | discord.PermissionSendMessages
-	ow := []discord.PermissionOverwrite{discord.MemberPermissionOverwrite{UserID: m.ownerBotID, Allow: botAllow}}
-	for _, id := range m.poolSvc.GetIDs() {
-		ow = append(ow, discord.MemberPermissionOverwrite{UserID: id, Allow: voiceMember | discord.PermissionPrioritySpeaker})
-	}
 	cat, err := m.ownerClient.Rest.CreateGuildChannel(guildID, discord.GuildCategoryChannelCreate{
 		Name:                 name,
-		PermissionOverwrites: maskOverwrites(ow, m.grantablePermissions(guildID)),
+		PermissionOverwrites: m.homeOverwrites(guildID),
 	}, rest.WithCtx(ctx), rest.WithReason("Voice Relay home category"))
 	if err != nil {
 		return 0, err
 	}
 	m.ownerClient.Caches.AddChannel(cat)
+	m.homeRefreshed.Store(guildID, true)
 	homes[guildID] = homeCategory{ID: cat.ID(), Created: true}
 	m.saveHomeLocked()
 	m.placeCategory(ctx, guildID, cat.ID())
@@ -125,4 +121,38 @@ func (m *Service) RemoveHomeCategory(ctx context.Context, guildID snowflake.ID) 
 	if err := m.ownerClient.Rest.DeleteChannel(h.ID, rest.WithCtx(ctx), rest.WithReason("Voice Relay uninstalled")); err != nil {
 		slog.Warn("home category: deletion refused", slog.String("guildID", guildID.String()), slog.Any("err", err))
 	}
+}
+
+// homeOverwrites are the category's overwrites. The bots get what they need
+// in its channels: Discord checks a new channel's overwrites against the
+// bot's rights in the parent. With an access role the category is private
+// to it: every member holds the role, and Discord always shows a private
+// channel to those who can see it, even when onboarding hides the others.
+func (m *Service) homeOverwrites(guildID snowflake.ID) []discord.PermissionOverwrite {
+	botAllow := voiceMember | discord.PermissionPrioritySpeaker | discord.PermissionSendMessages
+	ow := []discord.PermissionOverwrite{discord.MemberPermissionOverwrite{UserID: m.ownerBotID, Allow: botAllow}}
+	for _, id := range m.poolSvc.GetIDs() {
+		ow = append(ow, discord.MemberPermissionOverwrite{UserID: id, Allow: voiceMember | discord.PermissionPrioritySpeaker})
+	}
+	if role := m.AccessRoleID(guildID); role != 0 {
+		ow = append(ow,
+			discord.RolePermissionOverwrite{RoleID: guildID, Deny: discord.PermissionViewChannel},
+			discord.RolePermissionOverwrite{RoleID: role, Allow: discord.PermissionViewChannel})
+	}
+	return maskOverwrites(ow, m.grantablePermissions(guildID))
+}
+
+// refreshHomeOverwrites sets, once per run, the current overwrites on a
+// category the bot created, so one made by an older version follows.
+func (m *Service) refreshHomeOverwrites(ctx context.Context, guildID, categoryID snowflake.ID) {
+	if _, done := m.homeRefreshed.LoadOrStore(guildID, true); done {
+		return
+	}
+	ow := m.homeOverwrites(guildID)
+	if _, err := m.ownerClient.Rest.UpdateChannel(categoryID, discord.GuildCategoryChannelUpdate{PermissionOverwrites: &ow},
+		rest.WithCtx(ctx), rest.WithReason("Voice Relay home category")); err != nil {
+		slog.Warn("home category: overwrites not refreshed", slog.String("guildID", guildID.String()), slog.Any("err", err))
+		return
+	}
+	slog.Info("home category: overwrites refreshed", slog.String("guildID", guildID.String()))
 }

@@ -54,6 +54,11 @@ func (m *Service) loadAccessModesLocked() {
 // AccessOpen reports whether guildID's raid channels are open to everyone
 // although an access role is configured.
 func (m *Service) AccessOpen(guildID snowflake.ID) bool {
+	if m.AccessEnabled() {
+		// Every member holds the access role (member_role.go): channels
+		// private to it are what Discord shows on servers with onboarding.
+		return false
+	}
 	m.accessMode.mu.Lock()
 	defer m.accessMode.mu.Unlock()
 	m.loadAccessModesLocked()

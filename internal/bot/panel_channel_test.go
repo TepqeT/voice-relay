@@ -239,3 +239,20 @@ func TestPanelChannelVisibleToEveryone(t *testing.T) {
 		t.Fatalf("overwrites refreshed on %v, want once on %d", fr2.reperm, chID)
 	}
 }
+
+// With a view role the panel is private to it, still read-only.
+func TestPanelChannelPrivateToViewRole(t *testing.T) {
+	k, fr, _ := newTestKeeper(t, "")
+	k.viewRole = func(snowflake.ID) snowflake.ID { return 77 }
+	k.Ensure(context.Background(), panelGuild)
+	var hidden, shown bool
+	for _, ow := range fr.created[0].PermissionOverwrites {
+		if r, ok := ow.(discord.RolePermissionOverwrite); ok {
+			hidden = hidden || (r.RoleID == panelGuild && r.Deny.Has(discord.PermissionViewChannel))
+			shown = shown || (r.RoleID == 77 && r.Allow.Has(discord.PermissionViewChannel) && r.Deny.Has(discord.PermissionSendMessages))
+		}
+	}
+	if !hidden || !shown {
+		t.Fatalf("overwrites %+v: want hidden from @everyone, read-only for the role", fr.created[0].PermissionOverwrites)
+	}
+}

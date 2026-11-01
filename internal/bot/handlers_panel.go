@@ -140,18 +140,10 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 	raid = append(raid, discord.NewSecondaryButton(loc.T("panel.btn.help"), panelHelpID))
 	rows := []discord.LayoutComponent{discord.NewActionRow(raid...)}
 
-	// Row 2: the players.
+	// Row 2: the players. With an access role every member holds it
+	// (member_role.go): no request to make, no mode to switch, the panel is
+	// for the Speakers only.
 	var players []discord.InteractiveComponent
-	if accessOn && !open {
-		players = append(players, discord.NewPrimaryButton(loc.T("panel.btn.request"), panelAccessID))
-	}
-	if accessOn && modeOn {
-		if open {
-			players = append(players, discord.NewSecondaryButton(loc.T("panel.btn.restrict"), panelRestrictID))
-		} else {
-			players = append(players, discord.NewSecondaryButton(loc.T("panel.btn.open"), panelOpenID))
-		}
-	}
 	if sortOn {
 		players = append(players, discord.NewSecondaryButton(loc.T("panel.btn.sort"), panelSortID))
 	}
@@ -267,18 +259,10 @@ func (h *CommandHandlers) handlePanelHelp(guildID snowflake.ID, loc *i18n.Locali
 }
 
 func (h *CommandHandlers) buildPanelHelp(guildID snowflake.ID, loc *i18n.Localizer) discord.MessageCreate {
-	_, accessOn := h.access()
-	_, modeOn := h.accessMode()
 	_, sortOn := h.classSort()
 	fields := []discord.EmbedField{
 		{Name: loc.T("panel.btn.start") + " / " + loc.T("panel.btn.stop"), Value: loc.T("panel.faq.startstop")},
 		{Name: loc.T("panel.btn.status"), Value: loc.T("panel.faq.status")},
-	}
-	if accessOn {
-		fields = append(fields, discord.EmbedField{Name: loc.T("panel.btn.request"), Value: loc.T("panel.faq.request")})
-		if modeOn {
-			fields = append(fields, discord.EmbedField{Name: loc.T("panel.btn.open") + " / " + loc.T("panel.btn.restrict"), Value: loc.T("panel.faq.mode")})
-		}
 	}
 	if sortOn {
 		fields = append(fields, discord.EmbedField{Name: loc.T("panel.btn.sort"), Value: loc.T("panel.faq.sort")})

@@ -167,3 +167,47 @@ func (m *Service) everyoneCanView(guildID snowflake.ID, ch discord.GuildChannel)
 	}
 	return p.Has(discord.PermissionViewChannel)
 }
+
+// SyncOnboardingDefaults keeps the Voice Relay channels right in the
+// onboarding default channels: added when they are public, removed when they
+// are private to the access role. Discord refuses a private default channel,
+// and a leftover one would make every later edit of the server's onboarding
+// fail.
+func (m *Service) SyncOnboardingDefaults(ctx context.Context, guildID snowflake.ID, ids ...snowflake.ID) {
+	if m.AccessRoleID(guildID) == 0 {
+		m.EnsureOnboardingDefaults(ctx, guildID, ids...)
+		return
+	}
+	m.RemoveOnboardingDefaults(ctx, guildID, ids...)
+}
+
+// RemoveOnboardingDefaults takes ids out of the onboarding default channels,
+// once per guild and channel set per run.
+func (m *Service) RemoveOnboardingDefaults(ctx context.Context, guildID snowflake.ID, ids ...snowflake.ID) {
+	ids = slices.DeleteFunc(slices.Clone(ids), func(id snowflake.ID) bool { return id == 0 })
+	if len(ids) == 0 {
+		return
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = id.String()
+	}
+	if _, done := m.onboarded.LoadOrStore("remove:"+guildID.String()+":"+strings.Join(parts, ","), true); done {
+		return
+	}
+	var ob onboardingDefaults
+	if err := m.ownerClient.Rest.Do(rest.GetGuildOnboarding.Compile(nil, guildID), nil, &ob, rest.WithCtx(ctx)); err != nil || !ob.Enabled {
+		return
+	}
+	kept := slices.DeleteFunc(slices.Clone(ob.DefaultChannelIDs), func(id snowflake.ID) bool { return slices.Contains(ids, id) })
+	if len(kept) == len(ob.DefaultChannelIDs) {
+		return
+	}
+	if err := m.putOnboardingDefaults(ctx, guildID, kept); err != nil {
+		journal.Record(journal.Event{GuildID: guildID, Level: journal.Warning, Kind: "onboarding_refused",
+			Detail: "could not take the Voice Relay channels out of the onboarding default channels: " + err.Error()})
+		return
+	}
+	slog.Info("onboarding: Voice Relay channels taken out of the default channels", slog.String("guildID", guildID.String()),
+		slog.Int("removed", len(ob.DefaultChannelIDs)-len(kept)))
+}

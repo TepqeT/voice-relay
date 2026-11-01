@@ -153,3 +153,14 @@ func TestOnboardingDropsChannelsHiddenFromEveryone(t *testing.T) {
 		t.Fatalf("puts = %v, want the hidden channel 6 dropped on the retry", r.puts)
 	}
 }
+
+// With an access role the channels are private: they leave the defaults.
+func TestOnboardingRemovesPrivateChannels(t *testing.T) {
+	r := &onboardingRest{get: `{"enabled":true,"default_channel_ids":["5","100","7"]}`}
+	m := onboardingService(r)
+	m.RemoveOnboardingDefaults(context.Background(), 10, 100, 0)
+	m.RemoveOnboardingDefaults(context.Background(), 10, 100, 0)
+	if len(r.puts) != 1 || r.puts[0] != `{"default_channel_ids":["5","7"]}` {
+		t.Fatalf("puts = %v, want 100 taken out once", r.puts)
+	}
+}

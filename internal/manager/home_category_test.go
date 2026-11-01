@@ -23,6 +23,12 @@ type homeRest struct {
 	next    snowflake.ID
 	created []string
 	deleted []snowflake.ID
+	reperm  []snowflake.ID // categories whose overwrites were replaced
+}
+
+func (r *homeRest) UpdateChannel(id snowflake.ID, _ discord.ChannelUpdate, _ ...rest.RequestOpt) (discord.Channel, error) {
+	r.reperm = append(r.reperm, id)
+	return nil, nil
 }
 
 func categoryChannel(t *testing.T, id, guildID snowflake.ID, name string) discord.GuildCategoryChannel {
@@ -71,6 +77,10 @@ func TestHomeCategoryCreatedOnceAndRemovedOnUninstall(t *testing.T) {
 	caches2.AddChannel(categoryChannel(t, id, 10, "RvR"))
 	if got, _ := m2.EnsureHomeCategory(ctx, 10); got != id || len(hr2.created) != 0 {
 		t.Fatalf("after restart got %d, created %v", got, hr2.created)
+	}
+	m2.EnsureHomeCategory(ctx, 10)
+	if len(hr2.reperm) != 1 || hr2.reperm[0] != id {
+		t.Fatalf("overwrites refreshed on %v, want once on %d", hr2.reperm, id)
 	}
 	// A raid's channels never include the shared category.
 	rc := RaidChannels{Category: id, RaidLead: 51, Squads: []snowflake.ID{52}, SharedCategory: true}
