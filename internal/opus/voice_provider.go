@@ -27,6 +27,8 @@ type VoiceProvider struct {
 	closeOnce sync.Once
 	// out, when set, records playout regularity for the raid diagnostics.
 	out *diag.OutputStats
+	// behind counts consecutive calls that left a frame queued (see trim).
+	behind int
 }
 
 // SetDiag attaches the playout statistics of this bot. Call before the
@@ -158,6 +160,20 @@ func (v *VoiceProvider) ProvideOpusFrame() ([]byte, error) {
 					}
 				default:
 				}
+			} else if v.trim(depth) {
+				// Low-latency trim: a frame has stayed queued for
+				// trimAfterTicks calls, so this bot plays a constant
+				// 20 ms or more behind; skip one to return to the live edge.
+				select {
+				case newer, ok := <-v.ch:
+					if ok {
+						PutEncodedFrame(data)
+						v.metrics.RecordDrop()
+						dropped++
+						data = newer
+					}
+				default:
+				}
 			}
 			v.prev = data
 			v.metrics.RecordProvide(float64(time.Since(start).Microseconds()) / 1000.0)
@@ -165,6 +181,21 @@ func (v *VoiceProvider) ProvideOpusFrame() ([]byte, error) {
 			return data, nil
 		}
 	}
+}
+
+// trim reports whether one frame should be skipped: depth frames are still
+// queued and that has been the case for trimAfterTicks calls in a row.
+func (v *VoiceProvider) trim(depth int) bool {
+	if depth == 0 {
+		v.behind = 0
+		return false
+	}
+	v.behind++
+	if v.behind < trimAfterTicks {
+		return false
+	}
+	v.behind = 0
+	return true
 }
 
 // Close stops the provider. Safe to call more than once and concurrently:

@@ -108,9 +108,36 @@ type Frame struct {
 }
 
 // inputEntry holds a single mixer input backed by an AudioSource.
+//
+// active and behind are only touched by the Run goroutine (tick and the
+// early-wake check), so they need no synchronisation.
 type inputEntry struct {
-	src AudioSource
+	src    AudioSource
+	active bool // delivered a frame on the last tick that produced audio
+	got    bool // delivered a frame on the current tick
+	behind int  // consecutive ticks that left at least one frame queued
 }
+
+// notifier is implemented by sources that can wake the mixer when a frame
+// arrives (SourceBuffer).
+type notifier interface{ SetNotify(func()) }
+
+// Low-latency tuning.
+//
+// Early wake: a tick fires as soon as every input that spoke on the last tick
+// has its next frame, instead of waiting for the 20 ms grid. Speech then
+// leaves the mixer about when it arrives (saves 0 to 20 ms per hop). Ticks
+// stay at least minTickGap apart so a burst of late packets is not sent
+// faster than real time.
+//
+// Trim: an input that keeps a frame queued for trimAfterTicks ticks in a row
+// is running behind the live edge (network burst, scheduler hiccup); one
+// frame is dropped to catch up. Opus concealment hides a single 20 ms gap far
+// better than listeners tolerate a permanent extra 20 to 40 ms of delay.
+const (
+	minTickGap     = 15 * time.Millisecond
+	trimAfterTicks = 5
+)
 
 // Mixer receives Opus frames from multiple named input channels, mixes their PCM,
 // and outputs a single re-encoded Opus stream on Output().
@@ -134,6 +161,11 @@ type Mixer struct {
 	// channels with non-blocking sends). Set once before Run via SetSink;
 	// reads from tick are safe via happens-before through goroutine start.
 	sink func(pkt []byte)
+
+	// wake receives a token when a source gets a frame (early tick).
+	wake chan struct{}
+	// trimmed counts frames dropped to return to the live edge.
+	trimmed atomic.Uint64
 
 	enc *hraban.Encoder
 
@@ -184,6 +216,7 @@ func NewMixer(metrics telemetry.OpusRecorder) (*Mixer, error) {
 		pcm:       make([]int16, mixerPCMBuf),
 		encodeBuf: make([]byte, 4096),
 		framesBuf: make([]Frame, 0, 8),
+		wake:      make(chan struct{}, 1),
 	}
 	mx.lastActivityAt.Store(time.Now().UnixNano())
 	return mx, nil
@@ -198,6 +231,9 @@ func (m *Mixer) SetSink(sink func(pkt []byte)) {
 
 // AddInput registers an AudioSource identified by id.
 func (m *Mixer) AddInput(id snowflake.ID, src AudioSource) error {
+	if n, ok := src.(notifier); ok {
+		n.SetNotify(m.notify)
+	}
 	m.mu.Lock()
 	m.inputs[id] = &inputEntry{src: src}
 	m.rebuildSnapLocked()
@@ -208,9 +244,43 @@ func (m *Mixer) AddInput(id snowflake.ID, src AudioSource) error {
 // RemoveInput unregisters the audio source identified by id.
 func (m *Mixer) RemoveInput(id snowflake.ID) {
 	m.mu.Lock()
+	if e, ok := m.inputs[id]; ok {
+		if n, ok := e.src.(notifier); ok {
+			n.SetNotify(nil)
+		}
+	}
 	delete(m.inputs, id)
 	m.rebuildSnapLocked()
 	m.mu.Unlock()
+}
+
+// notify wakes Run without blocking; a pending token is enough.
+func (m *Mixer) notify() {
+	select {
+	case m.wake <- struct{}{}:
+	default:
+	}
+}
+
+// Trimmed returns the number of frames dropped to return to the live edge.
+func (m *Mixer) Trimmed() uint64 { return m.trimmed.Load() }
+
+// readyEarly reports whether a tick can fire now: every input that spoke on
+// the last tick has a frame, or, when nobody spoke, any input has one (start
+// of speech). Paused mixers keep the plain 20 ms drain cadence.
+func (m *Mixer) readyEarly() bool {
+	if m.paused.Load() {
+		return false
+	}
+	some, waiting := false, false
+	for _, e := range m.readInputsSnapshot() {
+		has := e.src.Len() > 0
+		some = some || has
+		if e.active && !has {
+			waiting = true
+		}
+	}
+	return some && !waiting
 }
 
 // rebuildSnapLocked rebuilds the immutable inputs snapshot read by tick. Must
@@ -298,32 +368,56 @@ func (m *Mixer) Run(ctx context.Context) {
 	defer timer.Stop()
 
 	deadline := time.Now()
+	var last time.Time
+	fire := func() {
+		start := time.Now()
+		if err := m.tick(); err != nil {
+			slog.Error("mixer: tick error", slog.Any("err", err))
+		}
+		// Only ticks that carried audio space the early ticks: an empty
+		// grid tick just before a packet lands must not hold it back.
+		if len(m.framesBuf) > 0 {
+			last = start
+		}
+		m.metrics.RecordTick(float64(time.Since(start).Microseconds()) / 1000)
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-m.wake:
+			// Early tick: forward the frame now when everyone expected has
+			// spoken. The grid restarts from here so the next regular tick
+			// is a full frame later.
+			if time.Since(last) < minTickGap || !m.readyEarly() {
+				continue
+			}
+			fire()
+			deadline = time.Now()
 		case <-timer.C:
-			start := time.Now()
-			if err := m.tick(); err != nil {
-				slog.Error("mixer: tick error", slog.Any("err", err))
-			}
-			m.metrics.RecordTick(float64(time.Since(start).Microseconds()) / 1000)
-
-			deadline = deadline.Add(mixerFrameDur)
-			next := time.Until(deadline)
-			if next < 0 {
-				// Skip past every deadline already in the past so we resume
-				// on a future boundary instead of replaying missed slots.
-				missed := (-next)/mixerFrameDur + 1
-				deadline = deadline.Add(missed * mixerFrameDur)
-				next = time.Until(deadline)
-			}
-			if next < time.Millisecond {
-				next = time.Millisecond
-			}
-			timer.Reset(next)
+			fire()
 		}
+
+		deadline = deadline.Add(mixerFrameDur)
+		next := time.Until(deadline)
+		if next < 0 {
+			// Skip past every deadline already in the past so we resume
+			// on a future boundary instead of replaying missed slots.
+			missed := (-next)/mixerFrameDur + 1
+			deadline = deadline.Add(missed * mixerFrameDur)
+			next = time.Until(deadline)
+		}
+		if next < time.Millisecond {
+			next = time.Millisecond
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(next)
 	}
 }
 
@@ -406,9 +500,12 @@ func (m *Mixer) collectFrames(entries []*inputEntry, paused bool) int {
 			continue
 		}
 		f, ok := e.src.Pull()
+		e.got = ok
 		if !ok {
+			e.behind = 0
 			continue
 		}
+		f = m.trimBacklog(e, f)
 		if len(f.PCM) == 0 {
 			// Nothing to mix, but the producer handed its buffers over.
 			if f.PCM != nil {
@@ -421,7 +518,41 @@ func (m *Mixer) collectFrames(entries []*inputEntry, paused bool) int {
 		}
 		m.framesBuf = append(m.framesBuf, f)
 	}
+	// Who is speaking only changes on ticks that carried audio, so an empty
+	// grid tick between two packets does not forget the current speakers.
+	if len(m.framesBuf) > 0 {
+		for _, e := range entries {
+			e.active = e.got
+		}
+	}
 	return drained
+}
+
+// trimBacklog returns the frame to play for e. Once e has stayed behind the
+// live edge for trimAfterTicks ticks in a row, the older frame f is dropped
+// and the next queued one is played instead.
+func (m *Mixer) trimBacklog(e *inputEntry, f Frame) Frame {
+	if e.src.Len() == 0 {
+		e.behind = 0
+		return f
+	}
+	e.behind++
+	if e.behind < trimAfterTicks {
+		return f
+	}
+	e.behind = 0
+	newer, ok := e.src.Pull()
+	if !ok {
+		return f
+	}
+	if f.PCM != nil {
+		PutPCM(f.PCM)
+	}
+	if f.Opus != nil {
+		PutEncodedFrame(f.Opus)
+	}
+	m.trimmed.Add(1)
+	return newer
 }
 
 // recyclePCMBuffers returns each frame's PCM buffer to the pool. Used by the

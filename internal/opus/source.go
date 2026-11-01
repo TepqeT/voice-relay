@@ -35,11 +35,21 @@ type AudioSource interface {
 // always near the live edge — the same goal the previous drain-threshold logic
 // achieved gradually, but applied instantly at the producer.
 type SourceBuffer struct {
-	mu   sync.Mutex
-	buf  [audioSourceCap]Frame
-	head int // index of oldest entry
-	n    int // number of valid entries
-	drop func()
+	mu     sync.Mutex
+	buf    [audioSourceCap]Frame
+	head   int // index of oldest entry
+	n      int // number of valid entries
+	drop   func()
+	notify func() // set by the mixer: wakes its tick as soon as a frame lands
+}
+
+// SetNotify registers fn, called after every Feed (outside the lock) so the
+// consuming mixer can forward the frame at once instead of waiting for its
+// next 20 ms tick. nil removes it.
+func (s *SourceBuffer) SetNotify(fn func()) {
+	s.mu.Lock()
+	s.notify = fn
+	s.mu.Unlock()
 }
 
 // NewSourceBuffer creates a SourceBuffer. drop is called each time overflow
@@ -69,10 +79,13 @@ func (s *SourceBuffer) Feed(f Frame) {
 	}
 	s.buf[(s.head+s.n)%audioSourceCap] = f
 	s.n++
-	drop := s.drop
+	drop, notify := s.drop, s.notify
 	s.mu.Unlock()
 	if dropped && drop != nil {
 		drop()
+	}
+	if notify != nil {
+		notify()
 	}
 }
 
