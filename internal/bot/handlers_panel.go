@@ -23,6 +23,7 @@ const (
 	panelAccessID   = "/panel/access"
 	panelOpenID     = "/panel/open"
 	panelRestrictID = "/panel/restrict"
+	panelHelpID     = "/panel/help"
 )
 
 // panelStatusSource is implemented by the manager: the live raid state the
@@ -51,6 +52,7 @@ func (h *CommandHandlers) registerPanel(r handler.Router) {
 	r.ButtonComponent(panelStartID, h.withManagerButton(h.handlePanelStart))
 	r.ButtonComponent(panelStopID, h.withManagerButton(h.handlePanelStop))
 	r.ButtonComponent(panelStatusID, h.withGuildButton(h.handlePanelStatus))
+	r.ButtonComponent(panelHelpID, h.withGuildButton(h.handlePanelHelp))
 	r.ButtonComponent(panelAccessID, h.withGuildButton(h.handleAccessRequest))
 	r.ButtonComponent(panelOpenID, h.withGuildButton(h.handleAccessMode(true)))
 	r.ButtonComponent(panelRestrictID, h.withGuildButton(h.handleAccessMode(false)))
@@ -102,7 +104,9 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 	if live == nil || running {
 		raid = append(raid, discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID))
 	}
-	raid = append(raid, discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID))
+	raid = append(raid,
+		discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID),
+		discord.NewSecondaryButton(loc.T("panel.btn.help"), panelHelpID))
 	rows := []discord.LayoutComponent{discord.NewActionRow(raid...)}
 
 	// Row 2: the players.
@@ -160,6 +164,41 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 	return discord.MessageCreate{
 		Embeds:          []discord.Embed{embed},
 		Components:      rows,
+		AllowedMentions: &discord.AllowedMentions{},
+	}
+}
+
+// handlePanelHelp answers the Help button with a guide to every button of
+// this panel, visible only to the person who asked (Discord lets them
+// dismiss it), so the channel stays clean.
+func (h *CommandHandlers) handlePanelHelp(guildID snowflake.ID, loc *i18n.Localizer, _ discord.ButtonInteractionData, e *handler.ComponentEvent) error {
+	return e.CreateMessage(h.buildPanelHelp(guildID, loc))
+}
+
+func (h *CommandHandlers) buildPanelHelp(guildID snowflake.ID, loc *i18n.Localizer) discord.MessageCreate {
+	_, accessOn := h.access()
+	_, modeOn := h.accessMode()
+	_, sortOn := h.classSort()
+	fields := []discord.EmbedField{
+		{Name: loc.T("panel.btn.start") + " / " + loc.T("panel.btn.stop"), Value: loc.T("panel.faq.startstop")},
+		{Name: loc.T("panel.btn.status"), Value: loc.T("panel.faq.status")},
+	}
+	if accessOn {
+		fields = append(fields, discord.EmbedField{Name: loc.T("panel.btn.request"), Value: loc.T("panel.faq.request")})
+		if modeOn {
+			fields = append(fields, discord.EmbedField{Name: loc.T("panel.btn.open") + " / " + loc.T("panel.btn.restrict"), Value: loc.T("panel.faq.mode")})
+		}
+	}
+	if sortOn {
+		fields = append(fields, discord.EmbedField{Name: loc.T("panel.btn.sort"), Value: loc.T("panel.faq.sort")})
+	}
+	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
+		fields = append(fields, discord.EmbedField{Name: loc.T("panel.faq.squads_title"), Value: loc.T("panel.faq.squads")})
+	}
+	fields = append(fields, discord.EmbedField{Name: loc.T("panel.faq.roles_title"), Value: loc.T("panel.faq.roles")})
+	return discord.MessageCreate{
+		Embeds:          []discord.Embed{{Title: loc.T("panel.faq.title"), Color: panelColorIdle, Fields: fields}},
+		Flags:           discord.MessageFlagEphemeral,
 		AllowedMentions: &discord.AllowedMentions{},
 	}
 }
