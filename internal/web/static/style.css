@@ -176,3 +176,8 @@ footer p { margin:6px 0; }
 .plan-price { font-weight:700; }
 .paypal-buttons { min-height:48px; }
 .pay-msg:empty { display:none; }
+
+/* ---- Setup journal ---- */
+.journal .row { align-items:flex-start; border-bottom:1px solid var(--line); }
+.detail { flex-basis:100%; font-size:14px; overflow-wrap:anywhere; }
+.issues li { padding:6px 0; }

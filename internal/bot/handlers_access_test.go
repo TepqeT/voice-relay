@@ -1,6 +1,10 @@
 package bot
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/disgoorg/snowflake/v2"
+)
 
 func TestAccessCommandNamesFitDiscordLimit(t *testing.T) {
 	for _, f := range []string{"Élyséens", "Asmodiens", "Une faction au nom beaucoup trop long"} {
@@ -127,5 +131,21 @@ func TestEnglishCommandNames(t *testing.T) {
 				t.Errorf("%q/%q: names collide: %q %q %q %q", label, f, g, r, n, d)
 			}
 		}
+	}
+}
+
+func TestTooFast(t *testing.T) {
+	const g, u snowflake.ID = 4242, 99
+	allowed := 0
+	for range 10 {
+		if !tooFast(g, u) {
+			allowed++
+		}
+	}
+	if allowed != 4 {
+		t.Fatalf("%d clicks went through in a burst, want 4", allowed)
+	}
+	if tooFast(g, 100) {
+		t.Fatal("another member has their own budget")
 	}
 }

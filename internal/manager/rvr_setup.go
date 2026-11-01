@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	"github.com/TepqeT/voice-relay/internal/journal"
 	"log/slog"
 	"slices"
 	"strings"
@@ -126,7 +127,7 @@ func (m *Service) CreateMissingRoles(ctx context.Context, guildID snowflake.ID) 
 			if isPermissionError(err) {
 				rep.PermissionDenied = true
 			}
-			slog.Warn("setup: role creation refused", slog.String("guildID", guildID.String()), slog.String("role", r.Name), slog.Any("err", err))
+			journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "role_refused", Detail: "could not create role " + r.Name + ": " + err.Error()})
 			continue
 		}
 		m.ownerClient.Caches.AddRole(*role)

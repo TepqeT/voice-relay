@@ -117,6 +117,9 @@ Le script récupère `main`, lance les tests, reconstruit et redémarre. À fair
 
 ## En cas de problème
 
+D'abord : Administration > Journal des installations (ou la section Problèmes récents de la page du serveur). Chaque tentative d'installation ratée y est notée avec sa raison (permissions manquantes, rôle au-dessus du bot, salon refusé, connexion Discord refusée, paiement échoué). Dans les logs : `docker compose logs relay | grep setup:`.
+
+
 | Symptôme | Cause probable | Action |
 |---|---|---|
 | Caddy n'obtient pas de certificat | DNS pas encore propagé, ou ports 80/443 fermés | `nslookup`, pare-feu OVH (Network > Firewall) en plus de `ufw` |

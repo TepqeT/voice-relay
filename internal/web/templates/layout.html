@@ -36,7 +36,7 @@
   <p class="pay-msg bad" id="pay-msg" role="status"></p>
   <p class="muted">{{t "pay.secure"}}</p>
 </div>
-<script nonce="{{.Nonce}}" data-csp-nonce="{{.Nonce}}" src="https://www.paypal.com/sdk/js?client-id={{.PayClientID}}&currency={{.PayCurrency}}&intent=capture&components=buttons"></script>
+<script nonce="{{.Nonce}}" data-csp-nonce="{{.Nonce}}" src="https://www.paypal.com/sdk/js?client-id={{.PayClientID}}&currency={{.PayCurrency}}&intent=capture&components=buttons&enable-funding=card&disable-funding=paylater"></script>
 <script nonce="{{.Nonce}}" src="/static/pay.js" defer></script>
 {{else if .PayPal}}<div class="pay">
   {{if .Price}}<p class="price">{{.Price}}</p>{{end}}

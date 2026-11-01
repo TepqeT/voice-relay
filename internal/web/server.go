@@ -5,9 +5,13 @@ import (
 	"crypto/subtle"
 	"embed"
 	"errors"
+	"fmt"
+	"github.com/TepqeT/voice-relay/internal/journal"
+	"github.com/TepqeT/voice-relay/internal/ratelimit"
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -61,6 +65,9 @@ type Server struct {
 	subs     *subscription.Store
 	admins   atomic.Pointer[map[snowflake.ID]bool]
 	support  atomic.Pointer[string]
+	// Request limits per visitor (IP address): pages and files, then the
+	// actions (POST), which cost Discord or PayPal calls.
+	pageLimit, actionLimit *ratelimit.Limiter
 }
 
 // New builds the site. subs records which servers may use the relay.
@@ -104,14 +111,16 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 		})
 	}
 	s := &Server{
-		cfg:      cfg,
-		backend:  backend,
-		oauth:    newOAuth(cfg.ClientID, cfg.ClientSecret, base+"/callback"),
-		sessions: newSessionStore(),
-		tmpls:    tmpls,
-		secure:   u.Scheme == "https",
-		mux:      http.NewServeMux(),
-		subs:     subs,
+		cfg:         cfg,
+		backend:     backend,
+		oauth:       newOAuth(cfg.ClientID, cfg.ClientSecret, base+"/callback"),
+		sessions:    newSessionStore(),
+		tmpls:       tmpls,
+		secure:      u.Scheme == "https",
+		pageLimit:   ratelimit.New(100*time.Millisecond, 60),
+		actionLimit: ratelimit.New(time.Second, 6),
+		mux:         http.NewServeMux(),
+		subs:        subs,
 	}
 	s.AddAdmins(cfg.Admins...)
 	static, _ := fs.Sub(assets, "static")
@@ -180,6 +189,37 @@ func (s *Server) AddAdmins(ids ...snowflake.ID) {
 	}
 }
 
+// allow reports whether r is within its visitor's budget.
+func (s *Server) allow(r *http.Request) bool {
+	ip := clientIP(r)
+	if !s.pageLimit.Allow(ip) {
+		return false
+	}
+	if r.Method == http.MethodPost && !s.actionLimit.Allow(ip) {
+		journal.Record(journal.Event{Level: journal.Warning, Kind: "too_many_actions", Detail: "actions slowed down for one visitor (" + r.URL.Path + ")"})
+		return false
+	}
+	return true
+}
+
+// clientIP is the visitor's address: the one Caddy forwards when the request
+// comes from the local network (the proxy), else the connection's.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			first, _, _ := strings.Cut(fwd, ",")
+			if f := strings.TrimSpace(first); net.ParseIP(f) != nil {
+				return f
+			}
+		}
+	}
+	return host
+}
+
 func (s *Server) isAdmin(id snowflake.ID) bool {
 	m := s.admins.Load()
 	return m != nil && (*m)[id]
@@ -210,6 +250,14 @@ func (s *Server) Handler() http.Handler {
 			h.Set("Referrer-Policy", "same-origin")
 		}
 		r = r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce))
+		if r.URL.Path != "/healthz" && !s.allow(r) {
+			h.Set("Retry-After", "2")
+			http.Error(w, tr(langFor(r))("err.too_fast"), http.StatusTooManyRequests)
+			return
+		}
+		if r.Method == http.MethodPost {
+			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		}
 		h.Set("X-Frame-Options", "DENY")
 		if s.secure {
 			h.Set("Strict-Transport-Security", "max-age=31536000")
@@ -293,16 +341,18 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	s.clearCookie(w, stateCookie)
 	q := r.URL.Query()
 	if err != nil || q.Get("state") == "" || subtle.ConstantTimeCompare([]byte(c.Value), []byte(q.Get("state"))) != 1 {
+		journal.Record(journal.Event{Level: journal.Warning, Kind: "sign_in_session", Detail: "sign-in came back without a valid session (cookies blocked, link reused or expired)"})
 		http.Redirect(w, r, "/?erreur=session", http.StatusSeeOther)
 		return
 	}
 	if q.Get("error") != "" || q.Get("code") == "" {
+		journal.Record(journal.Event{Kind: "sign_in_refused", Detail: "the user cancelled the Discord authorization (" + q.Get("error") + ")"})
 		http.Redirect(w, r, "/?erreur=refus", http.StatusSeeOther)
 		return
 	}
 	user, guilds, err := s.oauth.exchange(r.Context(), q.Get("code"))
 	if err != nil {
-		slog.Warn("web: discord sign-in failed", slog.Any("err", err))
+		journal.Record(journal.Event{Level: journal.Problem, Kind: "sign_in_failed", Detail: "Discord refused the sign-in (client secret or redirect URL?): " + err.Error()})
 		http.Redirect(w, r, "/?erreur=discord", http.StatusSeeOther)
 		return
 	}
@@ -480,15 +530,18 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request, sess *s
 	defer cancel()
 	rep, err := s.backend.Uninstall(ctx, g.ID)
 	if err != nil && !rep.OwnerLeft {
-		slog.Warn("web: uninstall failed", slog.String("guildID", g.ID.String()), slog.String("by", sess.userID.String()), slog.Any("err", err))
+		journal.Record(journal.Event{GuildID: g.ID, Guild: g.Name, UserID: sess.userID, Level: journal.Problem, Kind: "uninstall_failed", Detail: err.Error()})
 		http.Redirect(w, r, page+"?err=uninstall", http.StatusSeeOther)
 		return
 	}
 	if err := s.subs.Deactivate(sess.userID, g.ID); err != nil && !errors.Is(err, subscription.ErrNotFound) {
 		slog.Warn("web: subscription not released after uninstall", slog.String("guildID", g.ID.String()), slog.Any("err", err))
 	}
-	slog.Info("web: uninstalled", slog.String("guildID", g.ID.String()), slog.String("by", sess.userID.String()),
-		slog.Int("left", len(rep.Left)), slog.Int("failed", len(rep.Failed)))
+	lvl, detail := journal.Info, fmt.Sprintf("uninstalled, %d relay bot(s) left", len(rep.Left))
+	if len(rep.Failed) > 0 {
+		lvl, detail = journal.Warning, detail+"; could not leave: "+strings.Join(rep.Failed, ", ")
+	}
+	journal.Record(journal.Event{GuildID: g.ID, Guild: g.Name, UserID: sess.userID, Level: lvl, Kind: "uninstalled", Detail: detail})
 	if len(rep.Failed) > 0 {
 		http.Redirect(w, r, "/servers?ok=uninstalled_partial", http.StatusSeeOther)
 		return
@@ -553,8 +606,10 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request, sess *sessi
 func (s *Server) renderGuild(w http.ResponseWriter, r *http.Request, sess *session, g discordGuild, rep *SetupReport, errMsg string) {
 	lang := langFor(r)
 	st := s.backend.GuildStatus(g.ID)
+	noteIncomplete(g, st, sess.userID)
 	s.render(w, r, "guild.html", map[string]any{
-		"User": sess.userName, "CSRF": sess.csrf, "Guild": g, "Status": st,
+		"Issues": journal.ForGuildIssues(g.ID, 5),
+		"User":   sess.userName, "CSRF": sess.csrf, "Guild": g, "Status": st,
 		"Report": rep, "Error": errMsg, "Bot": s.backend.BotName(),
 		"Cov": s.coverage(lang, sess.userID, g.ID), "Account": s.account(lang, sess.userID),
 		"Admin": s.isAdmin(sess.userID), "OK": okKey(r), "Err": errKey(r), "UserID": sess.userID,
@@ -642,4 +697,48 @@ func dict(kv ...any) (map[string]any, error) {
 		m[k] = kv[i+1]
 	}
 	return m, nil
+}
+
+// incompleteLimit records an unfinished setup at most every 10 minutes per
+// server, however often the page is reloaded.
+var incompleteLimit = ratelimit.New(10*time.Minute, 1)
+
+// noteIncomplete writes in the setup journal what the server page shows as
+// still to do, so the administrator sees why an install does not work.
+func noteIncomplete(g discordGuild, st GuildStatus, by snowflake.ID) {
+	if st.Ready() {
+		return
+	}
+	var todo []string
+	if !st.BotPresent {
+		todo = append(todo, "main bot not invited")
+	}
+	if len(st.MissingPermissions) > 0 {
+		todo = append(todo, "missing permissions: "+strings.Join(st.MissingPermissions, ", "))
+	}
+	missing := 0
+	for _, h := range st.Heralds {
+		if !h.Present {
+			missing++
+		}
+	}
+	if missing > 0 {
+		todo = append(todo, fmt.Sprintf("%d relay bot(s) not invited", missing))
+	}
+	var roles []string
+	for _, r := range st.Roles {
+		switch {
+		case !r.Exists:
+			roles = append(roles, r.Name+" (missing)")
+		case r.AboveBot:
+			roles = append(roles, r.Name+" (above the bot)")
+		}
+	}
+	if len(roles) > 0 {
+		todo = append(todo, "roles: "+strings.Join(roles, ", "))
+	}
+	if len(todo) == 0 || !incompleteLimit.Allow(g.ID.String()) {
+		return
+	}
+	journal.Record(journal.Event{GuildID: g.ID, Guild: g.Name, UserID: by, Level: journal.Warning, Kind: "setup_incomplete", Detail: strings.Join(todo, "; ")})
 }

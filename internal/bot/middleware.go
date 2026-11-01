@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"github.com/TepqeT/voice-relay/internal/ratelimit"
 	"time"
 
 	"github.com/TepqeT/voice-relay/internal/i18n"
@@ -24,6 +25,9 @@ func (h *CommandHandlers) withGuild(fn guildCommandHandler) func(discord.SlashCo
 			return e.CreateMessage(*errMsg)
 		}
 		loc := h.loc(guildID, e.Locale())
+		if tooFast(guildID, e.User().ID) {
+			return e.CreateMessage(ephemeral(loc.T("err.too_fast")))
+		}
 
 		ctx, span := telemetry.Tracer.Start(e.Ctx, "discord.command",
 			trace.WithAttributes(
@@ -83,8 +87,21 @@ func (h *CommandHandlers) withGuildButton(fn guildButtonHandler) func(discord.Bu
 		if errMsg != nil {
 			return e.CreateMessage(*errMsg)
 		}
-		return fn(guildID, h.loc(guildID, e.Locale()), data, e)
+		loc := h.loc(guildID, e.Locale())
+		if tooFast(guildID, e.User().ID) {
+			return e.CreateMessage(ephemeral(loc.T("err.too_fast")))
+		}
+		return fn(guildID, loc, data, e)
 	}
+}
+
+// interactionLimit caps each member at a few clicks or commands in a row,
+// then about one per second: a member hammering a button gets a short
+// "slow down" instead of starting work for every click.
+var interactionLimit = ratelimit.New(time.Second, 4)
+
+func tooFast(guildID, userID snowflake.ID) bool {
+	return !interactionLimit.Allow(guildID.String() + ":" + userID.String())
 }
 
 // guildSelectMenuHandler is a select menu component handler that receives a validated guild ID and localizer.
@@ -97,7 +114,11 @@ func (h *CommandHandlers) withGuildSelectMenu(fn guildSelectMenuHandler) func(di
 		if errMsg != nil {
 			return e.CreateMessage(*errMsg)
 		}
-		return fn(guildID, h.loc(guildID, e.Locale()), data, e)
+		loc := h.loc(guildID, e.Locale())
+		if tooFast(guildID, e.User().ID) {
+			return e.CreateMessage(ephemeral(loc.T("err.too_fast")))
+		}
+		return fn(guildID, loc, data, e)
 	}
 }
 

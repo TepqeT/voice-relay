@@ -5,6 +5,11 @@
 {{if .Err}}<p class="card bad">{{t .Err}}</p>{{end}}
 {{if .Error}}<p class="card bad">{{.Error}}</p>{{end}}
 
+{{if .Issues}}<section class="card issues">
+  <h2>{{t "guild.issues"}}</h2>
+  <ul class="list">{{range .Issues}}<li><span class="tag {{if eq .Level "problem"}}bad{{else}}warn{{end}}">{{.Kind}}</span> <span class="detail">{{.Detail}}</span></li>{{end}}</ul>
+</section>{{end}}
+
 <section class="card">
   <h2>{{t "admin.sub"}}</h2>
   <div class="row">{{template "coverage" dict "Cov" .Cov "ID" .Guild.ID "CSRF" .CSRF "From" "guild"}}</div>
