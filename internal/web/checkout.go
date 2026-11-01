@@ -50,7 +50,7 @@ func newNonce() string {
 // allowed only when payments are on, the script tag carrying nonce.
 func (s *Server) csp(nonce string) string {
 	if !s.checkoutOn() {
-		return "default-src 'none'; style-src 'self'; img-src 'self' https://cdn.discordapp.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'"
+		return "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.discordapp.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'"
 	}
 	pp := "https://*.paypal.com https://*.paypalobjects.com"
 	return "default-src 'none'; " +

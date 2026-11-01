@@ -318,6 +318,16 @@ func TestNewRejectsRelativeBaseURL(t *testing.T) {
 	}
 }
 
+// hasInlineScript reports a script tag without src, which the CSP blocks.
+func hasInlineScript(body string) bool {
+	for _, tag := range regexp.MustCompile(`<script[^>]*>`).FindAllString(body, -1) {
+		if !strings.Contains(tag, " src=") {
+			return true
+		}
+	}
+	return false
+}
+
 // The CSP forbids inline styles and scripts: the animated pages must use
 // classes only, and every scene must be present.
 func TestPagesRespectCSPAndShowScenes(t *testing.T) {
@@ -326,7 +336,7 @@ func TestPagesRespectCSPAndShowScenes(t *testing.T) {
 	signIn(t, site, c, "good")
 	_, guild := get(t, c, site.URL+"/servers/111")
 	for name, body := range map[string]string{"index": index, "guild": guild} {
-		if strings.Contains(body, "style=") || strings.Contains(body, "<script") {
+		if strings.Contains(body, "style=") || hasInlineScript(body) {
 			t.Errorf("%s has inline style or script (blocked by the CSP)", name)
 		}
 	}
@@ -833,5 +843,32 @@ func TestSetupJournalShown(t *testing.T) {
 	// The unfinished setup of the page itself was recorded too.
 	if !strings.Contains(page, "setup_incomplete") {
 		t.Fatal("an unfinished setup must be written in the journal")
+	}
+}
+
+// The server page offers the next missing relay bot as one button, with the
+// progress, and loads the script that moves to the following one.
+func TestGuildPageNextRelay(t *testing.T) {
+	site, _, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/servers/111")
+	for _, want := range []string{`id="next-relay"`, "client_id=2", "Relay 2 (1/2", "/static/guild.js"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("page lacks %q:\n%s", want, page)
+		}
+	}
+	if code, _ := get(t, c, site.URL+"/static/guild.js"); code != http.StatusOK {
+		t.Fatalf("guild.js = %d", code)
+	}
+}
+
+func TestGuildStatusNextRelay(t *testing.T) {
+	st := GuildStatus{RelayBots: []BotStatus{{Name: "A", Present: true}, {Name: "B"}, {Name: "C"}}}
+	if n := st.NextRelay(); n == nil || n.Name != "B" || st.RelayPresent() != 1 || st.RelayCount() != 3 {
+		t.Fatalf("next = %+v, present = %d", n, st.RelayPresent())
+	}
+	st.RelayBots[1].Present, st.RelayBots[2].Present = true, true
+	if st.NextRelay() != nil {
+		t.Fatal("all relay bots in: nothing to offer")
 	}
 }
