@@ -15,8 +15,9 @@ import (
 // roleRest records role creations; "Refusé" fails with 50013.
 type roleRest struct {
 	stubRest
-	created []string
-	next    snowflake.ID
+	created  []string
+	next     snowflake.ID
+	reloaded int
 }
 
 func (r *roleRest) CreateRole(guildID snowflake.ID, c discord.RoleCreate, _ ...rest.RequestOpt) (*discord.Role, error) {
@@ -26,6 +27,13 @@ func (r *roleRest) CreateRole(guildID snowflake.ID, c discord.RoleCreate, _ ...r
 	r.next++
 	r.created = append(r.created, c.Name)
 	return &discord.Role{ID: 5000 + r.next, GuildID: guildID, Name: c.Name, Position: 1}, nil
+}
+
+// GetRoles answers the reload after a creation: the created roles end up
+// right above @everyone, below the bot's role.
+func (r *roleRest) GetRoles(guildID snowflake.ID, _ ...rest.RequestOpt) ([]discord.Role, error) {
+	r.reloaded++
+	return nil, nil
 }
 
 func setupService(t *testing.T) (*Service, *roleRest) {
@@ -80,6 +88,9 @@ func TestCreateMissingRoles(t *testing.T) {
 	}
 	if want := []string{"123456789012345678", "Refusé"}; !reflect.DeepEqual(rep.Failed, want) || !rep.PermissionDenied {
 		t.Fatalf("failed = %v, denied = %v", rep.Failed, rep.PermissionDenied)
+	}
+	if rr.reloaded != 1 {
+		t.Fatalf("roles reloaded %d times after creation, want 1", rr.reloaded)
 	}
 	// Second run: what was created is now found, nothing is created twice.
 	rr.created = nil

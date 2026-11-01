@@ -182,3 +182,30 @@ func TestPanelChannelInHomeCategory(t *testing.T) {
 		t.Fatalf("created %+v: the panel channel must sit in the home category", fr.created)
 	}
 }
+
+// The bot only puts in the panel channel's overwrites what it holds itself:
+// Discord refuses the whole channel (50013) otherwise.
+func TestPanelChannelOverwritesWithinBotPermissions(t *testing.T) {
+	k, fr, caches := newTestKeeper(t, "")
+	caches.SetSelfUser(discord.OAuth2User{User: discord.User{ID: 1, Bot: true}})
+	caches.AddRole(discord.Role{ID: panelGuild, GuildID: panelGuild, Name: "@everyone"})
+	caches.AddRole(discord.Role{ID: 50, GuildID: panelGuild, Name: "Voice Relay", Position: 1,
+		Permissions: discord.PermissionViewChannel | discord.PermissionSendMessages | discord.PermissionManageChannels | discord.PermissionManageRoles})
+	caches.AddMember(discord.Member{GuildID: panelGuild, User: discord.User{ID: 1, Bot: true}, RoleIDs: []snowflake.ID{50}})
+	k.Ensure(context.Background(), panelGuild)
+	if len(fr.created) != 1 {
+		t.Fatalf("created %v", fr.created)
+	}
+	for _, ow := range fr.created[0].PermissionOverwrites {
+		var p discord.Permissions
+		switch v := ow.(type) {
+		case discord.RolePermissionOverwrite:
+			p = v.Allow | v.Deny
+		case discord.MemberPermissionOverwrite:
+			p = v.Allow | v.Deny
+		}
+		if p.Has(discord.PermissionEmbedLinks) || p.Has(discord.PermissionCreatePublicThreads) {
+			t.Fatalf("overwrite %+v carries a permission the bot does not hold", ow)
+		}
+	}
+}

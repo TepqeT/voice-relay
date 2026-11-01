@@ -28,7 +28,8 @@ type siteManager interface {
 // siteOwnerPermissions is what the site's invite asks for: the speaker set,
 // Deafen Members, channel creation, and the moderation the raids use.
 const siteOwnerPermissions = ownerPermissions | channelPermissions |
-	discord.PermissionMuteMembers | discord.PermissionMoveMembers
+	discord.PermissionMuteMembers | discord.PermissionMoveMembers |
+	discord.PermissionEmbedLinks | discord.PermissionReadMessageHistory
 
 // webBackend adapts the manager to the site.
 type webBackend struct {
@@ -139,6 +140,7 @@ func permissionKeys(perms discord.Permissions) []string {
 		{discord.PermissionMuteMembers, "mute"},
 		{discord.PermissionDeafenMembers, "deafen"},
 		{discord.PermissionMoveMembers, "move"},
+		{discord.PermissionEmbedLinks, "embed"},
 	}
 	var out []string
 	for _, k := range keys {
