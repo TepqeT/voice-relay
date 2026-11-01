@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,8 +28,7 @@ func (f liveRvR) AccessOpen(snowflake.ID) bool                 { return f.open }
 func (f liveRvR) SetAccessOpen(context.Context, snowflake.ID, bool) (int, error) {
 	return 0, nil
 }
-func (f liveRvR) AccessEnabled() bool   { return true }
-func (f liveRvR) AccessFaction() string { return "" }
+func (f liveRvR) AccessEnabled() bool { return true }
 func (f liveRvR) CanManageAccess(snowflake.ID, []snowflake.ID, discord.Permissions) bool {
 	return false
 }
@@ -53,7 +53,7 @@ func TestPanelShowsLiveState(t *testing.T) {
 		t.Fatalf("rows = %d, want raid row and players row", len(msg.Components))
 	}
 	text := panelText(msg)
-	for _, want := range []string{"No raid running", "Restricted", "<@&902>"} {
+	for _, want := range []string{"No session running", "Restricted", "<@&902>"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("idle panel lacks %q:\n%s", want, text)
 		}
@@ -74,7 +74,7 @@ func TestPanelShowsLiveState(t *testing.T) {
 		t.Fatalf("running buttons = %s, want Stop, Status | Request access, Open", got)
 	}
 	text = panelText(msg)
-	for _, want := range []string{"Raid running", "<t:1793550000:R>", "<#7>  **2**", "<#8>  **5**", "<#9>  **0**"} {
+	for _, want := range []string{"Session running", "<t:1793550000:R>", "<#7>  **2**", "<#8>  **5**", "<#9>  **0**"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("running panel lacks %q:\n%s", want, text)
 		}
@@ -99,7 +99,7 @@ func TestPanelInFrench(t *testing.T) {
 	h := &CommandHandlers{bundle: bundle}
 	h.SetRvR(liveRvR{})
 	msg := h.buildPanel(1, bundle.For("fr", ""))
-	if !strings.Contains(panelText(msg), "Aucun raid en cours") {
+	if !strings.Contains(panelText(msg), "Aucune session en cours") {
 		t.Fatalf("French panel %q", panelText(msg))
 	}
 }
@@ -139,7 +139,7 @@ func TestPanelHelpButton(t *testing.T) {
 		t.Fatal("the help must only be visible to the person who asked")
 	}
 	text := panelText(help)
-	for _, want := range []string{"What each button does", "Start raid / Stop raid", "Request access", "Open to everyone / Restrict access", "Who does what"} {
+	for _, want := range []string{"What each button does", "Start session / Stop session", "Request access", "Open to everyone / Restrict access", "Who does what"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("help lacks %q:\n%s", want, text)
 		}
@@ -167,7 +167,7 @@ func TestPanelSquadSelect(t *testing.T) {
 	if !ok || menu.CustomID != panelSquadsID || len(menu.Options) != 11 {
 		t.Fatalf("squad select %#v", last.Components[0])
 	}
-	if !menu.Options[6].Default || menu.Options[0].Label != "1 squad" || menu.Options[10].Label != "11 squads" {
+	if !menu.Options[6].Default || menu.Options[0].Label != "1 listener channel" || menu.Options[10].Label != "11 listener channels" {
 		t.Fatalf("options %+v", menu.Options)
 	}
 	if !strings.Contains(panelText(msg), "7 at the next start, 11 relay bots available") {
@@ -181,5 +181,61 @@ func TestPanelSquadSelect(t *testing.T) {
 				t.Fatal("no squad choice with a single relay bot")
 			}
 		}
+	}
+}
+
+type feedbackRvR struct {
+	liveRvR
+	feeds []manager.ListenerFeed
+}
+
+func (f feedbackRvR) SquadLeadsEnabled(snowflake.ID) bool                    { return true }
+func (f feedbackRvR) ListenerFeeds(snowflake.ID) []manager.ListenerFeed      { return f.feeds }
+func (f feedbackRvR) SetListenerMuted(snowflake.ID, snowflake.ID, bool) bool { return true }
+func (f feedbackRvR) CanControlFeedback(snowflake.ID, []snowflake.ID, bool) bool {
+	return true
+}
+func (f feedbackRvR) SquadLeadKeyAlways() bool { return true }
+
+func TestSquadLeadReturnControls(t *testing.T) {
+	bundle, _ := i18n.NewBundle()
+	loc := bundle.For("", "")
+	h := &CommandHandlers{bundle: bundle}
+	feeds := []manager.ListenerFeed{{ChannelID: 81, Name: "Listener 1"}, {ChannelID: 82, Name: "Listener 2", Muted: true}}
+	for i := 3; i <= 11; i++ {
+		feeds = append(feeds, manager.ListenerFeed{ChannelID: snowflake.ID(80 + i), Name: "Listener " + strconv.Itoa(i)})
+	}
+	h.SetRvR(feedbackRvR{liveRvR: liveRvR{st: manager.PanelStatus{Running: true}}, feeds: feeds})
+
+	msg := h.buildPanel(1, loc)
+	if !strings.Contains(strings.Join(panelButtonIDs(msg), " "), panelFeedbackID) {
+		t.Fatal("a running session with squad leads must offer the return controls")
+	}
+	if !strings.Contains(panelText(msg), "Cut in: Listener 2") || !strings.Contains(panelText(msg), "heard in the speaker channel whenever they talk") {
+		t.Fatalf("panel %q", panelText(msg))
+	}
+
+	ctl := h.buildFeedbackControls(1, loc, feedbackRvR{feeds: feeds})
+	var labels []string
+	for _, r := range ctl.Components {
+		for _, c := range r.(discord.ActionRowComponent).Components {
+			b := c.(discord.ButtonComponent)
+			labels = append(labels, b.Label+"="+b.CustomID)
+		}
+	}
+	all := strings.Join(labels, " | ")
+	for _, want := range []string{"Listener 1: on=/panel/fb/81/toggle", "Listener 2: cut=/panel/fb/82/toggle", "Listener 11: on=/panel/fb/91/toggle", "Cut all=/panel/fb/all/cut", "Restore all=/panel/fb/all/on"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("controls lack %q: %s", want, all)
+		}
+	}
+	if len(ctl.Components) > 5 {
+		t.Fatalf("%d rows, Discord allows 5", len(ctl.Components))
+	}
+
+	// Stopped: no return controls.
+	h.SetRvR(feedbackRvR{liveRvR: liveRvR{}, feeds: feeds})
+	if strings.Contains(strings.Join(panelButtonIDs(h.buildPanel(1, loc)), " "), panelFeedbackID) {
+		t.Fatal("no return controls without a running session")
 	}
 }

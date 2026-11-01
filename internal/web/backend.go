@@ -55,7 +55,7 @@ type GuildRef struct {
 type GuildStatus struct {
 	BotPresent         bool
 	BotInviteURL       string // locked to the server
-	Heralds            []BotStatus
+	RelayBots          []BotStatus
 	MissingPermissions []string // keys translated by the site: perm.<key>
 	Roles              []RoleStatus
 	PanelChannel       string // channel where the bot keeps the control panel, "" when off
@@ -66,7 +66,7 @@ func (g GuildStatus) Ready() bool {
 	if !g.BotPresent || len(g.MissingPermissions) > 0 {
 		return false
 	}
-	for _, h := range g.Heralds {
+	for _, h := range g.RelayBots {
 		if !h.Present {
 			return false
 		}
@@ -90,7 +90,7 @@ func (g GuildStatus) MissingRoles() int {
 	return n
 }
 
-// BotStatus is one relay bot (Héraut) of a server.
+// BotStatus is one relay bot of a server.
 type BotStatus struct {
 	Name      string
 	Present   bool

@@ -81,28 +81,27 @@ func TestStorePath(t *testing.T) {
 
 func TestLoadRvRDefaults(t *testing.T) {
 	for _, k := range []string{"PRIORITY_SPEAKER", "SOUNDS_DIR", "SOUND_ON_START", "SOUND_ON_STOP", "REPORTS_DIR", "REPORT_LANG", "REPORT_TO_DISCORD", "DIAG_DIR", "DIAG_INTERVAL", "SQUAD_LEAD_ROLE", "SQUAD_LEAD_KEY", "RAID_LEAD_ROLE", "SQUAD_LEADS_TO_SQUADS", "PANEL_CHANNEL",
-		"DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION", "RVR_CATEGORY_AFTER", "ACCESS_ROLE", "BOARD_ROLE", "ACCESS_CHANNEL", "CLASS_ROLES", "WAITING_CHANNEL", "CLASS_RULE", "EVENT_LABEL"} {
+		"DYNAMIC_CHANNELS", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION", "RVR_CATEGORY_AFTER", "ACCESS_ROLE", "BOARD_ROLE", "ACCESS_CHANNEL", "CLASS_ROLES", "WAITING_CHANNEL", "CLASS_RULE", "EVENT_LABEL",
+		"SPEAKER_ROLE", "SPEAKER_CHANNEL", "LISTENER_CHANNEL", "LISTENER_COUNT", "CATEGORY", "CATEGORY_AFTER"} {
 		t.Setenv(k, "")
 	}
 	got := loadRvR("/data/store.yaml")
 	want := RvRConfig{
 		PrioritySpeaker: true,
 		SoundsDir:       "/sounds",
-		SoundOnStart:    "debut",
-		SoundOnStop:     "fin",
 		ReportsDir:      "/data/reports",
 		ReportLang:      "en",
 		ReportToDiscord: true,
 		DiagDir:         "/data/diagnostics",
 		DiagInterval:    10 * time.Second,
 		SquadLeadRole:   "Squad Lead",
-		RaidLeadRole:    "Raid Lead",
-		SquadLeadKey:    "priority",
+		RaidLeadRole:    "Speaker",
+		SquadLeadKey:    "always",
 		Channels: ChannelsConfig{
-			EventLabel:   "RvR",
-			Category:     "RvR",
-			RaidLeadName: "Raid Lead",
-			SquadName:    "Squad",
+			EventLabel:   "Voice Relay",
+			Category:     "Voice Relay",
+			RaidLeadName: "Speaker",
+			SquadName:    "Listener",
 			SquadCount:   MaxSquads,
 			StateFile:    "/data/rvr-channels.json",
 			ClassRule:    "balanced",
@@ -135,32 +134,40 @@ func TestLoadRvROverrides(t *testing.T) {
 }
 
 func TestLoadChannels(t *testing.T) {
-	for _, k := range []string{"EVENT_LABEL", "DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION"} {
+	for _, k := range []string{"EVENT_LABEL", "DYNAMIC_CHANNELS", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION",
+		"CATEGORY", "SPEAKER_CHANNEL", "LISTENER_CHANNEL", "LISTENER_COUNT"} {
 		t.Setenv(k, "")
 	}
-	c := loadChannels("/data/asmos/store.yaml")
-	if c.Enabled || c.SquadCount != MaxSquads || c.RaidLeadName != "Raid Lead" || c.SquadName != "Squad" || c.FactionRole != "" {
+	c := loadChannels("/data/relay/store.yaml")
+	if c.Enabled || c.SquadCount != MaxSquads || c.RaidLeadName != "Speaker" || c.SquadName != "Listener" || c.Category != "Voice Relay" {
 		t.Fatalf("defaults = %+v", c)
 	}
-	if c.StateFile != "/data/asmos/rvr-channels.json" {
+	if c.StateFile != "/data/relay/rvr-channels.json" {
 		t.Fatalf("StateFile = %q", c.StateFile)
 	}
-
 	t.Setenv("DYNAMIC_CHANNELS", "true")
-	t.Setenv("FACTION_NAME", "Asmodiens")
-	t.Setenv("SQUAD_COUNT", "99")
-	c = loadChannels("store.yaml")
-	if !c.Enabled || c.FactionRole != "Asmodiens" || c.Category != "RvR Asmodiens" || c.SquadCount != MaxSquads {
-		t.Fatalf("faction = %+v", c)
+	t.Setenv("LISTENER_COUNT", "99")
+	if c = loadChannels("store.yaml"); !c.Enabled || c.SquadCount != MaxSquads {
+		t.Fatalf("invalid count = %+v", c)
 	}
-	t.Setenv("FACTION_ROLE", "none")
-	t.Setenv("SQUAD_COUNT", "all")
+	t.Setenv("LISTENER_COUNT", "all")
 	if c = loadChannels("store.yaml"); c.SquadCount != MaxSquads {
 		t.Fatalf("all = %d", c.SquadCount)
 	}
-	t.Setenv("SQUAD_COUNT", "4")
-	if c = loadChannels("store.yaml"); c.FactionRole != "" || c.SquadCount != 4 {
-		t.Fatalf("overrides = %+v", c)
+	t.Setenv("LISTENER_COUNT", "4")
+	if c = loadChannels("store.yaml"); c.SquadCount != 4 {
+		t.Fatalf("count = %+v", c)
+	}
+	// Former variable names still work.
+	t.Setenv("LISTENER_COUNT", "")
+	t.Setenv("SQUAD_COUNT", "3")
+	t.Setenv("RAID_LEAD_CHANNEL", "Lead")
+	if c = loadChannels("store.yaml"); c.SquadCount != 3 || c.RaidLeadName != "Lead" {
+		t.Fatalf("legacy names = %+v", c)
+	}
+	t.Setenv("SPEAKER_CHANNEL", "Stage")
+	if c = loadChannels("store.yaml"); c.RaidLeadName != "Stage" {
+		t.Fatal("the new name must win over the former one")
 	}
 }
 
@@ -172,14 +179,14 @@ func TestLoadClassSort(t *testing.T) {
 	if len(c.ClassRoles) != 0 || c.WaitingChannel != "" || c.ClassRule != "balanced" {
 		t.Fatalf("defaults = %+v", c)
 	}
-	t.Setenv("CLASS_ROLES", " Templier, Clerc ;;123456789012345678 ,")
-	t.Setenv("WAITING_CHANNEL", "#Attente")
-	t.Setenv("CLASS_RULE", "Clerc=2; *=1")
+	t.Setenv("CLASS_ROLES", " Tank, Healer ;;123456789012345678 ,")
+	t.Setenv("WAITING_CHANNEL", "#Waiting")
+	t.Setenv("CLASS_RULE", "Healer=2; *=1")
 	c = loadChannels("store.yaml")
-	if got, want := c.ClassRoles, []string{"Templier", "Clerc", "123456789012345678"}; len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	if got, want := c.ClassRoles, []string{"Tank", "Healer", "123456789012345678"}; len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("ClassRoles = %q, want %q", got, want)
 	}
-	if c.WaitingChannel != "Attente" || c.ClassRule != "Clerc=2; *=1" {
+	if c.WaitingChannel != "Waiting" || c.ClassRule != "Healer=2; *=1" {
 		t.Fatalf("overrides = %+v", c)
 	}
 	t.Setenv("CLASS_ROLES", "none")
@@ -190,18 +197,18 @@ func TestLoadClassSort(t *testing.T) {
 
 func TestEventLabel(t *testing.T) {
 	t.Setenv("RVR_CATEGORY", "")
-	t.Setenv("FACTION_NAME", "Elyséens")
+	t.Setenv("CATEGORY", "")
 	t.Setenv("EVENT_LABEL", "")
-	if c := loadChannels("store.yaml"); c.EventLabel != "RvR" || c.Category != "RvR Elyséens" {
-		t.Fatalf("default = %q / %q, want the v27 category", c.EventLabel, c.Category)
+	if c := loadChannels("store.yaml"); c.EventLabel != "Voice Relay" || c.Category != "Voice Relay" {
+		t.Fatalf("default = %q / %q", c.EventLabel, c.Category)
 	}
-	t.Setenv("EVENT_LABEL", "GvG")
-	if c := loadChannels("store.yaml"); c.EventLabel != "GvG" || c.Category != "GvG Elyséens" {
+	t.Setenv("EVENT_LABEL", "Briefing")
+	if c := loadChannels("store.yaml"); c.EventLabel != "Briefing" || c.Category != "Briefing" {
 		t.Fatalf("custom = %q / %q", c.EventLabel, c.Category)
 	}
-	t.Setenv("RVR_CATEGORY", "Guerre")
-	if c := loadChannels("store.yaml"); c.Category != "Guerre" {
-		t.Fatalf("RVR_CATEGORY must win, got %q", c.Category)
+	t.Setenv("CATEGORY", "Ops")
+	if c := loadChannels("store.yaml"); c.Category != "Ops" {
+		t.Fatalf("CATEGORY must win, got %q", c.Category)
 	}
 }
 

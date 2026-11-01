@@ -38,10 +38,10 @@ type fakeBackend struct {
 }
 
 func (f *fakeBackend) BotGuilds() []GuildRef {
-	return []GuildRef{{ID: managedGuild, Name: "Zeta"}, {ID: 444, Name: "Test Server"}}
+	return []GuildRef{{ID: managedGuild, Name: "Zeta"}, {ID: 444, Name: "Community"}}
 }
 
-func (f *fakeBackend) BotName() string { return "Voix de Test" }
+func (f *fakeBackend) BotName() string { return "Relay Test" }
 func (f *fakeBackend) ServerFacts(g, _ snowflake.ID) ServerFacts {
 	if sf, ok := f.facts[g]; ok {
 		return sf
@@ -52,8 +52,8 @@ func (f *fakeBackend) GuildStatus(id snowflake.ID) GuildStatus {
 	return GuildStatus{
 		BotPresent:   id == managedGuild,
 		BotInviteURL: "https://discord.com/oauth2/authorize?client_id=1&guild_id=" + id.String(),
-		Heralds:      []BotStatus{{Name: "Héraut 1", Present: true}, {Name: "Héraut 2", InviteURL: "https://discord.com/oauth2/authorize?client_id=2"}},
-		Roles:        []RoleStatus{{Purpose: "raid_lead", Name: "Raid Lead", Exists: true}, {Purpose: "class", Name: "Clerc"}},
+		RelayBots:    []BotStatus{{Name: "Relay 1", Present: true}, {Name: "Relay 2", InviteURL: "https://discord.com/oauth2/authorize?client_id=2"}},
+		Roles:        []RoleStatus{{Purpose: "raid_lead", Name: "Speaker", Exists: true}, {Purpose: "class", Name: "Healer"}},
 		PanelChannel: f.panel,
 	}
 }
@@ -63,12 +63,12 @@ func (f *fakeBackend) CanManage(g, _ snowflake.ID) (bool, bool) {
 }
 func (f *fakeBackend) SetupRoles(_ context.Context, g snowflake.ID) (SetupReport, error) {
 	f.setups = append(f.setups, g)
-	return SetupReport{Created: []string{"Clerc"}, Existing: []string{"Raid Lead"}}, nil
+	return SetupReport{Created: []string{"Healer"}, Existing: []string{"Speaker"}}, nil
 }
 
 func (f *fakeBackend) Uninstall(_ context.Context, g snowflake.ID) (UninstallReport, error) {
 	f.removed = append(f.removed, g)
-	return UninstallReport{Left: []string{"Héraut 1"}, Failed: f.unFailed, OwnerLeft: true}, nil
+	return UninstallReport{Left: []string{"Relay 1"}, Failed: f.unFailed, OwnerLeft: true}, nil
 }
 
 // fakeDiscord answers the OAuth token, user and guild endpoints.
@@ -223,7 +223,7 @@ func TestCallbackDiscordFailure(t *testing.T) {
 func TestGuildPageAuthorization(t *testing.T) {
 	site, be, c := newTestSite(t)
 	signIn(t, site, c, "good")
-	if code, body := get(t, c, site.URL+"/servers/111"); code != http.StatusOK || !strings.Contains(body, "Héraut 2") || !strings.Contains(body, "Créer les rôles manquants") {
+	if code, body := get(t, c, site.URL+"/servers/111"); code != http.StatusOK || !strings.Contains(body, "Relay 2") || !strings.Contains(body, "Créer les rôles manquants") {
 		t.Fatalf("managed guild: %d\n%s", code, body)
 	}
 	if code, _ := get(t, c, site.URL+"/servers/222"); code != http.StatusForbidden {
@@ -298,7 +298,7 @@ func TestSecurityHeadersAndHealth(t *testing.T) {
 }
 
 func TestGuildStatusReady(t *testing.T) {
-	st := GuildStatus{BotPresent: true, Heralds: []BotStatus{{Present: true}}, Roles: []RoleStatus{{Exists: true}}}
+	st := GuildStatus{BotPresent: true, RelayBots: []BotStatus{{Present: true}}, Roles: []RoleStatus{{Exists: true}}}
 	if !st.Ready() {
 		t.Fatal("should be ready")
 	}
@@ -573,7 +573,7 @@ func TestAdminSpotsAndBridlesLending(t *testing.T) {
 	for _, want := range []string{
 		"2 compte(s) abonné(s), 4 serveur(s) couvert(s), 2 serveur(s) suspect(s).",
 		"titulaire absent du serveur", "titulaire sans « Gérer le serveur »",
-		"300 membres", "1 raid(s)", "aucun raid",
+		"300 membres", "1 session(s)", "aucune session",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("admin page misses %q", want)
@@ -709,7 +709,7 @@ func TestUninstall(t *testing.T) {
 		t.Fatalf("confirmation missing:\n%s", page)
 	}
 
-	be.unFailed = []string{"Héraut 2"}
+	be.unFailed = []string{"Relay 2"}
 	resp, _ = c.PostForm(site.URL+"/servers/111/uninstall", url.Values{"csrf": {csrf}, "confirm": {"yes"}})
 	if resp.Header.Get("Location") != "/servers?ok=uninstalled_partial" {
 		t.Fatalf("partial uninstall = %q", resp.Header.Get("Location"))

@@ -228,8 +228,6 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	ch := cfg.RvR.Channels
 	managerSvc.ConfigureChannels(manager.ChannelOptions{
 		Enabled:       ch.Enabled,
-		Faction:       ch.Faction,
-		FactionRole:   ch.FactionRole,
 		Category:      ch.Category,
 		After:         ch.After,
 		RaidLeadName:  ch.RaidLeadName,

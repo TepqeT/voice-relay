@@ -43,7 +43,7 @@ func (p Player) class() (string, Reason) {
 	}
 }
 
-// Rule is the composition rule set by the raid leads. The zero value is the
+// Rule is the composition rule set by the speakers. The zero value is the
 // "balanced" rule without size limit.
 type Rule struct {
 	// Quotas caps each class per squad: Quotas[class][i] is the cap of squad
@@ -158,8 +158,8 @@ func Plan(waiting []Player, squads [][]Player, rule Rule) Result {
 //
 //	balanced                       every class spread evenly, no limit
 //	balanced; max=6                same, at most 6 members per squad
-//	Templier=1; Clerc=2; *=1       caps per class in every squad
-//	Clerc=2/1/1                    per squad: squad 1 two, then one each
+//	Tank=1; Healer=2; *=1          caps per class in every listener channel
+//	Healer=2/1/1                   per channel: channel 1 two, then one each
 //
 // Entries are separated by ";" or ",". "*" sets the cap of unlisted classes;
 // without it they are not placed. Class names match CLASS_ROLES entries,

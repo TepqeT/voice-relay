@@ -45,7 +45,7 @@ misc/www/
 # Internal notes, not published
 docs/internal/
 
-# Secrets and runtime data (aion-relay)
+# Secrets and runtime data
 .env.*
 !*.example
 data*/

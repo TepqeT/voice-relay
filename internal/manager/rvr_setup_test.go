@@ -41,11 +41,10 @@ func setupService(t *testing.T) (*Service, *roleRest) {
 	caches.AddMember(discord.Member{GuildID: guildID, User: discord.User{ID: 1, Bot: true}, RoleIDs: []snowflake.ID{902}})
 	caches.SetSelfUser(discord.OAuth2User{User: discord.User{ID: 1, Bot: true}})
 	m.rvr.opts.RaidLeadRole = "raid lead"
-	m.rvr.opts.SquadLeadRole = "Chef d'escouade"
-	m.channels.opts.FactionRole = "Admin"
-	m.channels.opts.AccessRole = "admin" // same role twice: listed once
+	m.rvr.opts.SquadLeadRole = "Squad Lead"
+	m.channels.opts.AccessRole = "Admin"
 	m.channels.opts.BoardRole = "123456789012345678"
-	m.sort.opts.ClassRoles = []string{"Clerc", "Refusé"}
+	m.sort.opts.ClassRoles = []string{"Healer", "Refusé", "admin"} // admin again: listed once
 	return m, rr
 }
 
@@ -76,7 +75,7 @@ func TestCreateMissingRoles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"Chef d'escouade", "Clerc"}; !reflect.DeepEqual(rr.created, want) || !reflect.DeepEqual(rep.Created, want) {
+	if want := []string{"Squad Lead", "Healer"}; !reflect.DeepEqual(rr.created, want) || !reflect.DeepEqual(rep.Created, want) {
 		t.Fatalf("created %v / %v, want %v", rr.created, rep.Created, want)
 	}
 	if want := []string{"123456789012345678", "Refusé"}; !reflect.DeepEqual(rep.Failed, want) || !rep.PermissionDenied {

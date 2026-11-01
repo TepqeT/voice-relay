@@ -17,7 +17,7 @@ type fakeRvR struct{ squads, dynamic bool }
 func (f fakeRvR) PlayOutro(snowflake.ID)              {}
 func (f fakeRvR) SquadLeadsEnabled(snowflake.ID) bool { return f.squads }
 func (f fakeRvR) DynamicChannels() bool               { return f.dynamic }
-func (f fakeRvR) ChannelCategory() string             { return "RvR Asmodiens" }
+func (f fakeRvR) ChannelCategory() string             { return "Voice Relay" }
 func (f fakeRvR) RaidChannelsOf(snowflake.ID) (manager.RaidChannels, bool) {
 	return manager.RaidChannels{RaidLead: 7, Squads: []snowflake.ID{8, 9}}, f.dynamic
 }
@@ -40,10 +40,10 @@ func TestBuildPanel(t *testing.T) {
 		t.Fatalf("first row %#v", msg.Components[0])
 	}
 	start := controls.Components[0].(discord.ButtonComponent)
-	if start.CustomID != panelStartID || start.Label != "Lancer le raid" {
+	if start.CustomID != panelStartID || start.Label != "Lancer la session" {
 		t.Fatalf("start button %+v", start)
 	}
-	if !strings.Contains(panelText(msg), "Chefs d'escouade") {
+	if !strings.Contains(panelText(msg), "**Squad Leads**") {
 		t.Fatalf("content %q", panelText(msg))
 	}
 }
@@ -56,7 +56,7 @@ func TestBuildPanelDynamicChannels(t *testing.T) {
 	h := &CommandHandlers{bundle: bundle}
 	h.SetRvR(fakeRvR{dynamic: true})
 	loc := bundle.For("fr", "")
-	if msg := h.buildPanel(1, loc); !strings.Contains(panelText(msg), "RvR Asmodiens") {
+	if msg := h.buildPanel(1, loc); !strings.Contains(panelText(msg), "Voice Relay") {
 		t.Fatalf("panel must name the category: %q", panelText(msg))
 	}
 	line := h.raidChannelsLine(1, loc)

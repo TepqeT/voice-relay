@@ -71,10 +71,10 @@ func NewBundle() (*Bundle, error) {
 }
 
 // DefaultEventLabel names the event in messages when EVENT_LABEL is unset.
-const DefaultEventLabel = "RvR"
+const DefaultEventLabel = "Voice Relay"
 
 // SetEventLabel sets the event name used by every message ({{.Event}}), for
-// games where "RvR" means nothing. Empty restores the default. Call before
+// custom names. Default "Voice Relay". Empty restores the default. Call before
 // the first lookup.
 func (b *Bundle) SetEventLabel(label string) { b.event = strings.TrimSpace(label) }
 

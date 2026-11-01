@@ -41,7 +41,7 @@ func TestActiveAndLastDay(t *testing.T) {
 // One account, several servers; a second account cannot take a covered server.
 func TestAccountCoversSeveralServers(t *testing.T) {
 	s := open(t, "")
-	if err := s.Activate(7, 100, "Test Server"); !errors.Is(err, ErrNoSubscription) {
+	if err := s.Activate(7, 100, "Community"); !errors.Is(err, ErrNoSubscription) {
 		t.Fatalf("activate without subscription = %v", err)
 	}
 	if err := s.Grant(Subscription{UserID: 7, UserName: "Alice", Plan: PlanLifetime, Gift: true}); err != nil {
@@ -50,22 +50,22 @@ func TestAccountCoversSeveralServers(t *testing.T) {
 	for _, g := range []struct {
 		id   uint64
 		name string
-	}{{100, "Test Server"}, {200, "Aion 2 France"}, {300, "Légion"}} {
+	}{{100, "Community"}, {200, "Alpha Team"}, {300, "Friends"}} {
 		if err := s.Activate(7, snowflakeID(g.id), g.name); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got := s.Guilds(7); len(got) != 3 || got[0].GuildName != "Aion 2 France" {
+	if got := s.Guilds(7); len(got) != 3 || got[0].GuildName != "Alpha Team" {
 		t.Fatalf("guilds = %+v", got)
 	}
 	if !s.Active(100) || !s.Active(300) || s.Active(999) {
 		t.Fatal("coverage")
 	}
-	if err := s.Activate(7, 100, "Test Server"); err != nil {
+	if err := s.Activate(7, 100, "Community"); err != nil {
 		t.Fatalf("re-activation must be a no-op: %v", err)
 	}
 	_ = s.Grant(Subscription{UserID: 8, Plan: PlanLifetime})
-	if err := s.Activate(8, 100, "Test Server"); !errors.Is(err, ErrTaken) {
+	if err := s.Activate(8, 100, "Community"); !errors.Is(err, ErrTaken) {
 		t.Fatalf("taking a covered server = %v", err)
 	}
 	if err := s.Deactivate(8, 100); !errors.Is(err, ErrNotFound) {
@@ -91,18 +91,18 @@ func TestServerLimit(t *testing.T) {
 func TestExpiredAndRevoked(t *testing.T) {
 	s := open(t, "")
 	_ = s.Grant(Subscription{UserID: 7, Plan: PlanUntil, Expires: now.Add(24 * time.Hour)})
-	_ = s.Activate(7, 100, "Test Server")
+	_ = s.Activate(7, 100, "Community")
 	if s.Coverage(100).State != StateActive {
 		t.Fatal("should be active")
 	}
 	s.now = func() time.Time { return now.Add(48 * time.Hour) }
 	c := s.Coverage(100)
-	if c.State != StateExpired || c.Sub.UserID != 7 || c.Link.GuildName != "Test Server" {
+	if c.State != StateExpired || c.Sub.UserID != 7 || c.Link.GuildName != "Community" {
 		t.Fatalf("expired coverage = %+v", c)
 	}
 	// Another account may take over an expired server.
 	_ = s.Grant(Subscription{UserID: 8, Plan: PlanLifetime})
-	if err := s.Activate(8, 100, "Test Server"); err != nil {
+	if err := s.Activate(8, 100, "Community"); err != nil {
 		t.Fatalf("takeover of an expired server = %v", err)
 	}
 	if err := s.Revoke(8); err != nil {
@@ -120,7 +120,7 @@ func TestPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data", "subscriptions.json")
 	s := open(t, path)
 	_ = s.Grant(Subscription{UserID: 7, UserName: "Alice", Plan: PlanLifetime, Gift: true, GrantedBy: 9})
-	_ = s.Activate(7, 100, "Test Server")
+	_ = s.Activate(7, 100, "Community")
 	info, err := os.Stat(path)
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("file: %v", err)

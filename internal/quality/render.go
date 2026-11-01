@@ -25,7 +25,7 @@ type texts struct {
 }
 
 var french = texts{
-	title:         "**Rapport RvR** : %s",
+	title:         "**Rapport Voice Relay** : %s",
 	duration:      "Durée : %s (%s)",
 	audio:         "Voix captée : %s de parole (%d paquets)",
 	noAudio:       "Voix captée : aucune",
@@ -34,12 +34,12 @@ var french = texts{
 	latencyDirect: "Latence ajoutée par le relais : relais direct, sans mixage",
 	dave:          "Chiffrement Discord (DAVE) : %s %% déchiffré",
 	daveNone:      "Chiffrement Discord (DAVE) : aucun paquet",
-	links:         "Connexions : %d reconnexion(s), %d échec(s), latence Discord en fin de raid %s ms",
+	links:         "Connexions : %d reconnexion(s), %d échec(s), latence Discord en fin de session %s ms",
 	logs:          "Logs : %d erreur(s), %d avertissement(s)",
 	findings:      "À regarder :",
-	net:           "Réseau des Raid Leads : %s %% perdus, %s %% dans le désordre, irrégularité max %s ms",
+	net:           "Réseau des Speakers : %s %% perdus, %s %% dans le désordre, irrégularité max %s ms",
 	playout:       "Diffusion : %d micro-coupure(s) sur %d salon(s)",
-	mix:           "Mélange actif (plusieurs Raid Leads présents) : %s (%d fois)",
+	mix:           "Mélange actif (plusieurs Speakers présents) : %s (%d fois)",
 	overlap:       "Voix superposées : %s, jusqu'à %d en même temps",
 	servers:       "Serveurs vocaux Discord : %d, région(s) : %d",
 	cpu:           "Machine : processeur %s %% max, %s %% en moyenne",
@@ -47,18 +47,18 @@ var french = texts{
 	decimalComma:  true,
 	verdict:       map[Level]string{LevelOK: "OK", LevelWatch: "à surveiller", LevelBad: "problème"},
 	findingT: map[string]string{
-		"no_audio":           "aucune voix captée : vérifier le rôle Raid Lead et le salon du bot caller",
+		"no_audio":           "aucune voix captée : vérifier le rôle Speaker et le salon du bot principal",
 		"drops":              "pertes audio élevées : machine ou connexion saturée",
-		"dave":               "échecs de déchiffrement DAVE : relancer le raid si la voix grésille ou coupe",
+		"dave":               "échecs de déchiffrement DAVE : relancer la session si la voix grésille ou coupe",
 		"latency":            "latence du relais élevée : machine trop chargée",
-		"reconnects":         "un bot s'est reconnecté pendant le raid",
+		"reconnects":         "un bot s'est reconnecté pendant la session",
 		"reconnect_failures": "un bot n'a pas pu se reconnecter : vérifier les logs",
 		"gateway_latency":    "latence élevée vers Discord : connexion internet",
 		"errors":             "erreurs dans les logs : docker compose logs",
 		"warnings":           "beaucoup d'avertissements dans les logs",
-		"network_loss":       "un Raid Lead perd des paquets : sa connexion internet est en cause",
-		"reorder":            "paquets d'un Raid Lead arrivés dans le désordre : connexion instable",
-		"jitter":             "arrivée irrégulière de la voix d'un Raid Lead : risque de hachures",
+		"network_loss":       "un Speaker perd des paquets : sa connexion internet est en cause",
+		"reorder":            "paquets d'un Speaker arrivés dans le désordre : connexion instable",
+		"jitter":             "arrivée irrégulière de la voix d'un Speaker : risque de hachures",
 		"stalls":             "micro-coupures fréquentes dans les salons : machine ou connexion du bot",
 		"voice_servers":      "les salons sont dans des régions Discord différentes : fixer la même région sur tous les salons",
 		"cpu":                "processeur de la machine très chargé",
@@ -67,7 +67,7 @@ var french = texts{
 }
 
 var english = texts{
-	title:         "**RvR report**: %s",
+	title:         "**Voice Relay report**: %s",
 	duration:      "Duration: %s (%s)",
 	audio:         "Captured voice: %s of speech (%d packets)",
 	noAudio:       "Captured voice: none",
@@ -79,9 +79,9 @@ var english = texts{
 	links:         "Connections: %d reconnect(s), %d failure(s), Discord latency at the end %s ms",
 	logs:          "Logs: %d error(s), %d warning(s)",
 	findings:      "To check:",
-	net:           "Raid lead network: %s %% lost, %s %% out of order, max jitter %s ms",
+	net:           "Speaker network: %s %% lost, %s %% out of order, max jitter %s ms",
 	playout:       "Playout: %d micro-cut(s) over %d channel(s)",
-	mix:           "Mix mode (several raid leads present): %s (%d times)",
+	mix:           "Mix mode (several speakers present): %s (%d times)",
 	overlap:       "Overlapping voices: %s, up to %d at once",
 	servers:       "Discord voice servers: %d, region(s): %d",
 	cpu:           "Host: CPU %s %% max, %s %% average",
@@ -90,16 +90,16 @@ var english = texts{
 	findingT: map[string]string{
 		"no_audio":           "no voice captured: check the caller role and the caller bot channel",
 		"drops":              "high audio loss: host or network saturated",
-		"dave":               "DAVE decrypt failures: restart the raid if voice crackles or cuts",
+		"dave":               "DAVE decrypt failures: restart the session if voice crackles or cuts",
 		"latency":            "high relay latency: host overloaded",
-		"reconnects":         "a bot reconnected during the raid",
+		"reconnects":         "a bot reconnected during the session",
 		"reconnect_failures": "a bot failed to reconnect: check the logs",
 		"gateway_latency":    "high latency to Discord: internet connection",
 		"errors":             "errors in the logs: docker compose logs",
 		"warnings":           "many warnings in the logs",
-		"network_loss":       "a raid lead is losing packets: their internet connection",
-		"reorder":            "a raid lead's packets arrive out of order: unstable connection",
-		"jitter":             "a raid lead's voice arrives irregularly: risk of choppy audio",
+		"network_loss":       "a speaker is losing packets: their internet connection",
+		"reorder":            "a speaker's packets arrive out of order: unstable connection",
+		"jitter":             "a speaker's voice arrives irregularly: risk of choppy audio",
 		"stalls":             "frequent micro-cuts in the channels: bot host or connection",
 		"voice_servers":      "channels are in different Discord regions: set the same region on every channel",
 		"cpu":                "host CPU heavily loaded",
@@ -109,7 +109,7 @@ var english = texts{
 
 // Render formats the report as a Discord message. lang "en" selects English,
 // anything else French.
-func Render(r Report, lang string) string { return RenderWithLabel(r, lang, "RvR") }
+func Render(r Report, lang string) string { return RenderWithLabel(r, lang, "Voice Relay") }
 
 // RenderWithLabel is Render with the event name of EVENT_LABEL in the title.
 func RenderWithLabel(r Report, lang, label string) string {
@@ -130,9 +130,9 @@ func RenderWithLabel(r Report, lang, label string) string {
 		b.WriteByte('\n')
 	}
 	if label = strings.TrimSpace(label); label == "" {
-		label = "RvR"
+		label = "Voice Relay"
 	}
-	line(strings.Replace(t.title, "RvR", label, 1), t.verdict[r.Verdict])
+	line(strings.Replace(t.title, "Voice Relay", label, 1), t.verdict[r.Verdict])
 	mode := t.modes[r.Mode]
 	if mode == "" {
 		mode = r.Mode

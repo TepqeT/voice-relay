@@ -49,6 +49,19 @@ type panelStatusSource interface {
 // channels share one permanent category.
 type homeCategoryInfo interface{ HomeCategoryEnabled() bool }
 
+// squadKeyInfo is implemented by the manager: whether squad leads are
+// relayed whenever they talk or only with the priority key.
+type squadKeyInfo interface{ SquadLeadKeyAlways() bool }
+
+// squadKeyText picks the text matching the squad lead key mode: key for the
+// priority key, key+"_always" when squad leads are always relayed.
+func (h *CommandHandlers) squadKeyText(key string) string {
+	if k, ok := h.rvr.(squadKeyInfo); ok && k.SquadLeadKeyAlways() {
+		return key + "_always"
+	}
+	return key
+}
+
 // OnPanelChange registers fn, called when a raid started or stopped so the
 // panel on display is refreshed at once.
 func (h *CommandHandlers) OnPanelChange(fn func(guildID snowflake.ID)) { h.panelChanged = fn }
@@ -66,6 +79,8 @@ func (h *CommandHandlers) registerPanel(r handler.Router) {
 	r.ButtonComponent(panelStopID, h.withManagerButton(h.handlePanelStop))
 	r.ButtonComponent(panelStatusID, h.withGuildButton(h.handlePanelStatus))
 	r.ButtonComponent(panelHelpID, h.withGuildButton(h.handlePanelHelp))
+	r.ButtonComponent(panelFeedbackID, h.withGuildButton(h.handlePanelFeedback))
+	r.ButtonComponent(feedbackID+"/{target}/{state}", h.withGuildButton(h.handleFeedbackToggle))
 	r.SelectMenuComponent(panelSquadsID, h.withGuildSelectMenu(h.handlePanelSquads))
 	r.ButtonComponent(panelAccessID, h.withGuildButton(h.handleAccessRequest))
 	r.ButtonComponent(panelOpenID, h.withGuildButton(h.handleAccessMode(true)))
@@ -118,9 +133,11 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 	if live == nil || running {
 		raid = append(raid, discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID))
 	}
-	raid = append(raid,
-		discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID),
-		discord.NewSecondaryButton(loc.T("panel.btn.help"), panelHelpID))
+	raid = append(raid, discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID))
+	if running && h.feedbackAvailable(guildID) {
+		raid = append(raid, discord.NewPrimaryButton(loc.T("panel.btn.feedback"), panelFeedbackID))
+	}
+	raid = append(raid, discord.NewSecondaryButton(loc.T("panel.btn.help"), panelHelpID))
 	rows := []discord.LayoutComponent{discord.NewActionRow(raid...)}
 
 	// Row 2: the players.
@@ -170,6 +187,10 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 			embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.channels"), Value: ch})
 		}
 	}
+	if running && h.feedbackAvailable(guildID) {
+		f, _ := h.feedback()
+		embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("feedback.title"), Value: feedbackSummary(loc, f.ListenerFeeds(guildID))})
+	}
 	if squadsOn && !running {
 		embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.squads"),
 			Value: loc.T("panel.squads.value", "N", squads.SquadTarget(guildID), "Max", squads.SquadCapacity(guildID))})
@@ -183,7 +204,7 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 	}
 	help := []string{loc.T("panel.help.start"), loc.T("panel.help.stop")}
 	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
-		help = append(help, loc.T("panel.help.squads"))
+		help = append(help, loc.T(h.squadKeyText("panel.help.squads")))
 	}
 	if sortOn {
 		help = append(help, loc.T("panel.help.sort", "Waiting", sorter.ClassSortWaiting()))
@@ -266,7 +287,7 @@ func (h *CommandHandlers) buildPanelHelp(guildID snowflake.ID, loc *i18n.Localiz
 		fields = append(fields, discord.EmbedField{Name: loc.T("panel.field.squads"), Value: loc.T("panel.faq.squad_count")})
 	}
 	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
-		fields = append(fields, discord.EmbedField{Name: loc.T("panel.faq.squads_title"), Value: loc.T("panel.faq.squads")})
+		fields = append(fields, discord.EmbedField{Name: loc.T("panel.faq.squads_title"), Value: loc.T(h.squadKeyText("panel.faq.squads"))})
 	}
 	fields = append(fields, discord.EmbedField{Name: loc.T("panel.faq.roles_title"), Value: loc.T("panel.faq.roles")})
 	return discord.MessageCreate{

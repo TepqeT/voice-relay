@@ -1,15 +1,15 @@
 # Déploiement sur le VPS (bots + site)
 
-Le VPS fait tourner le bot principal, les bots relais et le site d'administration, en HTTPS via Caddy (certificat Let's Encrypt automatique). Une seule instance, sans faction.
+Le VPS fait tourner le bot principal, les bots relais et le site d'administration, en HTTPS via Caddy (certificat Let's Encrypt automatique). Une seule instance.
 
-Prévoir 30 à 45 minutes, hors raid.
+Prévoir 30 à 45 minutes, hors session.
 
 ## Avant de commencer
 
 - Le VPS : Ubuntu 24.04, accès SSH avec sudo, son adresse IP publique.
 - Un nom de domaine dont tu gères le DNS (par exemple `relais.ton-domaine.fr`), ou à défaut `<ip-avec-tirets>.sslip.io` (gratuit, sans DNS à gérer).
 - Un accès au portail Discord Developer pour l'application "Voice Relay".
-- Arrêter le déploiement du PC au moment de lancer la VM, pas avant (étape 7). Deux instances avec les mêmes tokens répondraient deux fois à chaque commande.
+- Une seule instance par jeu de tokens : deux instances avec les mêmes tokens répondraient deux fois à chaque commande.
 
 ## 1. DNS
 
@@ -24,14 +24,14 @@ nslookup relais.ton-domaine.fr
 1. https://discord.com/developers/applications > Voice Relay > **OAuth2**.
 2. **Redirects** > Add : `https://relais.ton-domaine.fr/callback` > Save.
 3. **Client Secret** > Reset Secret > le copier pour l'étape 5 (il ne sera plus affiché).
-4. Onglet **Bot** : laisser **Public Bot** désactivé tant que seul Aion 2 France l'utilise. Il faudra l'activer, ainsi que pour chaque Héraut, le jour où d'autres serveurs pourront l'inviter depuis le site.
+4. Onglet **Bot** : laisser **Public Bot** désactivé tant qu'un seul serveur l'utilise. Il faudra l'activer, ainsi que pour chaque bot relais, le jour où d'autres serveurs pourront l'inviter depuis le site.
 
 ## 3. Installation de la VM
 
 Le dépôt est privé : la VM n'y a pas encore accès. Copier seulement le script depuis le clone du PC, puis le lancer sur la VM :
 
 ```
-scp C:\Users\toi\Documents\DaevaTool\aion-relay\voice-relay\deploy\ovh\installer.sh ubuntu@IP_DE_LA_VM:/tmp/
+scp voice-relay\deploy\ovh\installer.sh ubuntu@IP_DE_LA_VM:/tmp/
 ssh ubuntu@IP_DE_LA_VM
 cd /tmp
 sudo bash installer.sh                 # phase 1 : simulation, ne change rien
@@ -45,7 +45,7 @@ Il clone ensuite le dépôt dans `/opt/voice-relay` et prépare `.env` vide en d
 
 ## 4. Copier les sons personnalisés (facultatif)
 
-Si les annonces vocales générées sur le PC doivent être gardées, copier le dossier `C:\Users\toi\source\aion-relay\sounds` vers `/opt/voice-relay/deploy/ovh/sounds` (WinSCP ou `scp`), puis décommenter les lignes `./sounds:/sounds:ro` dans `docker-compose.yml`. Sans cela, les sons par défaut de l'image sont utilisés.
+Aucun son n'est fourni. Pour un son de début ou de fin de session, déposer des fichiers `.ogg` dans `/opt/voice-relay/deploy/ovh/sounds`, décommenter la ligne `./sounds:/sounds:ro` et `SOUND_ON_START` / `SOUND_ON_STOP` dans `docker-compose.yml`.
 
 ## 5. Secrets
 
@@ -58,17 +58,9 @@ sudo -u voicerelay nano /opt/voice-relay/deploy/ovh/.env
 - Paiement (facultatif) : `PAYPAL_URL` (lien PayPal.me) et `PRICE_LABEL` (texte du prix, par exemple `3 EUR / mois`).
 - Copier les valeurs directement d'un fichier à l'autre, sans les coller dans une conversation ni un ticket.
 
-## 6. Reprendre l'état du PC (facultatif mais conseillé)
+## 6. Bascule
 
-Pour garder les réglages `/setup`, copier `data\store.yaml` du PC vers `/opt/voice-relay/deploy/ovh/data/store.yaml`, puis :
-
-```
-sudo chown -R voicerelay:voicerelay /opt/voice-relay/deploy/ovh/data
-```
-
-## 7. Bascule
-
-1. Arrêter toute autre instance qui utilise les mêmes tokens (ancien PC).
+1. Arrêter toute autre instance qui utilise les mêmes tokens.
 2. Sur la VM :
 
 ```
@@ -81,7 +73,7 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
    - `docker compose ps` : deux conteneurs `running` (relay, caddy).
    - `docker compose logs -f relay` : `bot is ready`, puis `web site listening`.
    - `docker compose logs caddy` : `certificate obtained successfully`.
-   - Ouvrir `https://relais.ton-domaine.fr` > Se connecter avec Discord > Aion 2 France.
+   - Ouvrir `https://relais.ton-domaine.fr` > Se connecter avec Discord > ton serveur.
 
 ## Abonnements
 
@@ -89,11 +81,11 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
 - L'abonnement est attaché au **compte Discord**, pas à un serveur : son titulaire l'active sur chaque serveur qu'il gère ("Activer mon abonnement ici" dans "Mes serveurs"), autant que le permet le nombre maximum fixé (0 = illimité). Un serveur déjà couvert par un autre compte actif ne peut pas être pris.
 - Administrateur : le propriétaire de l'application Discord du bot principal (toi) l'est automatiquement, lien **Administration** en haut du site. Autres administrateurs : `SITE_ADMINS` (identifiants Discord séparés par des virgules).
 - Offrir un abonnement : Administration > identifiant Discord du compte (mode développeur activé, clic droit sur la personne > Copier l'identifiant) > **À vie** ou **Jusqu'au** une date > nombre de serveurs maximum > Offrir. Rien à payer, l'abonnement est marqué "offert". La personne se connecte ensuite et l'active sur ses serveurs.
-- Suivi des prêts : pour chaque compte, l'administration affiche le nombre de serveurs couverts sur la limite, et pour chaque serveur le nombre de membres, la date d'activation, le nombre de raids et le dernier raid. Un serveur est marqué suspect quand le titulaire n'en est plus membre ou n'y a pas "Gérer le serveur" (abonnement prêté). Les comptes avec des serveurs suspects apparaissent en premier.
+- Suivi des prêts : pour chaque compte, l'administration affiche le nombre de serveurs couverts sur la limite, et pour chaque serveur le nombre de membres, la date d'activation, le nombre de sessions et la dernière session. Un serveur est marqué suspect quand le titulaire n'en est plus membre ou n'y a pas "Gérer le serveur" (abonnement prêté). Les comptes avec des serveurs suspects apparaissent en premier.
 - Brider : changer le nombre maximum de serveurs d'un compte (bouton **Brider** : les serveurs déjà activés restent, les nouveaux sont refusés au-delà), retirer un serveur précis (**Retirer ce serveur**), ou retirer tout l'abonnement.
 - Retirer : bouton **Retirer**. Les serveurs restent associés au compte et le bot annonce que l'abonnement a pris fin.
 - Les abonnements et les serveurs activés sont dans `deploy/ovh/data/subscriptions.json` (à sauvegarder avec `data`).
-- Blocage des raids : désactivé par défaut. Une fois `SUBSCRIPTION_REQUIRED: "true"` activé, un lancement de raid sur un serveur non couvert affiche, dans la langue du serveur : pas d'abonnement, abonnement expiré le jj/mm/aaaa, ou abonnement terminé, avec le lien du site. Avant d'activer : t'offrir un abonnement à vie et l'activer sur Aion 2 France depuis le site.
+- Blocage des sessions : désactivé par défaut. Une fois `SUBSCRIPTION_REQUIRED: "true"` activé, un lancement de session sur un serveur non couvert affiche, dans la langue du serveur : pas d'abonnement, abonnement expiré le jj/mm/aaaa, ou abonnement terminé, avec le lien du site. Avant d'activer : t'offrir un abonnement à vie et l'activer sur ton serveur depuis le site.
 - Paiement sur le site (PayPal Checkout) : l'acheteur choisit une formule et paie dans la fenêtre PayPal ouverte depuis le site, avec un compte PayPal ou une carte. L'argent arrive sur le compte PayPal propriétaire de l'application, l'abonnement est activé tout seul et le paiement apparaît dans Administration > Paiements reçus (fichier `data/payments.jsonl`, à sauvegarder).
   1. https://developer.paypal.com > Apps & Credentials > Create App (type Merchant). Un compte PayPal Business est nécessaire pour les identifiants Live.
   2. Dans `.env` : `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE=sandbox`, `PAYPAL_PLANS=30d=4.99,365d=39,life=79` (durée=prix).
@@ -101,7 +93,7 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
   4. Passer aux identifiants de l'onglet Live et `PAYPAL_MODE=live`, relancer.
 - Ancien mode (lien `PAYPAL_URL`) : utilisé seulement si le paiement sur le site n'est pas configuré.
 - Support : bouton "Contacter le support" en bas de chaque page, vers ton profil Discord (propriétaire de l'application) ; `SUPPORT_URL` pour un autre lien.
-- Désinstaller : page du serveur > Désinstaller (case à cocher). Arrête le raid, supprime les salons du raid, fait partir le bot principal et les bots relais, libère l'abonnement. Les rôles restent.
+- Désinstaller : page du serveur > Désinstaller (case à cocher). Arrête la session, supprime les salons, fait partir le bot principal et les bots relais, libère l'abonnement. Les rôles restent.
 
 ## Mettre à jour plus tard
 
@@ -109,7 +101,7 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
 cd /opt/voice-relay/deploy/ovh && sudo -u voicerelay APPLY=true ./mettre-a-jour.sh
 ```
 
-Le script récupère `main`, lance les tests, reconstruit et redémarre. À faire hors raid.
+Le script récupère `main`, lance les tests, reconstruit et redémarre. À faire hors session.
 
 ## Sauvegarde
 
@@ -126,9 +118,9 @@ D'abord : Administration > Journal des installations (ou la section Problèmes r
 | "Invalid OAuth2 redirect_uri" sur Discord | Redirection absente ou différente | Étape 2 : l'adresse doit être exactement `https://SITE_DOMAIN/callback` |
 | Site : "Discord n'a pas répondu correctement" | Client Secret faux ou réinitialisé depuis | Refaire Reset Secret, mettre à jour `.env`, relancer |
 | Commandes en double sur Discord | Une autre instance tourne avec les mêmes tokens | L'arrêter |
-| Le site affiche "Bot absent" pour Aion 2 France | Le bot n'a pas fini de démarrer | Attendre `bot is ready` puis recharger |
+| Le site affiche "Bot absent" pour ton serveur | Le bot n'a pas fini de démarrer | Attendre `bot is ready` puis recharger |
 
 ## Limites de cette version du site
 
-- Les noms des rôles créés sont ceux du compose (`RAID_LEAD_ROLE`, `SQUAD_LEAD_ROLE`, `ACCESS_ROLE`, `BOARD_ROLE`, `CLASS_ROLES`). Les modifier depuis le site viendra avec la configuration en base.
+- Les noms des rôles créés sont ceux du compose (`SPEAKER_ROLE`, `SQUAD_LEAD_ROLE`, `ACCESS_ROLE`, `BOARD_ROLE`, `CLASS_ROLES`). Les modifier depuis le site viendra avec la configuration en base.
 - Sessions en mémoire : un redémarrage déconnecte les administrateurs, qui se reconnectent en un clic.

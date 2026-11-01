@@ -108,11 +108,11 @@ type RvRConfig struct {
 	PrioritySpeaker bool
 	// SoundsDir holds the Ogg Opus announcement files. SOUNDS_DIR, default /sounds.
 	SoundsDir string
-	// SoundOnStart is played when a raid starts. SOUND_ON_START, default "debut";
+	// SoundOnStart is played when a session starts. SOUND_ON_START, default none;
 	// "none" disables it.
 	SoundOnStart string
 	// SoundOnStop is played before the bots leave on /stop. SOUND_ON_STOP,
-	// default "fin"; "none" disables it.
+	// default none.
 	SoundOnStop string
 	// ReportsDir receives the JSON quality reports. REPORTS_DIR, default
 	// "reports" next to the store file; "none" disables saving.
@@ -134,13 +134,14 @@ type RvRConfig struct {
 	// from their squad channel. SQUAD_LEAD_ROLE, default "Squad Lead";
 	// "none" disables squad calls.
 	SquadLeadRole string
-	// RaidLeadRole is the role (name or ID) of the raid leads: the only members
-	// who can join the raid lead channel and whose voice is relayed. Used when
-	// no capture role was chosen with /setup. RAID_LEAD_ROLE, default
-	// "Raid Lead"; "none" disables the fallback.
+	// RaidLeadRole is the speaker role (name or ID): the only members who can
+	// join the speaker channel and whose voice is relayed to the listener
+	// channels. Used when no capture role was chosen with /setup.
+	// SPEAKER_ROLE (or RAID_LEAD_ROLE), default "Speaker"; "none" disables the
+	// fallback.
 	RaidLeadRole string
 	// SquadLeadKey: "priority" relays squad leads only with Discord's priority
-	// push-to-talk key, "always" whenever they speak. SQUAD_LEAD_KEY, default priority.
+	// push-to-talk key, "always" whenever they speak. SQUAD_LEAD_KEY, default always.
 	SquadLeadKey string
 	// SquadLeadsToSquads also relays squad leads to the other squad channels
 	// (each squad hears the raid leads and every other squad lead, never
@@ -155,38 +156,37 @@ type RvRConfig struct {
 	Channels ChannelsConfig
 }
 
-// ChannelsConfig holds the dynamic raid channel settings. One relay instance
-// serves one faction.
+// ChannelsConfig holds the dynamic channel settings (speaker channel and
+// listener channels created at each start).
 type ChannelsConfig struct {
 	// Enabled creates the category and voice channels when a raid starts and
 	// deletes them when it stops. DYNAMIC_CHANNELS, default false.
 	Enabled bool
-	// Faction is the faction name used in the category name. FACTION_NAME.
-	Faction string
-	// FactionRole is the role (name or ID) that sees the channels; empty makes
-	// them visible to everyone. FACTION_ROLE, default the faction name.
-	FactionRole string
-	// EventLabel names the event in category names, user commands and
-	// messages, for games where "RvR" means nothing. EVENT_LABEL, default "RvR".
+	// EventLabel names the tool in user commands and messages. EVENT_LABEL,
+	// default "Voice Relay".
 	EventLabel string
-	// Category is the category name. RVR_CATEGORY, default "<label> <faction>".
+	// Category is the category name. CATEGORY (or RVR_CATEGORY), default the
+	// label.
 	Category string
-	// After is the existing category (name or ID) the raid category is placed
-	// right below. RVR_CATEGORY_AFTER, default empty (bottom of the list).
+	// After is the existing category (name or ID) the category is placed
+	// right below. CATEGORY_AFTER (or RVR_CATEGORY_AFTER), default empty
+	// (bottom of the list).
 	After string
-	// RaidLeadName is the raid lead channel name. RAID_LEAD_CHANNEL, default "Raid Lead".
+	// RaidLeadName is the speaker channel name. SPEAKER_CHANNEL (or
+	// RAID_LEAD_CHANNEL), default "Speaker".
 	RaidLeadName string
-	// SquadName prefixes the numbered squad channels. SQUAD_CHANNEL, default "Squad".
+	// SquadName prefixes the numbered listener channels. LISTENER_CHANNEL (or
+	// SQUAD_CHANNEL), default "Listener".
 	SquadName string
-	// SquadCount is the most squad channels, capped by the enabled relay
-	// bots. SQUAD_COUNT, default "all": one squad per relay bot.
+	// SquadCount is the most listener channels, capped by the enabled relay
+	// bots. LISTENER_COUNT (or SQUAD_COUNT), default "all": one per relay bot.
 	SquadCount int
 	// Region pins the Discord voice region of every channel (for example
 	// "rotterdam"); empty lets Discord choose. VOICE_REGION.
 	Region string
 	// StateFile remembers the channels created, next to the store file.
-	// AccessRole (name or ID), when set, replaces FactionRole as the role that
-	// sees and joins the raid channels: only members vetted by the RvR board.
+	// AccessRole (name or ID), when set, is the role that
+	// sees and joins the listener channels while restricted.
 	// ACCESS_ROLE, default none.
 	AccessRole string
 	// BoardRole (name or ID) may grant and revoke AccessRole from Discord
@@ -311,16 +311,16 @@ func loadRvR(store string) RvRConfig {
 	return RvRConfig{
 		PrioritySpeaker:    parseBool("PRIORITY_SPEAKER", true),
 		SoundsDir:          envOr("SOUNDS_DIR", "/sounds"),
-		SoundOnStart:       noneToEmpty(envOr("SOUND_ON_START", "debut")),
-		SoundOnStop:        noneToEmpty(envOr("SOUND_ON_STOP", "fin")),
+		SoundOnStart:       noneToEmpty(envOr("SOUND_ON_START", "")),
+		SoundOnStop:        noneToEmpty(envOr("SOUND_ON_STOP", "")),
 		ReportsDir:         noneToEmpty(reports),
 		ReportLang:         strings.ToLower(envOr("REPORT_LANG", "en")),
 		ReportToDiscord:    parseBool("REPORT_TO_DISCORD", true),
 		DiagDir:            noneToEmpty(diagDir),
 		DiagInterval:       diagInterval,
 		SquadLeadRole:      noneToEmpty(envOr("SQUAD_LEAD_ROLE", "Squad Lead")),
-		RaidLeadRole:       noneToEmpty(envOr("RAID_LEAD_ROLE", "Raid Lead")),
-		SquadLeadKey:       squadKey(envOr("SQUAD_LEAD_KEY", "priority")),
+		RaidLeadRole:       noneToEmpty(envOr2("SPEAKER_ROLE", "RAID_LEAD_ROLE", "Speaker")),
+		SquadLeadKey:       squadKey(envOr("SQUAD_LEAD_KEY", "always")),
 		SquadLeadsToSquads: parseBool("SQUAD_LEADS_TO_SQUADS", false),
 		PanelChannel:       noneToEmpty(strings.TrimSpace(os.Getenv("PANEL_CHANNEL"))),
 		Channels:           loadChannels(store),
@@ -331,28 +331,25 @@ func loadRvR(store string) RvRConfig {
 const MaxSquads = 45
 
 func loadChannels(store string) ChannelsConfig {
-	faction := envOr("FACTION_NAME", "")
-	label := envOr("EVENT_LABEL", "RvR")
-	category := envOr("RVR_CATEGORY", strings.TrimSpace(label+" "+faction))
+	label := envOr("EVENT_LABEL", "Voice Relay")
+	category := envOr2("CATEGORY", "RVR_CATEGORY", label)
 	// Default: one squad per relay bot available (the start caps the count
 	// at the enabled relay bots).
 	count := MaxSquads
-	if v := strings.TrimSpace(os.Getenv("SQUAD_COUNT")); v != "" && !strings.EqualFold(v, "all") {
+	if v := strings.TrimSpace(envOr2("LISTENER_COUNT", "SQUAD_COUNT", "")); v != "" && !strings.EqualFold(v, "all") {
 		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxSquads {
 			count = n
 		} else {
-			slog.Warn("invalid SQUAD_COUNT (1 to 45 or all); one squad per relay bot", slog.String("value", v))
+			slog.Warn("invalid LISTENER_COUNT (1 to 45 or all); one listener channel per relay bot", slog.String("value", v))
 		}
 	}
 	return ChannelsConfig{
 		Enabled:       parseBool("DYNAMIC_CHANNELS", false),
-		Faction:       faction,
 		EventLabel:    label,
-		FactionRole:   noneToEmpty(envOr("FACTION_ROLE", faction)),
 		Category:      category,
-		After:         noneToEmpty(envOr("RVR_CATEGORY_AFTER", "")),
-		RaidLeadName:  envOr("RAID_LEAD_CHANNEL", "Raid Lead"),
-		SquadName:     envOr("SQUAD_CHANNEL", "Squad"),
+		After:         noneToEmpty(envOr2("CATEGORY_AFTER", "RVR_CATEGORY_AFTER", "")),
+		RaidLeadName:  envOr2("SPEAKER_CHANNEL", "RAID_LEAD_CHANNEL", "Speaker"),
+		SquadName:     envOr2("LISTENER_CHANNEL", "SQUAD_CHANNEL", "Listener"),
 		SquadCount:    count,
 		Region:        noneToEmpty(envOr("VOICE_REGION", "")),
 		StateFile:     filepath.Join(filepath.Dir(store), "rvr-channels.json"),
@@ -387,6 +384,14 @@ func squadKey(v string) string {
 		slog.Warn("invalid SQUAD_LEAD_KEY; using priority", slog.String("value", v))
 		return "priority"
 	}
+}
+
+// envOr2 reads key, else its former name old, else def.
+func envOr2(key, old, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return envOr(old, def)
 }
 
 func envOr(key, def string) string {

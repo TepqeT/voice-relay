@@ -1,5 +1,5 @@
 # Voice Relay sur le VPS : bot principal + bots relais + site d'administration
-# + HTTPS automatique. Une seule instance, sans faction.
+# + HTTPS automatique. Une seule instance.
 # A lancer depuis ce dossier (deploy/ovh du depot clone sur le VPS).
 #   Premier lancement / mise a jour : ./mettre-a-jour.sh   (APPLY=false puis true)
 #   Logs                          : docker compose logs -f relay   (ou caddy)
@@ -17,7 +17,7 @@ x-relay: &relay
       max-size: "10m"
       max-file: "5"
 
-x-rvr-env: &rvr-env
+x-relay-env: &relay-env
   # Dates des abonnements et des journaux a l'heure francaise
   TZ: Europe/Paris
   STORE_PATH: /data/store.yaml
@@ -25,31 +25,38 @@ x-rvr-env: &rvr-env
   SESSION_IDLE_TIMEOUT: 30m
   PRIORITY_SPEAKER: "true"
   SOUNDS_DIR: /sounds
-  SOUND_ON_START: debut
-  SOUND_ON_STOP: fin
+  # Sons de debut et de fin de session : aucun fourni, voir sounds/README.md.
+  # SOUND_ON_START: start
+  # SOUND_ON_STOP: stop
   REPORT_TO_DISCORD: "true"
   REPORT_LANG: en
   REPORTS_DIR: /data/reports
   DIAG_DIR: /data/diagnostics
   DIAG_INTERVAL: 10s
+  # Qui entend qui : le bot principal capte le salon Speaker (role Speaker
+  # seulement) et chaque bot relais diffuse dans son salon Listener. Le
+  # Squad Lead de chaque salon Listener est entendu dans le salon Speaker
+  # (jamais dans les autres Listener) ; les Speakers coupent ce retour depuis
+  # le panneau, salon par salon ou en entier.
+  SPEAKER_ROLE: "Speaker"
   SQUAD_LEAD_ROLE: "Squad Lead"
   SQUAD_LEAD_KEY: always
-  SQUAD_LEADS_TO_SQUADS: "true"
-  RAID_LEAD_ROLE: "Raid Lead"
-  # EVENT_LABEL: "RvR"
   DYNAMIC_CHANNELS: "true"
-  # Salon texte ou le panneau de commande (Start, Stop, Status) reste affiche
-  # en permanence ; cree par le bot s'il manque, en lecture seule pour les
-  # membres. Langue du serveur choisie dans /setup, anglais par defaut.
-  PANEL_CHANNEL: "raid-panel"
-  RAID_LEAD_CHANNEL: "Raid Lead"
-  SQUAD_CHANNEL: "Squad"
-  # Une escouade par bot relais disponible (11 aujourd'hui) ; un nombre pour
-  # en limiter le nombre.
-  SQUAD_COUNT: "all"
+  # Categorie permanente : salon du panneau + salons vocaux de la session.
+  CATEGORY: "Voice Relay"
+  # Salon texte ou le panneau de commande reste affiche en permanence ; cree
+  # par le bot s'il manque, en lecture seule pour les membres. Langue du
+  # serveur choisie dans /setup, anglais par defaut.
+  PANEL_CHANNEL: "control-panel"
+  SPEAKER_CHANNEL: "Speaker"
+  LISTENER_CHANNEL: "Listener"
+  # Un salon Listener par bot relais disponible (11 aujourd'hui) ; un nombre
+  # pour en limiter le nombre.
+  LISTENER_COUNT: "all"
   VOICE_REGION: ""
-  # CLASS_ROLES: "Gladiateur, Templier, Assassin, Rodeur, Sorcier, Spiritualiste, Clerc, Aede"
-  # WAITING_CHANNEL: "Attente"
+  # Tri par classe (facultatif) : roles de classe, salon d'attente, regle.
+  # CLASS_ROLES: "Tank, Healer, DPS"
+  # WAITING_CHANNEL: "Waiting"
   # CLASS_RULE: "balanced"
 
 services:
@@ -60,15 +67,13 @@ services:
     container_name: voice-relay
     env_file: .env
     environment:
-      <<: *rvr-env
-      # Pas de faction : la categorie s'appelle "RvR" et les commandes
-      # "RvR: ..." (en francais pour les clients Discord en francais). Le role
-      # d'acces est cree par le bot depuis le site (etape Roles). Les Raid
-      # Leads et Squad Leads valident les demandes depuis le panneau et
-      # peuvent ouvrir le raid a tout le monde. BOARD_ROLE (facultatif) ajoute
-      # un role de plus qui valide les acces.
-      ACCESS_ROLE: "Raid Access"
-      # BOARD_ROLE: "Raid Board"
+      <<: *relay-env
+      # Role d'acces aux salons Listener en mode restreint, cree par le bot
+      # depuis le site (etape Roles). Speakers et Squad Leads valident les
+      # demandes depuis le panneau et peuvent ouvrir les salons a tout le
+      # monde. BOARD_ROLE (facultatif) ajoute un role qui valide les acces.
+      ACCESS_ROLE: "Listener Access"
+      # BOARD_ROLE: "Board"
       # Site d'administration (v29), joint par caddy sur le reseau interne
       # uniquement. DISCORD_CLIENT_SECRET vient de .env.
       WEB_ADDR: ":8080"
@@ -90,8 +95,8 @@ services:
       # Abonnements (v30), dans data/subscriptions.json. Le proprietaire de
       # l'application Discord administre le site ; autres administrateurs :
       # SITE_ADMINS: "123456789012345678"
-      # true : un serveur sans abonnement actif ne peut plus lancer de raid.
-      # Avant d'activer : s'offrir un abonnement a vie et l'activer sur Aion 2 France.
+      # true : un serveur sans abonnement actif ne peut plus lancer de session.
+      # Avant d'activer : s'offrir un abonnement a vie et l'activer sur son serveur.
       # SUBSCRIPTION_REQUIRED: "true"
     expose:
       - "8080"
@@ -102,7 +107,8 @@ services:
 
   # HTTPS : certificat Let's Encrypt obtenu et renouvele automatiquement.
   caddy:
-    image: caddy:2.10.0-alpine
+    # Version figee par son empreinte : le meme binaire a chaque mise a jour.
+    image: caddy:2.10.0-alpine@sha256:ae4458638da8e1a91aafffb231c5f8778e964bca650c8a8cb23a7e8ac557aa3c
     container_name: voice-relay-caddy
     restart: unless-stopped
     depends_on: [relay]

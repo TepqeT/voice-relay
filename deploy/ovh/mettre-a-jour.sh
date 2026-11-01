@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Met a jour et (re)demarre Voice Relay sur la VM : recupere main, lance les
-# tests, reconstruit l'image et redemarre les conteneurs. A lancer hors raid.
+# tests, reconstruit l'image et redemarre les conteneurs. A lancer hors session.
 # Phase 1 : APPLY=false (defaut) verifie et affiche. Phase 2 : APPLY=true.
 set -euo pipefail
 

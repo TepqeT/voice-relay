@@ -14,7 +14,7 @@ import (
 type UninstallReport struct {
 	RaidStopped     bool
 	ChannelsDeleted bool
-	Left            []string // relay bots (Hérauts) that left the server
+	Left            []string // relay bots that left the server
 	Failed          []string // relay bots that could not leave
 	OwnerLeft       bool
 }

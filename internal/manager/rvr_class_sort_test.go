@@ -19,23 +19,23 @@ func TestGroupPlayers(t *testing.T) {
 	const (
 		waiting snowflake.ID = 50
 		squad1  snowflake.ID = 51
-		clerc   snowflake.ID = 900
+		healer  snowflake.ID = 900
 		templar snowflake.ID = 901
 		lead    snowflake.ID = 902
 		other   snowflake.ID = 903
 	)
-	classes := map[snowflake.ID]string{clerc: "Clerc", templar: "Templier"}
+	classes := map[snowflake.ID]string{healer: "Healer", templar: "Tank"}
 	got := groupPlayers([]memberVoice{
-		{UserID: 3, ChannelID: waiting, Roles: []snowflake.ID{clerc, other}},
-		{UserID: 1, ChannelID: waiting, Roles: []snowflake.ID{clerc, templar}},
+		{UserID: 3, ChannelID: waiting, Roles: []snowflake.ID{healer, other}},
+		{UserID: 1, ChannelID: waiting, Roles: []snowflake.ID{healer, templar}},
 		{UserID: 2, ChannelID: waiting, Roles: []snowflake.ID{templar, lead}},
 		{UserID: 4, ChannelID: squad1},
 	}, classes, lead)
 	want := map[snowflake.ID][]classsort.Player{
 		waiting: {
-			{ID: "1", Classes: []string{"Clerc", "Templier"}},
-			{ID: "2", Classes: []string{"Templier"}, SquadLead: true},
-			{ID: "3", Classes: []string{"Clerc"}},
+			{ID: "1", Classes: []string{"Healer", "Tank"}},
+			{ID: "2", Classes: []string{"Tank"}, SquadLead: true},
+			{ID: "3", Classes: []string{"Healer"}},
 		},
 		squad1: {{ID: "4"}},
 	}
@@ -47,16 +47,16 @@ func TestGroupPlayers(t *testing.T) {
 func TestRaidOverwritesWaitingChannel(t *testing.T) {
 	const (
 		guildID snowflake.ID = 100
-		faction snowflake.ID = 200
+		view    snowflake.ID = 200
 		caller  snowflake.ID = 300
 		squad   snowflake.ID = 400
 		ownerID snowflake.ID = 1
 	)
-	ow := raidOverwrites(guildID, faction, caller, squad, []snowflake.ID{ownerID}, channelWaiting)
+	ow := raidOverwrites(guildID, view, caller, squad, []snowflake.ID{ownerID}, channelWaiting)
 	if _, deny, _ := overwriteFor(ow, guildID); !deny.Has(discord.PermissionViewChannel | discord.PermissionConnect) {
 		t.Fatalf("@everyone deny = %v", deny)
 	}
-	if allow, _, _ := overwriteFor(ow, faction); !allow.Has(voiceMember) {
+	if allow, _, _ := overwriteFor(ow, view); !allow.Has(voiceMember) {
 		t.Fatalf("access role allow = %v, want the squads' access", allow)
 	}
 	if _, _, ok := overwriteFor(ow, squad); ok {
@@ -76,7 +76,7 @@ func TestRaidChannelsAllIncludesWaiting(t *testing.T) {
 
 func TestClassSortDisabledByDefault(t *testing.T) {
 	m := &Service{}
-	m.ConfigureClassSort(ClassSortOptions{ClassRoles: []string{"Clerc"}})
+	m.ConfigureClassSort(ClassSortOptions{ClassRoles: []string{"Healer"}})
 	if m.ClassSortEnabled() {
 		t.Fatal("enabled without a waiting channel")
 	}
@@ -90,7 +90,7 @@ func TestClassSortDisabledByDefault(t *testing.T) {
 	if len(m.sort.timers) != 0 {
 		t.Fatal("timer scheduled while disabled")
 	}
-	m.ConfigureClassSort(ClassSortOptions{ClassRoles: []string{"Clerc"}, Waiting: "Attente"})
+	m.ConfigureClassSort(ClassSortOptions{ClassRoles: []string{"Healer"}, Waiting: "Attente"})
 	if !m.ClassSortEnabled() || !m.CanSortPlayers(1, nil, discord.PermissionManageGuild) {
 		t.Fatal("managers must be able to sort once configured")
 	}
@@ -102,21 +102,21 @@ func TestSortPlayersMovesAndSurvivesPermissionErrors(t *testing.T) {
 		waiting  snowflake.ID = 50
 		squadA   snowflake.ID = 51
 		squadB   snowflake.ID = 52
-		clercID  snowflake.ID = 900
+		healerID snowflake.ID = 900
 		leadRole snowflake.ID = 901
 	)
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddRole(discord.Role{ID: clercID, GuildID: guildID, Name: "Clerc"})
+	caches.AddRole(discord.Role{ID: healerID, GuildID: guildID, Name: "Healer"})
 	caches.AddRole(discord.Role{ID: leadRole, GuildID: guildID, Name: "Chef d'escouade"})
 	join := func(user snowflake.ID, ch snowflake.ID, roles ...snowflake.ID) {
 		caches.AddMember(discord.Member{GuildID: guildID, User: discord.User{ID: user}, RoleIDs: roles})
 		c := ch
 		caches.AddVoiceState(discord.VoiceState{GuildID: guildID, UserID: user, ChannelID: &c})
 	}
-	join(1, waiting, clercID)
-	join(2, waiting, clercID)
-	join(3, waiting)                    // no class
-	join(4, waiting, clercID, leadRole) // squad lead
+	join(1, waiting, healerID)
+	join(2, waiting, healerID)
+	join(3, waiting)                     // no class
+	join(4, waiting, healerID, leadRole) // squad lead
 	caches.AddMember(discord.Member{GuildID: guildID, User: discord.User{ID: 99, Bot: true}})
 	bw := waiting
 	caches.AddVoiceState(discord.VoiceState{GuildID: guildID, UserID: 99, ChannelID: &bw})
@@ -136,7 +136,7 @@ func TestSortPlayersMovesAndSurvivesPermissionErrors(t *testing.T) {
 		moved = append(moved, userID, channelID)
 		return nil
 	}
-	m.ConfigureClassSort(ClassSortOptions{ClassRoles: []string{"clerc"}, Waiting: "Attente"})
+	m.ConfigureClassSort(ClassSortOptions{ClassRoles: []string{"healer"}, Waiting: "Attente"})
 
 	rep, err := m.SortPlayers(context.Background(), guildID)
 	if err != nil {

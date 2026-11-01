@@ -109,7 +109,7 @@ func (m *Service) ClassSortEnabled() bool {
 func (m *Service) ClassSortWaiting() string { return m.sort.opts.Waiting }
 
 // CanSortPlayers reports whether a member may run the sort: server managers,
-// otherwise the raid lead role together with the faction role.
+// otherwise the speaker role.
 func (m *Service) CanSortPlayers(guildID snowflake.ID, roleIDs []snowflake.ID, perms discord.Permissions) bool {
 	if !m.ClassSortEnabled() {
 		return false
@@ -118,14 +118,7 @@ func (m *Service) CanSortPlayers(guildID snowflake.ID, roleIDs []snowflake.ID, p
 		return true
 	}
 	caller, ok := m.callerRole(guildID)
-	if !ok || !slices.Contains(roleIDs, caller) {
-		return false
-	}
-	if f := m.channels.opts.FactionRole; f != "" {
-		faction := m.resolveRole(guildID, f)
-		return faction != 0 && slices.Contains(roleIDs, faction)
-	}
-	return true
+	return ok && slices.Contains(roleIDs, caller)
 }
 
 // OnVoiceChannelJoin schedules a sort when a member enters the waiting
@@ -226,7 +219,7 @@ func (m *Service) SortPlayers(ctx context.Context, guildID snowflake.ID) (SortRe
 
 func (m *Service) moveMember(ctx context.Context, guildID, userID, channelID snowflake.ID) error {
 	_, err := m.ownerClient.Rest.UpdateMember(guildID, userID, discord.MemberUpdate{ChannelID: &channelID},
-		rest.WithCtx(ctx), rest.WithReason("RvR class sort"))
+		rest.WithCtx(ctx), rest.WithReason("Voice Relay class sort"))
 	return err
 }
 

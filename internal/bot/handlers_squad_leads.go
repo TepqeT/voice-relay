@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -17,7 +16,6 @@ import (
 // SquadLeadService is the squad lead appointment surface of the manager.
 type SquadLeadService interface {
 	SquadLeadsManageable() bool
-	AccessFaction() string
 	CanManageSquadLeads(guildID snowflake.ID, roleIDs []snowflake.ID, perms discord.Permissions) bool
 	SetSquadLead(ctx context.Context, guildID, actorID, targetID snowflake.ID, targetRoles []snowflake.ID, targetIsBot, grant bool) (manager.SquadLeadResult, error)
 }
@@ -30,31 +28,26 @@ func (h *CommandHandlers) squadLeads() (SquadLeadService, bool) {
 	return s, true
 }
 
-// squadLeadCommandNames are the raid leads' two user commands. Discord caps a
-// name at 32 characters and an app at 5 user commands (4 used with access).
-func squadLeadCommandNames(label, faction string) (name, dismiss string) {
-	name = fmt.Sprintf("%s %s : nommer chef", label, faction)
-	dismiss = fmt.Sprintf("%s %s : retirer chef", label, faction)
-	if strings.TrimSpace(faction) == "" || len([]rune(dismiss)) > 32 {
-		name, dismiss = shortCommandName(label, "nommer chef"), shortCommandName(label, "retirer chef")
-	}
-	return name, dismiss
+// squadLeadCommandNames are the French names of the speakers' two user
+// commands. Discord caps a name at 32 characters and an app at 5 user
+// commands (4 used with access).
+func squadLeadCommandNames(label string) (name, dismiss string) {
+	return shortCommandName(label, "nommer chef"), shortCommandName(label, "retirer chef")
 }
 
 // squadLeadCommandNamesEN are the English names registered with Discord.
-func squadLeadCommandNamesEN(label, faction string) (name, dismiss string) {
-	return commandPairEN(label, faction, "make squad lead", "remove squad lead")
+func squadLeadCommandNamesEN(label string) (name, dismiss string) {
+	return commandPairEN(label, "make squad lead", "remove squad lead")
 }
 
 // SquadLeadCommands returns the user commands to register, none when squad
 // lead management is not configured.
 func (h *CommandHandlers) SquadLeadCommands() []discord.ApplicationCommandCreate {
-	s, ok := h.squadLeads()
-	if !ok {
+	if _, ok := h.squadLeads(); !ok {
 		return nil
 	}
-	name, dismiss := squadLeadCommandNamesEN(h.eventLabel(), s.AccessFaction())
-	nameFR, dismissFR := squadLeadCommandNames(h.eventLabel(), s.AccessFaction())
+	name, dismiss := squadLeadCommandNamesEN(h.eventLabel())
+	nameFR, dismissFR := squadLeadCommandNames(h.eventLabel())
 	return []discord.ApplicationCommandCreate{
 		discord.UserCommandCreate{Name: name, NameLocalizations: frenchName(nameFR)},
 		discord.UserCommandCreate{Name: dismiss, NameLocalizations: frenchName(dismissFR)},
@@ -66,7 +59,7 @@ func (h *CommandHandlers) registerSquadLeads(r handler.Router) {
 	if !ok {
 		return
 	}
-	name, dismiss := squadLeadCommandNamesEN(h.eventLabel(), s.AccessFaction())
+	name, dismiss := squadLeadCommandNamesEN(h.eventLabel())
 	r.UserCommand("/"+name, h.handleSquadLead(s, true))
 	r.UserCommand("/"+dismiss, h.handleSquadLead(s, false))
 	slog.Info("squad lead commands enabled", slog.String("name", name), slog.String("dismiss", dismiss))

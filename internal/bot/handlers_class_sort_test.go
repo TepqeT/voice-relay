@@ -20,7 +20,7 @@ type fakeSortRvR struct {
 }
 
 func (f fakeSortRvR) ClassSortEnabled() bool   { return f.enabled }
-func (f fakeSortRvR) ClassSortWaiting() string { return "Attente" }
+func (f fakeSortRvR) ClassSortWaiting() string { return "Waiting" }
 func (f fakeSortRvR) CanSortPlayers(snowflake.ID, []snowflake.ID, discord.Permissions) bool {
 	return true
 }
@@ -52,7 +52,7 @@ func TestBuildPanelSortButton(t *testing.T) {
 		if len(msg.Components) != 2 {
 			t.Fatalf("sort must sit on the players row: %d rows", len(msg.Components))
 		}
-		if !strings.Contains(panelText(msg), "Attente") {
+		if !strings.Contains(panelText(msg), "Waiting") {
 			t.Fatalf("content %q", panelText(msg))
 		}
 	}
@@ -64,7 +64,7 @@ func TestRenderSort(t *testing.T) {
 		t.Fatal(err)
 	}
 	loc := bundle.For("fr", "")
-	got := renderSort(loc, "Attente", manager.SortReport{
+	got := renderSort(loc, "Waiting", manager.SortReport{
 		Squads: 3, Moved: 5, Failed: 1, PermissionDenied: true,
 		Waiting: []manager.SortWaiting{
 			{UserID: 11, Reason: classsort.ReasonNoClass},
@@ -74,26 +74,26 @@ func TestRenderSort(t *testing.T) {
 		},
 	}, nil)
 	for _, want := range []string{
-		"Joueurs déplacés : 5 (escouades : 3)", "refusés par Discord : 1", "Déplacer des membres",
+		"Joueurs déplacés : 5 (salons Listener : 3)", "refusés par Discord : 1", "Déplacer des membres",
 		"<@11> : aucun rôle de classe", "<@12> : plusieurs rôles de classe",
-		"<@13> : chef d'escouade", "<@14> : plus de place",
+		"<@13> : Squad Lead", "<@14> : plus de place",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("recap misses %q:\n%s", want, got)
 		}
 	}
-	if got := renderSort(loc, "Attente", manager.SortReport{Squads: 2}, nil); !strings.Contains(got, "Plus personne en attente") {
+	if got := renderSort(loc, "Waiting", manager.SortReport{Squads: 2}, nil); !strings.Contains(got, "Plus personne en attente") {
 		t.Errorf("empty recap = %q", got)
 	}
 	errs := map[error]string{
-		manager.ErrNoActiveSession:       "Aucun raid en cours",
-		manager.ErrWaitingChannelMissing: "« Attente » introuvable",
-		manager.ErrNoSquadChannels:       "aucun salon d'escouade",
+		manager.ErrNoActiveSession:       "Aucune session en cours",
+		manager.ErrWaitingChannelMissing: "« Waiting » introuvable",
+		manager.ErrNoSquadChannels:       "aucun salon Listener",
 		manager.ErrClassSortDisabled:     "pas configuré",
 		errors.New("boom"):               "boom",
 	}
 	for err, want := range errs {
-		if got := renderSort(loc, "Attente", manager.SortReport{}, err); !strings.Contains(got, want) {
+		if got := renderSort(loc, "Waiting", manager.SortReport{}, err); !strings.Contains(got, want) {
 			t.Errorf("renderSort(%v) = %q, want %q", err, got, want)
 		}
 	}

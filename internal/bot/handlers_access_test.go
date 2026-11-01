@@ -1,28 +1,11 @@
 package bot
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/disgoorg/snowflake/v2"
 )
-
-func TestAccessCommandNamesFitDiscordLimit(t *testing.T) {
-	for _, f := range []string{"Élyséens", "Asmodiens", "Une faction au nom beaucoup trop long"} {
-		g, r := accessCommandNames("RvR", f)
-		if n := len([]rune(g)); n == 0 || n > 32 {
-			t.Errorf("%q: grant name %q has %d runes", f, g, n)
-		}
-		if n := len([]rune(r)); n == 0 || n > 32 {
-			t.Errorf("%q: revoke name %q has %d runes", f, r, n)
-		}
-		if g == r {
-			t.Errorf("%q: grant and revoke share the name %q", f, g)
-		}
-	}
-	if g, _ := accessCommandNames("RvR", "Élyséens"); g != "RvR Élyséens : autoriser" {
-		t.Errorf("grant = %q", g)
-	}
-}
 
 func TestAccessCommandsOffWithoutService(t *testing.T) {
 	h := &CommandHandlers{}
@@ -31,104 +14,46 @@ func TestAccessCommandsOffWithoutService(t *testing.T) {
 	}
 }
 
-func TestSquadLeadCommandNamesFitAndDiffer(t *testing.T) {
-	for _, f := range []string{"Élyséens", "Asmodiens", "Une faction au nom beaucoup trop long"} {
-		n, d := squadLeadCommandNames("RvR", f)
-		g, r := accessCommandNames("RvR", f)
-		for _, s := range []string{n, d} {
-			if k := len([]rune(s)); k == 0 || k > 32 {
-				t.Errorf("%q: %q has %d runes", f, s, k)
-			}
-		}
-		names := map[string]bool{n: true, d: true, g: true, r: true}
-		if len(names) != 4 {
-			t.Errorf("%q: command names collide: %q %q %q %q", f, n, d, g, r)
-		}
+// With the default label the names read "Voice Relay: ..." in English and
+// "Voice Relay : ..." in French.
+func TestDefaultCommandNames(t *testing.T) {
+	label := (&CommandHandlers{}).eventLabel()
+	g, r := accessCommandNamesEN(label)
+	n, d := squadLeadCommandNamesEN(label)
+	if got, want := []string{g, r, n, d}, []string{"Voice Relay: grant access", "Voice Relay: revoke access", "Voice Relay: make squad lead", "Voice Relay: remove squad lead"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("English names %q, want %q", got, want)
+	}
+	g, r = accessCommandNames(label)
+	n, d = squadLeadCommandNames(label)
+	if got, want := []string{g, r, n, d}, []string{"Voice Relay : autoriser", "Voice Relay : retirer", "Voice Relay : nommer chef", "Voice Relay : retirer chef"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("French names %q, want %q", got, want)
 	}
 }
 
-// With the default label the command names are exactly those of v27.
-func TestDefaultEventLabelKeepsCommandNames(t *testing.T) {
-	h := &CommandHandlers{}
-	label := h.eventLabel()
-	cases := []struct {
-		faction                  string
-		grant, revoke, name, dis string
-	}{
-		{"Élyséens", "RvR Élyséens : autoriser", "RvR Élyséens : retirer", "RvR Élyséens : nommer chef", "RvR Élyséens : retirer chef"},
-		{"Asmodiens", "RvR Asmodiens : autoriser", "RvR Asmodiens : retirer", "RvR Asmodiens : nommer chef", "RvR Asmodiens : retirer chef"},
-		{"Une faction au nom beaucoup trop long", "RvR : autoriser", "RvR : retirer", "RvR : nommer chef", "RvR : retirer chef"},
-	}
-	for _, c := range cases {
-		g, r := accessCommandNames(label, c.faction)
-		n, d := squadLeadCommandNames(label, c.faction)
-		if g != c.grant || r != c.revoke || n != c.name || d != c.dis {
-			t.Errorf("%q: got %q %q %q %q", c.faction, g, r, n, d)
-		}
-	}
-}
-
-func TestLongEventLabelCommandNames(t *testing.T) {
-	label := "Guerre de territoire hebdomadaire"
-	for _, f := range []string{"Rouges", "Une faction au nom beaucoup trop long"} {
-		g, r := accessCommandNames(label, f)
-		n, d := squadLeadCommandNames(label, f)
-		names := map[string]bool{}
-		for _, s := range []string{g, r, n, d} {
-			if k := len([]rune(s)); k == 0 || k > 32 {
-				t.Errorf("%q: %q has %d runes", f, s, k)
-			}
-			names[s] = true
-		}
-		if len(names) != 4 {
-			t.Errorf("%q: names collide: %q %q %q %q", f, g, r, n, d)
-		}
-	}
-}
-
-// Without a faction the names drop it instead of leaving a double space.
-func TestCommandNamesWithoutFaction(t *testing.T) {
-	g, r := accessCommandNames("RvR", "")
-	n, d := squadLeadCommandNames("RvR", " ")
-	got := []string{g, r, n, d}
-	want := []string{"RvR : autoriser", "RvR : retirer", "RvR : nommer chef", "RvR : retirer chef"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("name %d = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-// Discord shows the English names by default and the French ones to French
-// clients; the router matches the English base name.
-func TestEnglishCommandNames(t *testing.T) {
-	cases := []struct {
-		label, faction           string
-		grant, revoke, name, dis string
-	}{
-		{"RvR", "", "RvR: grant access", "RvR: revoke access", "RvR: make squad lead", "RvR: remove squad lead"},
-		{"RvR", "Asmodiens", "RvR Asmodiens: grant access", "RvR Asmodiens: revoke access", "RvR Asmodiens: make squad lead", "RvR Asmodiens: remove squad lead"},
-	}
-	for _, c := range cases {
-		g, r := accessCommandNamesEN(c.label, c.faction)
-		n, d := squadLeadCommandNamesEN(c.label, c.faction)
-		if g != c.grant || r != c.revoke || n != c.name || d != c.dis {
-			t.Errorf("%q/%q: got %q %q %q %q", c.label, c.faction, g, r, n, d)
-		}
-	}
-	for _, label := range []string{"Guerre de territoire hebdomadaire", "RvR"} {
-		for _, f := range []string{"", "Une faction au nom beaucoup trop long"} {
-			g, r := accessCommandNamesEN(label, f)
-			n, d := squadLeadCommandNamesEN(label, f)
+// Any label fits Discord's 32 characters and the four names stay distinct.
+func TestCommandNamesFitAndDiffer(t *testing.T) {
+	for _, label := range []string{"Voice Relay", "Weekly community briefing session", "Ops"} {
+		for _, names := range [][4]string{
+			func() [4]string {
+				g, r := accessCommandNamesEN(label)
+				n, d := squadLeadCommandNamesEN(label)
+				return [4]string{g, r, n, d}
+			}(),
+			func() [4]string {
+				g, r := accessCommandNames(label)
+				n, d := squadLeadCommandNames(label)
+				return [4]string{g, r, n, d}
+			}(),
+		} {
 			seen := map[string]bool{}
-			for _, s := range []string{g, r, n, d} {
+			for _, s := range names {
 				if k := len([]rune(s)); k == 0 || k > 32 {
-					t.Errorf("%q/%q: %q has %d runes", label, f, s, k)
+					t.Errorf("%q: %q has %d runes", label, s, k)
 				}
 				seen[s] = true
 			}
 			if len(seen) != 4 {
-				t.Errorf("%q/%q: names collide: %q %q %q %q", label, f, g, r, n, d)
+				t.Errorf("%q: names collide: %q", label, names)
 			}
 		}
 	}

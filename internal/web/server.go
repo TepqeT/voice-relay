@@ -717,7 +717,7 @@ func noteIncomplete(g discordGuild, st GuildStatus, by snowflake.ID) {
 		todo = append(todo, "missing permissions: "+strings.Join(st.MissingPermissions, ", "))
 	}
 	missing := 0
-	for _, h := range st.Heralds {
+	for _, h := range st.RelayBots {
 		if !h.Present {
 			missing++
 		}
