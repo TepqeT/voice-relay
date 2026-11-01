@@ -91,18 +91,18 @@ func TestLoadRvRDefaults(t *testing.T) {
 		SoundOnStart:    "debut",
 		SoundOnStop:     "fin",
 		ReportsDir:      "/data/reports",
-		ReportLang:      "fr",
+		ReportLang:      "en",
 		ReportToDiscord: true,
 		DiagDir:         "/data/diagnostics",
 		DiagInterval:    10 * time.Second,
-		SquadLeadRole:   "Chef d'escouade",
+		SquadLeadRole:   "Squad Lead",
 		RaidLeadRole:    "Raid Lead",
 		SquadLeadKey:    "priority",
 		Channels: ChannelsConfig{
 			EventLabel:   "RvR",
 			Category:     "RvR",
 			RaidLeadName: "Raid Lead",
-			SquadName:    "Escouade",
+			SquadName:    "Squad",
 			SquadCount:   10,
 			StateFile:    "/data/rvr-channels.json",
 			ClassRule:    "balanced",
@@ -139,7 +139,7 @@ func TestLoadChannels(t *testing.T) {
 		t.Setenv(k, "")
 	}
 	c := loadChannels("/data/asmos/store.yaml")
-	if c.Enabled || c.SquadCount != 10 || c.RaidLeadName != "Raid Lead" || c.SquadName != "Escouade" || c.FactionRole != "" {
+	if c.Enabled || c.SquadCount != 10 || c.RaidLeadName != "Raid Lead" || c.SquadName != "Squad" || c.FactionRole != "" {
 		t.Fatalf("defaults = %+v", c)
 	}
 	if c.StateFile != "/data/asmos/rvr-channels.json" {

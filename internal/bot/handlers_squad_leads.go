@@ -41,6 +41,11 @@ func squadLeadCommandNames(label, faction string) (name, dismiss string) {
 	return name, dismiss
 }
 
+// squadLeadCommandNamesEN are the English names registered with Discord.
+func squadLeadCommandNamesEN(label, faction string) (name, dismiss string) {
+	return commandPairEN(label, faction, "make squad lead", "remove squad lead")
+}
+
 // SquadLeadCommands returns the user commands to register, none when squad
 // lead management is not configured.
 func (h *CommandHandlers) SquadLeadCommands() []discord.ApplicationCommandCreate {
@@ -48,10 +53,11 @@ func (h *CommandHandlers) SquadLeadCommands() []discord.ApplicationCommandCreate
 	if !ok {
 		return nil
 	}
-	name, dismiss := squadLeadCommandNames(h.eventLabel(), s.AccessFaction())
+	name, dismiss := squadLeadCommandNamesEN(h.eventLabel(), s.AccessFaction())
+	nameFR, dismissFR := squadLeadCommandNames(h.eventLabel(), s.AccessFaction())
 	return []discord.ApplicationCommandCreate{
-		discord.UserCommandCreate{Name: name},
-		discord.UserCommandCreate{Name: dismiss},
+		discord.UserCommandCreate{Name: name, NameLocalizations: frenchName(nameFR)},
+		discord.UserCommandCreate{Name: dismiss, NameLocalizations: frenchName(dismissFR)},
 	}
 }
 
@@ -60,7 +66,7 @@ func (h *CommandHandlers) registerSquadLeads(r handler.Router) {
 	if !ok {
 		return
 	}
-	name, dismiss := squadLeadCommandNames(h.eventLabel(), s.AccessFaction())
+	name, dismiss := squadLeadCommandNamesEN(h.eventLabel(), s.AccessFaction())
 	r.UserCommand("/"+name, h.handleSquadLead(s, true))
 	r.UserCommand("/"+dismiss, h.handleSquadLead(s, false))
 	slog.Info("squad lead commands enabled", slog.String("name", name), slog.String("dismiss", dismiss))

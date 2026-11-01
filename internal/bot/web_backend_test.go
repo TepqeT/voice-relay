@@ -67,7 +67,7 @@ func TestWebBackendGuildStatus(t *testing.T) {
 	if !st.BotPresent || !strings.Contains(st.BotInviteURL, "guild_id=777") || !strings.Contains(st.BotInviteURL, "disable_guild_select=true") {
 		t.Fatalf("invite = %q", st.BotInviteURL)
 	}
-	if len(st.Heralds) != 2 || st.Heralds[0].Name != "Héraut d'Elysea 1" || !st.Heralds[0].Present || st.Heralds[1].Name != "Héraut 2" || st.Heralds[1].Present {
+	if len(st.Heralds) != 2 || st.Heralds[0].Name != "Héraut d'Elysea 1" || !st.Heralds[0].Present || st.Heralds[1].Name != "Voice Relay 2" || st.Heralds[1].Present {
 		t.Fatalf("heralds = %+v", st.Heralds)
 	}
 	if !strings.Contains(st.Heralds[1].InviteURL, "client_id=1002") || !strings.Contains(st.Heralds[1].InviteURL, "guild_id=777") {
@@ -79,7 +79,7 @@ func TestWebBackendGuildStatus(t *testing.T) {
 	if len(st.Roles) != 2 || !st.Roles[0].Exists || st.Roles[1].Exists {
 		t.Fatalf("roles = %+v", st.Roles)
 	}
-	if b.BotName() != "le bot principal" {
+	if b.BotName() != "Voice Relay" {
 		t.Fatalf("fallback name = %q", b.BotName())
 	}
 	if g := b.BotGuilds(); len(g) != 1 || g[0].ID != 444 || g[0].Name != "Test Server" {

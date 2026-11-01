@@ -58,7 +58,7 @@ func (b *webBackend) BotName() string {
 	if n := b.botName(); n != "" {
 		return n
 	}
-	return "le bot principal"
+	return "Voice Relay"
 }
 
 func (b *webBackend) CanManage(guildID, userID snowflake.ID) (bool, bool) {
@@ -76,7 +76,7 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 			name, present = b.m.MemberPresent(guildID, id)
 		}
 		if name == "" {
-			name = fmt.Sprintf("Héraut %d", i+1)
+			name = fmt.Sprintf("Voice Relay %d", i+1)
 		}
 		st.Heralds = append(st.Heralds, web.BotStatus{Name: name, Present: present, InviteURL: lockedInvite(id, guildID, botPermissions)})
 	}

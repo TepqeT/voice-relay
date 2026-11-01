@@ -116,8 +116,21 @@ func newTestSite(t *testing.T) (*httptest.Server, *fakeBackend, *http.Client) {
 	s.oauth.apiBase = discord.URL
 	s.oauth.redirectURI = site.URL + "/callback"
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	// Most tests read the French pages: the client asks for French unless a
+	// request sets its own Accept-Language.
+	client := &http.Client{Jar: jar, Transport: frenchFirst{http.DefaultTransport}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return site, be, client
+}
+
+// frenchFirst adds "Accept-Language: fr" to requests that set none.
+type frenchFirst struct{ next http.RoundTripper }
+
+func (f frenchFirst) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Header.Get("Accept-Language") == "" {
+		r = r.Clone(r.Context())
+		r.Header.Set("Accept-Language", "fr")
+	}
+	return f.next.RoundTrip(r)
 }
 
 // signIn runs /login then /callback with the state Discord would echo.
@@ -738,5 +751,18 @@ func TestPayPalButton(t *testing.T) {
 	}
 	if _, page = get(t, c, site.URL+"/servers/111"); strings.Contains(page, "Payer avec PayPal") {
 		t.Fatal("guild page: an active subscriber must not be asked to pay")
+	}
+}
+
+// Without any language hint the site is in English.
+func TestEnglishByDefault(t *testing.T) {
+	site, _, _ := newTestSite(t)
+	resp, err := http.Get(site.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("Content-Language") != "en" {
+		t.Fatalf("Content-Language = %q, want en", resp.Header.Get("Content-Language"))
 	}
 }

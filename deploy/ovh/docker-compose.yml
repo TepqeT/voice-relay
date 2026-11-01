@@ -28,18 +28,18 @@ x-rvr-env: &rvr-env
   SOUND_ON_START: debut
   SOUND_ON_STOP: fin
   REPORT_TO_DISCORD: "true"
-  REPORT_LANG: fr
+  REPORT_LANG: en
   REPORTS_DIR: /data/reports
   DIAG_DIR: /data/diagnostics
   DIAG_INTERVAL: 10s
-  SQUAD_LEAD_ROLE: "Chef d'escouade"
+  SQUAD_LEAD_ROLE: "Squad Lead"
   SQUAD_LEAD_KEY: always
   SQUAD_LEADS_TO_SQUADS: "true"
   RAID_LEAD_ROLE: "Raid Lead"
   # EVENT_LABEL: "RvR"
   DYNAMIC_CHANNELS: "true"
   RAID_LEAD_CHANNEL: "Raid Lead"
-  SQUAD_CHANNEL: "Escouade"
+  SQUAD_CHANNEL: "Squad"
   SQUAD_COUNT: "5"
   VOICE_REGION: ""
   # CLASS_ROLES: "Gladiateur, Templier, Assassin, Rodeur, Sorcier, Spiritualiste, Clerc, Aede"
@@ -56,10 +56,11 @@ services:
     environment:
       <<: *rvr-env
       # Pas de faction : la categorie s'appelle "RvR" et les commandes
-      # "RvR : ...". Le role d'acces est cree par le bot depuis le site
-      # (etape Roles) et accorde par le Board : clic droit > Applications.
-      ACCESS_ROLE: "Accès raid"
-      BOARD_ROLE: "Board raid"
+      # "RvR: ..." (en francais pour les clients Discord en francais). Le role
+      # d'acces est cree par le bot depuis le site (etape Roles) et accorde
+      # par le Board : clic droit > Applications. Noms en anglais par defaut.
+      ACCESS_ROLE: "Raid Access"
+      BOARD_ROLE: "Raid Board"
       # Site d'administration (v29), joint par caddy sur le reseau interne
       # uniquement. DISCORD_CLIENT_SECRET vient de .env.
       WEB_ADDR: ":8080"

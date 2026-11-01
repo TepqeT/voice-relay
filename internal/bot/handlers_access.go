@@ -45,6 +45,33 @@ func accessCommandNames(label, faction string) (grant, revoke string) {
 	return grant, revoke
 }
 
+// accessCommandNamesEN are the English names registered with Discord; the
+// French ones above are their fr localization.
+func accessCommandNamesEN(label, faction string) (grant, revoke string) {
+	return commandPairEN(label, faction, "grant access", "revoke access")
+}
+
+// commandPairEN builds two English user command names "<label> <faction>:
+// <action>", dropping the faction when the pair would not fit Discord's 32
+// characters, then cutting the label.
+func commandPairEN(label, faction, a1, a2 string) (string, string) {
+	prefix := strings.TrimSpace(label + " " + strings.TrimSpace(faction))
+	n1, n2 := prefix+": "+a1, prefix+": "+a2
+	if len([]rune(n1)) <= 32 && len([]rune(n2)) <= 32 {
+		return n1, n2
+	}
+	cut := func(a string) string {
+		suffix := ": " + a
+		return strings.TrimSpace(i18n.TruncateRunes(strings.TrimSpace(label), 32-len([]rune(suffix)))) + suffix
+	}
+	return cut(a1), cut(a2)
+}
+
+// frenchName localizes a user command for French Discord clients.
+func frenchName(name string) map[discord.Locale]string {
+	return map[discord.Locale]string{discord.LocaleFrench: name}
+}
+
 // shortCommandName is the fallback "<label> : <action>", the label cut so the
 // name fits Discord's 32 characters.
 func shortCommandName(label, action string) string {
@@ -67,10 +94,11 @@ func (h *CommandHandlers) AccessCommands() []discord.ApplicationCommandCreate {
 	if !ok {
 		return nil
 	}
-	grant, revoke := accessCommandNames(h.eventLabel(), a.AccessFaction())
+	grant, revoke := accessCommandNamesEN(h.eventLabel(), a.AccessFaction())
+	grantFR, revokeFR := accessCommandNames(h.eventLabel(), a.AccessFaction())
 	return []discord.ApplicationCommandCreate{
-		discord.UserCommandCreate{Name: grant},
-		discord.UserCommandCreate{Name: revoke},
+		discord.UserCommandCreate{Name: grant, NameLocalizations: frenchName(grantFR)},
+		discord.UserCommandCreate{Name: revoke, NameLocalizations: frenchName(revokeFR)},
 	}
 }
 
@@ -79,7 +107,8 @@ func (h *CommandHandlers) registerAccess(r handler.Router) {
 	if !ok {
 		return
 	}
-	grant, revoke := accessCommandNames(h.eventLabel(), a.AccessFaction())
+	// Discord sends the base (English) name whatever the client language.
+	grant, revoke := accessCommandNamesEN(h.eventLabel(), a.AccessFaction())
 	r.UserCommand("/"+grant, h.handleAccess(a, true))
 	r.UserCommand("/"+revoke, h.handleAccess(a, false))
 	r.ButtonComponent("/access/pick/{mode}/{userID}", h.handleAccessPick(a))
