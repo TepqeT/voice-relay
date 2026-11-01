@@ -239,6 +239,8 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		AccessRole:    ch.AccessRole,
 		BoardRole:     ch.BoardRole,
 		AccessChannel: ch.AccessChannel,
+		// With a panel channel everything lives in one permanent category.
+		HomeCategory: cfg.RvR.PanelChannel != "" && ch.Enabled,
 	})
 	if rule, err := classsort.ParseRule(ch.ClassRule); err != nil {
 		slog.Warn("invalid CLASS_RULE, class sorting disabled", slog.String("value", ch.ClassRule), slog.Any("err", err))
@@ -294,6 +296,9 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 				return cmdHandlers.buildPanel(guildID, bundle.For(managerSvc.GetLocale(guildID), ""))
 			},
 			filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "panel.json"))
+		if managerSvc.HomeCategoryEnabled() {
+			panel.home = managerSvc.EnsureHomeCategory
+		}
 		client.AddEventListeners(
 			bot.NewListenerFunc(func(e *events.GuildReady) { go panel.Ensure(context.Background(), e.GuildID) }),
 			bot.NewListenerFunc(func(e *events.GuildJoin) { go panel.Ensure(context.Background(), e.GuildID) }),

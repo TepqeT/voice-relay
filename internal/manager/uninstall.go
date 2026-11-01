@@ -38,6 +38,9 @@ func (m *Service) Uninstall(ctx context.Context, guildID snowflake.ID) (Uninstal
 	// Synchronous: the channels must go while the owner bot can still delete
 	// them. Waits for the deletion a stop just started.
 	rep.ChannelsDeleted = m.ReleaseRaidChannels(ctx, guildID)
+	if m.HomeCategoryEnabled() {
+		m.RemoveHomeCategory(ctx, guildID)
+	}
 
 	for _, id := range m.poolSvc.GetIDs() {
 		name, present := m.MemberPresent(guildID, id)

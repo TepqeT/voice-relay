@@ -60,6 +60,10 @@ type ChannelOptions struct {
 	AccessRole    string // role (name or ID) that replaces FactionRole for access; "" = FactionRole
 	BoardRole     string // role (name or ID) allowed to grant and revoke AccessRole
 	AccessChannel string // text channel (name or ID) where the board grants access by message
+	// HomeCategory keeps one permanent category (Category) holding the panel
+	// channel and the raid voice channels: only the voice channels come and
+	// go with each raid.
+	HomeCategory bool
 }
 
 // RaidChannels are the channels created for one raid.
@@ -75,6 +79,9 @@ type RaidChannels struct {
 	CallerRole snowflake.ID `json:"caller_role,omitempty"`
 	// ViewRole is the role that could see the channels (access or faction).
 	ViewRole snowflake.ID `json:"view_role,omitempty"`
+	// SharedCategory: Category is the permanent home category, never
+	// deleted with the raid.
+	SharedCategory bool `json:"shared_category,omitempty"`
 }
 
 func (r RaidChannels) all() []snowflake.ID {
@@ -86,7 +93,7 @@ func (r RaidChannels) all() []snowflake.ID {
 	if r.RaidLead != 0 {
 		ids = append(ids, r.RaidLead)
 	}
-	if r.Category != 0 {
+	if r.Category != 0 && !r.SharedCategory {
 		ids = append(ids, r.Category) // last, once it is empty
 	}
 	return ids
@@ -241,7 +248,7 @@ func (m *Service) prepareRaidChannels(ctx context.Context, guildID snowflake.ID)
 func (m *Service) reusableChannels(guildID snowflake.ID, squads int, callerRole, viewRole snowflake.ID) (RaidChannels, bool) {
 	rc, ok := m.RaidChannelsOf(guildID)
 	if !ok || len(rc.Squads) != squads || rc.RaidLead == 0 || rc.CallerRole != callerRole || rc.ViewRole != viewRole ||
-		(rc.Waiting != 0) != m.ClassSortEnabled() {
+		(rc.Waiting != 0) != m.ClassSortEnabled() || rc.SharedCategory != m.channels.opts.HomeCategory {
 		return RaidChannels{}, false
 	}
 	for _, id := range rc.all() {
@@ -298,17 +305,27 @@ func (m *Service) createRaidChannels(ctx context.Context, guildID, factionRole, 
 	}()
 	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason("RvR raid start")}
 
-	category, err := m.ownerClient.Rest.CreateGuildChannel(guildID, discord.GuildCategoryChannelCreate{
-		Name:                 c.opts.Category,
-		PermissionOverwrites: overwrites(0, 0, channelCategory),
-	}, opts...)
-	if err != nil {
-		return rc, channelError("create category", err)
+	if c.opts.HomeCategory {
+		// The permanent category: the voice channels carry their own
+		// overwrites, so nothing on the category needs to change per raid.
+		home, herr := m.EnsureHomeCategory(ctx, guildID)
+		if herr != nil {
+			return rc, channelError("home category", herr)
+		}
+		rc.Category, rc.SharedCategory = home, true
+	} else {
+		category, cerr := m.ownerClient.Rest.CreateGuildChannel(guildID, discord.GuildCategoryChannelCreate{
+			Name:                 c.opts.Category,
+			PermissionOverwrites: overwrites(0, 0, channelCategory),
+		}, opts...)
+		if cerr != nil {
+			return rc, channelError("create category", cerr)
+		}
+		m.ownerClient.Caches.AddChannel(category)
+		rc.Category = category.ID()
+		m.rememberChannels(guildID, rc)
+		m.placeCategory(ctx, guildID, rc.Category)
 	}
-	m.ownerClient.Caches.AddChannel(category)
-	rc.Category = category.ID()
-	m.rememberChannels(guildID, rc)
-	m.placeCategory(ctx, guildID, rc.Category)
 
 	create := func(name string, kind channelKind) (snowflake.ID, error) {
 		ch, err := m.ownerClient.Rest.CreateGuildChannel(guildID, discord.GuildVoiceChannelCreate{

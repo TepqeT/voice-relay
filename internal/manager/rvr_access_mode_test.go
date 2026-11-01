@@ -21,10 +21,15 @@ type overwriteRest struct {
 	stubRest
 	set     map[[2]snowflake.ID]discord.RolePermissionOverwriteUpdate
 	removed [][2]snowflake.ID
+	kicks   int
 }
 
 func (r *overwriteRest) UpdatePermissionOverwrite(ch, id snowflake.ID, u discord.PermissionOverwriteUpdate, _ ...rest.RequestOpt) error {
 	r.set[[2]snowflake.ID{ch, id}] = u.(discord.RolePermissionOverwriteUpdate)
+	return nil
+}
+func (r *overwriteRest) Do(_ *rest.CompiledEndpoint, _, _ any, _ ...rest.RequestOpt) error {
+	r.kicks++
 	return nil
 }
 func (r *overwriteRest) DeletePermissionOverwrite(ch, id snowflake.ID, _ ...rest.RequestOpt) error {
@@ -80,7 +85,7 @@ func TestAccessModeRestrictedByDefaultAndSaved(t *testing.T) {
 	}
 	m.rememberChannels(amGuild, RaidChannels{Category: 50, RaidLead: 51, Squads: []snowflake.ID{52}})
 
-	if err := m.SetAccessOpen(context.Background(), amGuild, true); err != nil {
+	if _, err := m.SetAccessOpen(context.Background(), amGuild, true); err != nil {
 		t.Fatal(err)
 	}
 	if !m.AccessOpen(amGuild) || m.viewRoleName(amGuild) != "" {
@@ -102,7 +107,7 @@ func TestAccessModeRestrictedByDefaultAndSaved(t *testing.T) {
 		t.Fatal("open mode lost on restart")
 	}
 
-	if err := m.SetAccessOpen(context.Background(), amGuild, false); err != nil {
+	if _, err := m.SetAccessOpen(context.Background(), amGuild, false); err != nil {
 		t.Fatal(err)
 	}
 	u := rr.set[[2]snowflake.ID{52, amGuild}]
@@ -114,5 +119,45 @@ func TestAccessModeRestrictedByDefaultAndSaved(t *testing.T) {
 	}
 	if rc, _ := m.RaidChannelsOf(amGuild); rc.ViewRole != amAccess {
 		t.Fatalf("remembered view role = %d", rc.ViewRole)
+	}
+}
+
+// Restricting during a raid moves out the people without access, but not the
+// leaders nor the bots; they can then ask for access.
+func TestRestrictDisconnectsMembersWithoutAccess(t *testing.T) {
+	m, rr := accessModeService(t)
+	ctx := context.Background()
+	m.rememberChannels(amGuild, RaidChannels{Category: 50, RaidLead: 51, Squads: []snowflake.ID{52}, SharedCategory: true})
+	if _, err := m.SetAccessOpen(ctx, amGuild, true); err != nil {
+		t.Fatal(err)
+	}
+	caches := m.ownerClient.Caches
+	squad := snowflake.ID(52)
+	elsewhere := snowflake.ID(99)
+	for _, u := range []struct {
+		id    snowflake.ID
+		roles []snowflake.ID
+		bot   bool
+		ch    *snowflake.ID
+	}{
+		{21, nil, false, &squad},                         // no access: moved out
+		{22, []snowflake.ID{amAccess}, false, &squad},    // has access: stays
+		{23, []snowflake.ID{amSquadLead}, false, &squad}, // leader: stays
+		{24, nil, true, &squad},                          // bot: stays
+		{25, nil, false, &elsewhere},                     // not in the raid
+	} {
+		caches.AddMember(discord.Member{GuildID: amGuild, User: discord.User{ID: u.id, Bot: u.bot}, RoleIDs: u.roles})
+		caches.AddVoiceState(discord.VoiceState{GuildID: amGuild, UserID: u.id, ChannelID: u.ch})
+	}
+	n, err := m.SetAccessOpen(ctx, amGuild, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 || rr.kicks != 1 {
+		t.Fatalf("disconnected %d (%d calls), want only the member without access", n, rr.kicks)
+	}
+	// The home category is never closed: it holds the panel channel.
+	if _, ok := rr.set[[2]snowflake.ID{50, amGuild}]; ok {
+		t.Error("home category overwrite changed")
 	}
 }
