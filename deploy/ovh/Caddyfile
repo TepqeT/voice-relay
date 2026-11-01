@@ -11,7 +11,7 @@
 		file_server
 	}
 	handle {
-		reverse_proxy asmos:8080
+		reverse_proxy relay:8080
 	}
 	log {
 		output stdout

@@ -7,7 +7,6 @@ set -euo pipefail
 # --- Variables -------------------------------------------------------------
 APPLY="${APPLY:-false}"
 BRANCH="main"
-WITH_ELYOS="true"     # false pour ne lancer que les Asmodiens et le site
 # ---------------------------------------------------------------------------
 
 cd "$(dirname "$0")"
@@ -32,14 +31,7 @@ fi
 for k in SITE_DOMAIN ACME_EMAIL DISCORD_CLIENT_SECRET DISCORD_OWNER_BOT_TOKEN; do
 	grep -Eq "^${k}=.+" .env || { echo "Valeur manquante dans .env : ${k}" >&2; exit 1; }
 done
-if [ "$WITH_ELYOS" = "true" ] && ! grep -Eq "^DISCORD_OWNER_BOT_TOKEN=.+" .env.elyos 2>/dev/null; then
-	echo "Valeur manquante dans .env.elyos : DISCORD_OWNER_BOT_TOKEN (ou WITH_ELYOS=false)" >&2
-	exit 1
-fi
 echo "Secrets presents (valeurs non affichees)."
-
-PROFILE=()
-[ "$WITH_ELYOS" = "true" ] && PROFILE=(--profile elyos)
 
 echo "== Code : ${BRANCH}"
 run git -C "$ROOT" fetch origin "$BRANCH"
@@ -51,8 +43,8 @@ echo "== Tests (gofmt, vet, tests unitaires)"
 run docker build --target test "$ROOT"
 
 echo "== Construction et redemarrage"
-run docker compose "${PROFILE[@]}" up -d --build --remove-orphans
-run docker compose "${PROFILE[@]}" ps
+run docker compose up -d --build --remove-orphans
+run docker compose ps
 
 [ "$APPLY" = "true" ] && echo "Site : https://$(grep -E '^SITE_DOMAIN=' .env | cut -d= -f2-)"
 [ "$APPLY" = "true" ] || echo "Simulation terminee : relancer avec APPLY=true ./mettre-a-jour.sh"

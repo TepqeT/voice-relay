@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,6 +71,14 @@ type WebConfig struct {
 	// SubscriptionRequired refuses to start a raid in a server without an
 	// active subscription. SUBSCRIPTION_REQUIRED, default false.
 	SubscriptionRequired bool
+	// SupportURL is where "Contact support" leads. SUPPORT_URL, https only;
+	// empty: the Discord profile of the bot application's owner.
+	SupportURL string
+	// PayPalURL is the PayPal link of the "Pay with PayPal" button.
+	// PAYPAL_URL, https only; empty: no button.
+	PayPalURL string
+	// PriceLabel is the price shown next to the button, free text. PRICE_LABEL.
+	PriceLabel string
 }
 
 // Enabled reports whether the site is fully configured.
@@ -229,6 +238,21 @@ func Load() (*Config, error) {
 	}, nil
 }
 
+// httpsURL reads an https link from key; anything else is ignored with a
+// warning, so a typo never sends visitors to a plain-http or relative page.
+func httpsURL(key string) string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return ""
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		slog.Warn("not an https link, ignored", slog.String("key", key), slog.String("value", v))
+		return ""
+	}
+	return v
+}
+
 func loadWeb(store string) WebConfig {
 	w := WebConfig{
 		Addr:                 strings.TrimSpace(os.Getenv("WEB_ADDR")),
@@ -237,6 +261,9 @@ func loadWeb(store string) WebConfig {
 		Admins:               splitList(os.Getenv("SITE_ADMINS")),
 		SubscriptionsFile:    envOr("SUBSCRIPTIONS_FILE", filepath.Join(filepath.Dir(store), "subscriptions.json")),
 		SubscriptionRequired: parseBool("SUBSCRIPTION_REQUIRED", false),
+		SupportURL:           httpsURL("SUPPORT_URL"),
+		PayPalURL:            httpsURL("PAYPAL_URL"),
+		PriceLabel:           strings.TrimSpace(os.Getenv("PRICE_LABEL")),
 	}
 	if w.Addr != "" && !w.Enabled() {
 		slog.Warn("WEB_ADDR is set but WEB_BASE_URL or DISCORD_CLIENT_SECRET is missing: the site stays off")

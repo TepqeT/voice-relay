@@ -43,6 +43,18 @@ func (f fakeSiteManager) CreateMissingRoles(context.Context, snowflake.ID) (mana
 	return manager.RoleSetupReport{Created: []string{"Clerc"}}, nil
 }
 
+func (f fakeSiteManager) Uninstall(context.Context, snowflake.ID) (manager.UninstallReport, error) {
+	return manager.UninstallReport{Left: []string{"Voice Relay 1"}, Failed: []string{"Voice Relay 2"}, OwnerLeft: true}, nil
+}
+
+func TestWebBackendUninstall(t *testing.T) {
+	b := newWebBackend(fakeSiteManager{inGuild: true}, 42, func() string { return "" }, nil)
+	rep, err := b.Uninstall(context.Background(), 777)
+	if err != nil || !rep.OwnerLeft || len(rep.Left) != 1 || rep.Failed[0] != "Voice Relay 2" {
+		t.Fatalf("rep = %+v, err = %v", rep, err)
+	}
+}
+
 // speakerToken builds a token whose first segment encodes id, like Discord's.
 func speakerToken(id string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(id)) + ".x.y"

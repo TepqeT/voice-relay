@@ -230,3 +230,21 @@ func TestLoadWeb(t *testing.T) {
 		t.Fatalf("subscription settings = %+v", w)
 	}
 }
+
+func TestLoadWebLinks(t *testing.T) {
+	t.Setenv("SUPPORT_URL", "https://discord.com/users/123")
+	t.Setenv("PAYPAL_URL", "http://paypal.me/example")
+	t.Setenv("PRICE_LABEL", " 3 EUR / mois ")
+	w := loadWeb("/data/store.yaml")
+	if w.SupportURL != "https://discord.com/users/123" || w.PayPalURL != "" || w.PriceLabel != "3 EUR / mois" {
+		t.Fatalf("links = %+v (plain http must be dropped)", w)
+	}
+	t.Setenv("PAYPAL_URL", "https://www.paypal.com/paypalme/example")
+	if w = loadWeb("/data/store.yaml"); w.PayPalURL != "https://www.paypal.com/paypalme/example" {
+		t.Fatalf("paypal = %q", w.PayPalURL)
+	}
+	t.Setenv("SUPPORT_URL", "discord.com/users/123")
+	if w = loadWeb("/data/store.yaml"); w.SupportURL != "" {
+		t.Fatalf("relative link kept: %q", w.SupportURL)
+	}
+}

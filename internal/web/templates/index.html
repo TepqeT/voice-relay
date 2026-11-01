@@ -2,6 +2,7 @@
 <section class="card hero">
   <div class="hero-grid">
     <div>
+      <img src="/static/logo.svg" alt="" class="hero-logo" width="64" height="64">
       <h1>{{t "index.h1"}}</h1>
       <p>{{t "index.lead"}}</p>
       {{if eq .Error "session"}}<p class="bad">{{t "err.session"}}</p>{{end}}

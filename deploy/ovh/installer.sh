@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Installation initiale de Voice Relay sur une VM OVH (Ubuntu 24.04 ou Debian 12).
+# Installation initiale de Voice Relay sur un VPS Ubuntu 24.04 (paquet docker-compose-v2 d'Ubuntu).
 # Phase 1 : APPLY=false (defaut) affiche ce qui serait fait, sans rien changer.
 # Phase 2 : sudo APPLY=true ./installer.sh
-# Aucun secret ici : les tokens vont dans .env / .env.elyos, remplis a la main.
+# Aucun secret ici : les tokens vont dans .env, rempli a la main.
 set -euo pipefail
 
 # --- Variables -------------------------------------------------------------
@@ -66,14 +66,12 @@ fi
 
 echo "== 6. Fichiers de secrets a remplir (droits 600)"
 OVH="${INSTALL_DIR}/deploy/ovh"
-for f in .env .env.elyos; do
-	if [ ! -f "${OVH}/${f}" ]; then
-		run sudo -u "$RUN_USER" install -m 600 "${OVH}/${f}.example" "${OVH}/${f}"
-	fi
-done
+if [ ! -f "${OVH}/.env" ]; then
+	run sudo -u "$RUN_USER" install -m 600 "${OVH}/.env.example" "${OVH}/.env"
+fi
 
 echo
-echo "Suite : remplir ${OVH}/.env (et .env.elyos), puis :"
+echo "Suite : remplir ${OVH}/.env, puis :"
 echo "  cd ${OVH} && sudo -u ${RUN_USER} APPLY=false ./mettre-a-jour.sh"
 echo "  cd ${OVH} && sudo -u ${RUN_USER} APPLY=true ./mettre-a-jour.sh"
 [ "$APPLY" = "true" ] || echo "Simulation terminee : relancer avec sudo APPLY=true ./installer.sh"

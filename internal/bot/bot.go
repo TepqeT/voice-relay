@@ -339,7 +339,8 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 				slog.Warn("SITE_ADMINS: not a Discord user ID, ignored", slog.String("value", a))
 			}
 		}
-		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins}, backend, subs)
+		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins,
+			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL, PriceLabel: cfg.Web.PriceLabel}, backend, subs)
 		if err != nil {
 			return nil, fmt.Errorf("web site: %w", err)
 		}
@@ -401,7 +402,11 @@ func (b *Bot) Run(ctx context.Context) error {
 		if app, err := b.client.Rest.GetCurrentApplication(); err != nil {
 			slog.WarnContext(ctx, "cannot read the application owner: only SITE_ADMINS administer the site", slog.Any("err", err))
 		} else {
-			b.site.AddAdmins(applicationAdmins(app)...)
+			admins := applicationAdmins(app)
+			b.site.AddAdmins(admins...)
+			if len(admins) > 0 {
+				b.site.SetSupportUser(admins[0])
+			}
 		}
 		go func() {
 			if err := b.site.Run(ctx); err != nil {
