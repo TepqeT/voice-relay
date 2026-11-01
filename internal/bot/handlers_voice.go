@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"errors"
+	"github.com/TepqeT/voice-relay/internal/journal"
 	"log/slog"
 
 	"github.com/TepqeT/voice-relay/internal/guild"
@@ -132,8 +133,7 @@ func (h *CommandHandlers) startHostRaid(cmdCtx context.Context, guildID snowflak
 		relayCode, err := h.manager.StartVoiceRaid(ctx, guildID, cancelFunc, mode)
 		if err != nil {
 			cancelFunc()
-			slog.WarnContext(cmdCtx, "failed to start voice raid",
-				slog.String("guildID", guildID.String()), slog.Any("err", err))
+			journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "raid_start_failed", Detail: err.Error()})
 			if errors.Is(err, manager.ErrNoBoundSpeakers) {
 				reply(loc.T("raid.no_bound_speakers"))
 				return

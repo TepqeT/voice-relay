@@ -70,4 +70,17 @@
   </table>
 </section>
 {{end}}
+<section class="card">
+  <h2>{{t "admin.journal"}}</h2>
+  <p class="muted">{{t "admin.journal.hint"}}</p>
+  <ul class="list journal">
+  {{range .Journal}}
+    <li class="row"><span class="tag {{if eq .Level "problem"}}bad{{else if eq .Level "warning"}}warn{{end}}">{{.Kind}}</span>
+    <span class="name">{{if .Guild}}{{.Guild}}{{else if .GuildID}}{{.GuildID}}{{else}}-{{end}}</span>
+    <span class="muted">{{date .At}} {{.At.Format "15:04"}} UTC</span>
+    <span class="detail">{{.Detail}}</span></li>
+  {{else}}<li class="muted">-</li>
+  {{end}}
+  </ul>
+</section>
 {{template "foot" .}}

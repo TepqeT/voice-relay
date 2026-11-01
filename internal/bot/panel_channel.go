@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/TepqeT/voice-relay/internal/journal"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -101,7 +102,7 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 	if k.home != nil {
 		var err error
 		if parent, err = k.home(ctx, guildID); err != nil {
-			slog.Warn("panel channel: home category unavailable", slog.String("guildID", guildID.String()), slog.Any("err", err))
+			journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "home_category_refused", Detail: "could not create the category: " + err.Error()})
 		}
 	}
 	channelID := k.findChannel(guildID, st.ChannelID)
@@ -115,7 +116,7 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 			PermissionOverwrites: k.overwrites(guildID),
 		}, rest.WithCtx(ctx), rest.WithReason("Voice Relay control panel"))
 		if err != nil {
-			slog.Warn("panel channel: creation refused", slog.String("guildID", guildID.String()), slog.Any("err", err))
+			journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "panel_channel_refused", Detail: "could not create the panel channel: " + err.Error()})
 			return
 		}
 		channelID = ch.ID()
@@ -151,7 +152,7 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 	}
 	m, err := k.rest.CreateMessage(channelID, msg, rest.WithCtx(ctx))
 	if err != nil {
-		slog.Warn("panel channel: panel post failed", slog.String("guildID", guildID.String()), slog.Any("err", err))
+		journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "panel_post_refused", Detail: "could not post the panel: " + err.Error()})
 		return
 	}
 	st.MessageID = m.ID

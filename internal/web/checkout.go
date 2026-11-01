@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/TepqeT/voice-relay/internal/journal"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -145,7 +146,7 @@ func (s *Server) handlePayOrder(w http.ResponseWriter, r *http.Request, sess *se
 		CustomID:    sess.userID.String() + ":" + p.ID,
 	})
 	if err != nil {
-		slog.Warn("web: paypal order refused", slog.String("by", sess.userID.String()), slog.Any("err", err))
+		journal.Record(journal.Event{UserID: sess.userID, Level: journal.Problem, Kind: "payment_order_failed", Detail: err.Error()})
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": tr(lang)("pay.err.paypal")})
 		return
 	}
@@ -171,7 +172,7 @@ func (s *Server) handlePayCapture(w http.ResponseWriter, r *http.Request, sess *
 	defer cancel()
 	cp, err := s.cfg.Checkout.Client.CaptureOrder(ctx, orderID)
 	if err != nil {
-		slog.Warn("web: paypal capture failed", slog.String("by", sess.userID.String()), slog.String("order", orderID), slog.Any("err", err))
+		journal.Record(journal.Event{UserID: sess.userID, Level: journal.Problem, Kind: "payment_capture_failed", Detail: "order " + orderID + ": " + err.Error()})
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": t("pay.err.paypal")})
 		return
 	}

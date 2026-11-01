@@ -1,8 +1,12 @@
 package web
 
 import (
+	"time"
+
 	"context"
 	"encoding/json"
+	"github.com/TepqeT/voice-relay/internal/journal"
+	"github.com/TepqeT/voice-relay/internal/ratelimit"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -113,6 +117,8 @@ func newTestSite(t *testing.T) (*httptest.Server, *fakeBackend, *http.Client) {
 		t.Fatal(err)
 	}
 	be.srv, be.subs = s, subs
+	// Tests click much faster than people: lift the visitor limits.
+	s.pageLimit, s.actionLimit = ratelimit.New(time.Microsecond, 1000), ratelimit.New(time.Microsecond, 1000)
 	site = httptest.NewServer(s.Handler())
 	t.Cleanup(site.Close)
 	s.oauth.apiBase = discord.URL
@@ -779,5 +785,53 @@ func TestGuildPageNamesPanelChannel(t *testing.T) {
 	_, page := get(t, c, site.URL+"/servers/111")
 	if !strings.Contains(page, "#raid-panel") || strings.Contains(page, "/panneau") {
 		t.Fatalf("panel channel not shown:\n%s", page)
+	}
+}
+
+// A visitor hammering the site gets 429 instead of overloading it.
+func TestVisitorLimit(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.srv.pageLimit = ratelimit.New(time.Hour, 3)
+	codes := []int{}
+	for range 5 {
+		code, _ := get(t, c, site.URL+"/")
+		codes = append(codes, code)
+	}
+	if codes[2] != http.StatusOK || codes[3] != http.StatusTooManyRequests {
+		t.Fatalf("codes = %v, want 3 pages then 429", codes)
+	}
+	if code, _ := get(t, c, site.URL+"/healthz"); code != http.StatusOK {
+		t.Fatal("health checks are never limited")
+	}
+}
+
+func TestClientIPBehindProxy(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "172.18.0.3:5000"
+	r.Header.Set("X-Forwarded-For", "203.0.113.9, 172.18.0.3")
+	if got := clientIP(r); got != "203.0.113.9" {
+		t.Fatalf("behind caddy = %q", got)
+	}
+	r.RemoteAddr = "198.51.100.7:5000" // public peer: header ignored, it could be forged
+	if got := clientIP(r); got != "198.51.100.7" {
+		t.Fatalf("direct = %q", got)
+	}
+}
+
+func TestSetupJournalShown(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.srv.AddAdmins(7)
+	signIn(t, site, c, "good")
+	journal.Record(journal.Event{GuildID: managedGuild, Guild: "Zeta", Level: journal.Problem, Kind: "missing_permissions", Detail: "main bot lacks: mute"})
+	if _, page := get(t, c, site.URL+"/servers/111"); !strings.Contains(page, "missing_permissions") || !strings.Contains(page, "main bot lacks: mute") {
+		t.Fatalf("guild page must show its recent problems:\n%s", page)
+	}
+	_, page := get(t, c, site.URL+"/admin")
+	if !strings.Contains(page, "Journal des installations") || !strings.Contains(page, "main bot lacks: mute") {
+		t.Fatalf("admin page must show the journal:\n%s", page)
+	}
+	// The unfinished setup of the page itself was recorded too.
+	if !strings.Contains(page, "setup_incomplete") {
+		t.Fatal("an unfinished setup must be written in the journal")
 	}
 }

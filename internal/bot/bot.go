@@ -414,6 +414,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	// Built before the listeners are attached so onGuildJoin can call back into
 	// b.syncGuildCommands. No network I/O happens here — the gateway opens in Run.
 	client.AddEventListeners(EventListeners(managerSvc, b.syncGuildCommands)...)
+	client.AddEventListeners(installListeners(managerSvc, poolSvc.GetIDs)...)
 
 	return b, nil
 }
