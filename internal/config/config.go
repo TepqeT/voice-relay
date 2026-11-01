@@ -178,8 +178,8 @@ type ChannelsConfig struct {
 	RaidLeadName string
 	// SquadName prefixes the numbered squad channels. SQUAD_CHANNEL, default "Squad".
 	SquadName string
-	// SquadCount is the number of squad channels, capped by the speaker bots.
-	// SQUAD_COUNT, default 10.
+	// SquadCount is the most squad channels, capped by the enabled relay
+	// bots. SQUAD_COUNT, default "all": one squad per relay bot.
 	SquadCount int
 	// Region pins the Discord voice region of every channel (for example
 	// "rotterdam"); empty lets Discord choose. VOICE_REGION.
@@ -327,16 +327,21 @@ func loadRvR(store string) RvRConfig {
 	}
 }
 
+// MaxSquads is Discord's practical ceiling: 50 channels per category.
+const MaxSquads = 45
+
 func loadChannels(store string) ChannelsConfig {
 	faction := envOr("FACTION_NAME", "")
 	label := envOr("EVENT_LABEL", "RvR")
 	category := envOr("RVR_CATEGORY", strings.TrimSpace(label+" "+faction))
-	count := 10
-	if v := strings.TrimSpace(os.Getenv("SQUAD_COUNT")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 45 {
+	// Default: one squad per relay bot available (the start caps the count
+	// at the enabled relay bots).
+	count := MaxSquads
+	if v := strings.TrimSpace(os.Getenv("SQUAD_COUNT")); v != "" && !strings.EqualFold(v, "all") {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxSquads {
 			count = n
 		} else {
-			slog.Warn("invalid SQUAD_COUNT (1 to 45); using default", slog.String("value", v), slog.Int("default", count))
+			slog.Warn("invalid SQUAD_COUNT (1 to 45 or all); one squad per relay bot", slog.String("value", v))
 		}
 	}
 	return ChannelsConfig{

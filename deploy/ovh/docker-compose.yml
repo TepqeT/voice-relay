@@ -44,7 +44,9 @@ x-rvr-env: &rvr-env
   PANEL_CHANNEL: "raid-panel"
   RAID_LEAD_CHANNEL: "Raid Lead"
   SQUAD_CHANNEL: "Squad"
-  SQUAD_COUNT: "5"
+  # Une escouade par bot relais disponible (11 aujourd'hui) ; un nombre pour
+  # en limiter le nombre.
+  SQUAD_COUNT: "all"
   VOICE_REGION: ""
   # CLASS_ROLES: "Gladiateur, Templier, Assassin, Rodeur, Sorcier, Spiritualiste, Clerc, Aede"
   # WAITING_CHANNEL: "Attente"

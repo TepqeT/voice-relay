@@ -103,7 +103,7 @@ func TestLoadRvRDefaults(t *testing.T) {
 			Category:     "RvR",
 			RaidLeadName: "Raid Lead",
 			SquadName:    "Squad",
-			SquadCount:   10,
+			SquadCount:   MaxSquads,
 			StateFile:    "/data/rvr-channels.json",
 			ClassRule:    "balanced",
 		},
@@ -139,7 +139,7 @@ func TestLoadChannels(t *testing.T) {
 		t.Setenv(k, "")
 	}
 	c := loadChannels("/data/asmos/store.yaml")
-	if c.Enabled || c.SquadCount != 10 || c.RaidLeadName != "Raid Lead" || c.SquadName != "Squad" || c.FactionRole != "" {
+	if c.Enabled || c.SquadCount != MaxSquads || c.RaidLeadName != "Raid Lead" || c.SquadName != "Squad" || c.FactionRole != "" {
 		t.Fatalf("defaults = %+v", c)
 	}
 	if c.StateFile != "/data/asmos/rvr-channels.json" {
@@ -150,10 +150,14 @@ func TestLoadChannels(t *testing.T) {
 	t.Setenv("FACTION_NAME", "Asmodiens")
 	t.Setenv("SQUAD_COUNT", "99")
 	c = loadChannels("store.yaml")
-	if !c.Enabled || c.FactionRole != "Asmodiens" || c.Category != "RvR Asmodiens" || c.SquadCount != 10 {
+	if !c.Enabled || c.FactionRole != "Asmodiens" || c.Category != "RvR Asmodiens" || c.SquadCount != MaxSquads {
 		t.Fatalf("faction = %+v", c)
 	}
 	t.Setenv("FACTION_ROLE", "none")
+	t.Setenv("SQUAD_COUNT", "all")
+	if c = loadChannels("store.yaml"); c.SquadCount != MaxSquads {
+		t.Fatalf("all = %d", c.SquadCount)
+	}
 	t.Setenv("SQUAD_COUNT", "4")
 	if c = loadChannels("store.yaml"); c.FactionRole != "" || c.SquadCount != 4 {
 		t.Fatalf("overrides = %+v", c)
