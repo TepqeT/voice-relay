@@ -81,7 +81,8 @@
   <div>
   <h2>{{t "guild.s5"}}</h2>
   {{if .Status.Ready}}<p class="ok">{{t "guild.done"}}</p>{{end}}
-  <p>{{t "guild.last"}} <code>{{t "guild.panel"}}</code> {{t "guild.last2"}}</p>
+  {{if .Status.PanelChannel}}<p>{{t "guild.panelchan"}} <code>#{{.Status.PanelChannel}}</code> {{t "guild.panelchan2"}}</p>
+  {{else}}<p>{{t "guild.last"}} <code>{{t "guild.panel"}}</code> {{t "guild.last2"}}</p>{{end}}
   </div>
   {{template "scene-assign" .}}
 </section>

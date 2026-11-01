@@ -38,6 +38,10 @@ x-rvr-env: &rvr-env
   RAID_LEAD_ROLE: "Raid Lead"
   # EVENT_LABEL: "RvR"
   DYNAMIC_CHANNELS: "true"
+  # Salon texte ou le panneau de commande (Start, Stop, Status) reste affiche
+  # en permanence ; cree par le bot s'il manque, en lecture seule pour les
+  # membres. Langue du serveur choisie dans /setup, anglais par defaut.
+  PANEL_CHANNEL: "raid-panel"
   RAID_LEAD_CHANNEL: "Raid Lead"
   SQUAD_CHANNEL: "Squad"
   SQUAD_COUNT: "5"

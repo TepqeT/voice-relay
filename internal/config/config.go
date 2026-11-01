@@ -131,6 +131,10 @@ type RvRConfig struct {
 	// itself), not only to the raid lead channel. SQUAD_LEADS_TO_SQUADS,
 	// default false.
 	SquadLeadsToSquads bool
+	// PanelChannel (text channel name or ID) always shows the control panel:
+	// the bot creates the channel when missing and keeps one panel message
+	// up to date in it. PANEL_CHANNEL, default none.
+	PanelChannel string
 	// Channels configures the raid channels created at each start.
 	Channels ChannelsConfig
 }
@@ -296,6 +300,7 @@ func loadRvR(store string) RvRConfig {
 		RaidLeadRole:       noneToEmpty(envOr("RAID_LEAD_ROLE", "Raid Lead")),
 		SquadLeadKey:       squadKey(envOr("SQUAD_LEAD_KEY", "priority")),
 		SquadLeadsToSquads: parseBool("SQUAD_LEADS_TO_SQUADS", false),
+		PanelChannel:       noneToEmpty(strings.TrimSpace(os.Getenv("PANEL_CHANNEL"))),
 		Channels:           loadChannels(store),
 	}
 }
