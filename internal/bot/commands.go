@@ -90,7 +90,12 @@ type CommandHandlers struct {
 	// subscription (SUBSCRIPTION_REQUIRED); siteURL points to the site.
 	coverage func(guildID snowflake.ID) subscription.Coverage
 	siteURL  string
+	// raidStarted is told of every raid that started (subscription usage).
+	raidStarted func(guildID snowflake.ID)
 }
+
+// OnRaidStarted registers fn, called after each successful raid start.
+func (h *CommandHandlers) OnRaidStarted(fn func(guildID snowflake.ID)) { h.raidStarted = fn }
 
 // RequireSubscription refuses raid starts in guilds not covered by an active
 // subscription, and says whether there never was one or it ended.

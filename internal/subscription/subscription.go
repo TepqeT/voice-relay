@@ -63,6 +63,9 @@ type Link struct {
 	GuildName string       `json:"guild_name,omitempty"`
 	UserID    snowflake.ID `json:"user_id"`
 	LinkedAt  time.Time    `json:"linked_at"`
+	// LastRaid and RaidCount show whether the server really uses the relay.
+	LastRaid  time.Time `json:"last_raid,omitzero"`
+	RaidCount int       `json:"raid_count,omitempty"`
 }
 
 // State is what a server's coverage looks like now.
@@ -266,6 +269,55 @@ func (s *Store) Deactivate(userID, guildID snowflake.ID) error {
 	cur, ok := s.links[guildID]
 	s.mu.RUnlock()
 	if !ok || cur.UserID != userID {
+		return ErrNotFound
+	}
+	return s.mutate(func() { delete(s.links, guildID) })
+}
+
+// RecordRaid notes a raid start on guildID, when a subscription is
+// activated there.
+func (s *Store) RecordRaid(guildID snowflake.ID) error {
+	s.mu.RLock()
+	_, ok := s.links[guildID]
+	s.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	now := s.now().UTC()
+	return s.mutate(func() {
+		l := s.links[guildID]
+		l.LastRaid = now
+		l.RaidCount++
+		s.links[guildID] = l
+	})
+}
+
+// SetMaxGuilds changes how many servers userID may cover (0 = unlimited).
+// Servers already activated stay; new ones are refused above the limit.
+func (s *Store) SetMaxGuilds(userID snowflake.ID, n int) error {
+	if n < 0 {
+		return fmt.Errorf("%w: negative server limit", ErrInvalid)
+	}
+	s.mu.RLock()
+	_, ok := s.subs[userID]
+	s.mu.RUnlock()
+	if !ok {
+		return ErrNotFound
+	}
+	return s.mutate(func() {
+		sub := s.subs[userID]
+		sub.MaxGuilds = n
+		s.subs[userID] = sub
+	})
+}
+
+// Unlink removes guildID from whatever subscription covers it (administrator
+// action against lending).
+func (s *Store) Unlink(guildID snowflake.ID) error {
+	s.mu.RLock()
+	_, ok := s.links[guildID]
+	s.mu.RUnlock()
+	if !ok {
 		return ErrNotFound
 	}
 	return s.mutate(func() { delete(s.links, guildID) })

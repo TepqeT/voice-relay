@@ -30,21 +30,32 @@
 
 <section class="card">
   <h2>{{t "admin.list"}}</h2>
-  <table>
-    <thead><tr><th>{{t "admin.account"}}</th><th>{{t "admin.sub"}}</th><th>{{t "admin.servers"}}</th><th>{{t "admin.since"}}</th><th></th></tr></thead>
-    <tbody>
-    {{range .Rows}}
-      <tr>
-        <td>{{if .Sub.UserName}}{{.Sub.UserName}}<br>{{end}}<span class="muted">{{.Sub.UserID}}</span>{{if .Sub.Note}}<br><span class="muted">{{.Sub.Note}}</span>{{end}}</td>
-        <td><span class="tag sub">{{.Label}}</span></td>
-        <td>{{range .Servers}}{{if .GuildName}}{{.GuildName}}{{else}}{{.GuildID}}{{end}}<br>{{else}}<span class="muted">-</span>{{end}}
-          <span class="muted">{{len .Servers}} / {{if .Sub.MaxGuilds}}{{.Sub.MaxGuilds}}{{else}}{{t "admin.unlimited"}}{{end}}</span></td>
-        <td>{{date .Sub.GrantedAt}}</td>
-        <td><form method="post" action="/admin/revoke"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="user_id" value="{{.Sub.UserID}}"><button class="link bad">{{t "admin.revoke"}}</button></form></td>
-      </tr>
-    {{else}}<tr><td colspan="5" class="muted">{{t "admin.empty"}}</td></tr>
+  <p>{{t "admin.summary" .Accounts .Servers .Flagged}}</p>
+  <p class="muted">{{t "admin.flaghelp"}}</p>
+  {{range .Rows}}
+  <div class="account{{if .Flagged}} flagged{{end}}">
+    <div class="row">
+      <span class="name">{{if .Sub.UserName}}{{.Sub.UserName}}{{else}}{{.Sub.UserID}}{{end}}</span>
+      <span class="tag sub">{{.Label}}</span>
+      <span class="tag{{if .Flagged}} bad{{end}}">{{len .Servers}} / {{if .Sub.MaxGuilds}}{{.Sub.MaxGuilds}}{{else}}{{t "admin.unlimited"}}{{end}}</span>
+      <form method="post" action="/admin/limit" class="inline limit"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="user_id" value="{{.Sub.UserID}}"><input name="max_guilds" type="number" min="0" max="1000" value="{{.Sub.MaxGuilds}}" aria-label="{{t "admin.max"}}"><button class="button small">{{t "admin.setlimit"}}</button></form>
+      <form method="post" action="/admin/revoke" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="user_id" value="{{.Sub.UserID}}"><button class="link bad">{{t "admin.revoke"}}</button></form>
+    </div>
+    <p class="muted">{{.Sub.UserID}} · {{t "admin.since"}} {{date .Sub.GrantedAt}}{{if .Sub.Note}} · {{.Sub.Note}}{{end}}</p>
+    {{if .Over}}<p class="bad">{{t "admin.over"}}</p>{{end}}
+    <ul class="list servers">
+    {{range .Servers}}
+      <li class="row{{if .Flags}} flag{{end}}">
+        <span class="name">{{if .Link.GuildName}}{{.Link.GuildName}}{{else}}{{.Link.GuildID}}{{end}}</span>
+        {{range .Flags}}<span class="tag bad">{{t .}}</span>{{end}}
+        <span class="muted">{{if .Facts.BotPresent}}{{t "admin.members" .Facts.MemberCount}} · {{end}}{{t "admin.activated" (date .Link.LinkedAt)}} · {{if .Link.RaidCount}}{{t "admin.raids" .Link.RaidCount}}, {{t "admin.lastraid" (date .Link.LastRaid)}}{{else}}{{t "admin.noraid"}}{{end}}</span>
+        <form method="post" action="/admin/unlink" class="inline"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="guild_id" value="{{.Link.GuildID}}"><button class="link bad">{{t "admin.unlink"}}</button></form>
+      </li>
+    {{else}}<li class="muted">-</li>
     {{end}}
-    </tbody>
-  </table>
+    </ul>
+  </div>
+  {{else}}<p class="muted">{{t "admin.empty"}}</p>
+  {{end}}
 </section>
 {{template "foot" .}}

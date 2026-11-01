@@ -163,3 +163,41 @@ func TestOpenRejectsCorruptFile(t *testing.T) {
 }
 
 func snowflakeID(v uint64) snowflake.ID { return snowflake.ID(v) }
+
+func TestRaidTrackingLimitAndUnlink(t *testing.T) {
+	s := open(t, "")
+	_ = s.Grant(Subscription{UserID: 7, Plan: PlanLifetime})
+	for _, g := range []uint64{1, 2, 3} {
+		_ = s.Activate(7, snowflakeID(g), "")
+	}
+	_ = s.RecordRaid(1)
+	_ = s.RecordRaid(1)
+	if err := s.RecordRaid(99); err != nil {
+		t.Fatal(err) // not linked: ignored
+	}
+	if l := s.Guilds(7)[0]; l.RaidCount != 2 || !l.LastRaid.Equal(now) {
+		t.Fatalf("raid tracking = %+v", l)
+	}
+	// Bridle: the limit blocks new servers, existing ones stay until unlinked.
+	if err := s.SetMaxGuilds(7, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Activate(7, 4, ""); !errors.Is(err, ErrLimit) {
+		t.Fatalf("activation above the new limit = %v", err)
+	}
+	if len(s.Guilds(7)) != 3 {
+		t.Fatal("existing servers must stay")
+	}
+	if err := s.Unlink(3); err != nil || s.Coverage(3).State != StateNone {
+		t.Fatalf("unlink: %v", err)
+	}
+	if err := s.Unlink(3); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second unlink = %v", err)
+	}
+	if err := s.SetMaxGuilds(8, 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("limit on unknown account = %v", err)
+	}
+	if err := s.SetMaxGuilds(7, -1); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("negative limit = %v", err)
+	}
+}

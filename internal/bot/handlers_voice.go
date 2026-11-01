@@ -175,6 +175,9 @@ func (h *CommandHandlers) startHostRaid(cmdCtx context.Context, guildID snowflak
 		msg += h.raidChannelsLine(guildID, loc)
 		msg += skipped
 		slog.InfoContext(cmdCtx, "voice raid started", slog.String("relayCode", relayCode))
+		if h.raidStarted != nil {
+			h.raidStarted(guildID)
+		}
 		reply(msg)
 	}()
 }

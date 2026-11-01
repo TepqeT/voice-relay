@@ -23,7 +23,8 @@ const (
 )
 
 type fakeBackend struct {
-	canManage map[snowflake.ID]bool // absent = unknown
+	facts     map[snowflake.ID]ServerFacts // by guild; default: bot present, holder manages
+	canManage map[snowflake.ID]bool        // absent = unknown
 	setups    []snowflake.ID
 	srv       *Server
 	subs      *subscription.Store
@@ -34,6 +35,12 @@ func (f *fakeBackend) BotGuilds() []GuildRef {
 }
 
 func (f *fakeBackend) BotName() string { return "Voix de Test" }
+func (f *fakeBackend) ServerFacts(g, _ snowflake.ID) ServerFacts {
+	if sf, ok := f.facts[g]; ok {
+		return sf
+	}
+	return ServerFacts{BotPresent: true, MemberCount: 50, Member: true, Manages: true}
+}
 func (f *fakeBackend) GuildStatus(id snowflake.ID) GuildStatus {
 	return GuildStatus{
 		BotPresent:   id == managedGuild,
@@ -89,7 +96,7 @@ func fakeDiscord(t *testing.T) *httptest.Server {
 func newTestSite(t *testing.T) (*httptest.Server, *fakeBackend, *http.Client) {
 	t.Helper()
 	discord := fakeDiscord(t)
-	be := &fakeBackend{canManage: map[snowflake.ID]bool{}}
+	be := &fakeBackend{canManage: map[snowflake.ID]bool{}, facts: map[snowflake.ID]ServerFacts{}}
 	var site *httptest.Server
 	subs, _ := subscription.Open("")
 	s, err := New(Config{Addr: ":0", BaseURL: "http://placeholder", ClientID: 42, ClientSecret: "secret"}, be, subs)
@@ -515,6 +522,73 @@ func TestTemplateKeysExist(t *testing.T) {
 				t.Errorf("%s uses unknown key %q", e.Name(), m[1])
 			}
 		}
+	}
+}
+
+// The admin page shows how many servers each account covers and flags the
+// servers its holder does not run, then lets the admin bridle the account.
+func TestAdminSpotsAndBridlesLending(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.srv.AddAdmins(7)
+	_ = be.subs.Grant(subscription.Subscription{UserID: 50, UserName: "Honnête", Plan: subscription.PlanLifetime})
+	_ = be.subs.Activate(50, 1001, "Sa guilde")
+	_ = be.subs.Grant(subscription.Subscription{UserID: 60, UserName: "Prêteur", Plan: subscription.PlanLifetime})
+	for i, name := range []string{"Guilde A", "Guilde B", "Guilde C"} {
+		_ = be.subs.Activate(60, snowflake.ID(2001+i), name)
+	}
+	_ = be.subs.RecordRaid(2001)
+	be.facts[2002] = ServerFacts{BotPresent: true, MemberCount: 300, Member: false}
+	be.facts[2003] = ServerFacts{BotPresent: true, MemberCount: 120, Member: true, Manages: false}
+
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/admin")
+	for _, want := range []string{
+		"2 compte(s) abonné(s), 4 serveur(s) couvert(s), 2 serveur(s) suspect(s).",
+		"titulaire absent du serveur", "titulaire sans « Gérer le serveur »",
+		"300 membres", "1 raid(s)", "aucun raid",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("admin page misses %q", want)
+		}
+	}
+	if strings.Index(page, "Prêteur") > strings.Index(page, "Honnête") {
+		t.Error("the flagged account must come first")
+	}
+	csrf := csrfRe.FindStringSubmatch(page)[1]
+
+	resp, _ := c.PostForm(site.URL+"/admin/limit", url.Values{"csrf": {csrf}, "user_id": {"60"}, "max_guilds": {"1"}})
+	if resp.Header.Get("Location") != "/admin?ok=limited" {
+		t.Fatalf("limit = %q", resp.Header.Get("Location"))
+	}
+	if sub, _ := be.subs.Get(60); sub.MaxGuilds != 1 {
+		t.Fatalf("max = %d", sub.MaxGuilds)
+	}
+	if _, page = get(t, c, site.URL+"/admin"); !strings.Contains(page, "Plus de serveurs que la limite") {
+		t.Error("over-limit warning missing")
+	}
+	for _, g := range []string{"2002", "2003"} {
+		resp, _ = c.PostForm(site.URL+"/admin/unlink", url.Values{"csrf": {csrf}, "guild_id": {g}})
+		if resp.Header.Get("Location") != "/admin?ok=unlinked" {
+			t.Fatalf("unlink %s = %q", g, resp.Header.Get("Location"))
+		}
+	}
+	if be.subs.Active(2002) || be.subs.Active(2003) || !be.subs.Active(2001) {
+		t.Fatal("unlink result")
+	}
+	for _, bad := range []url.Values{
+		{"csrf": {csrf}, "user_id": {"60"}, "max_guilds": {"-2"}},
+		{"csrf": {csrf}, "user_id": {"999"}, "max_guilds": {"1"}},
+	} {
+		resp, _ = c.PostForm(site.URL+"/admin/limit", bad)
+		if resp.Header.Get("Location") != "" {
+			t.Errorf("bad limit %v accepted", bad)
+		}
+	}
+	// Non-admins cannot bridle.
+	be.srv.admins.Store(&map[snowflake.ID]bool{})
+	resp, _ = c.PostForm(site.URL+"/admin/unlink", url.Values{"csrf": {csrf}, "guild_id": {"2001"}})
+	if resp.StatusCode != http.StatusForbidden || !be.subs.Active(2001) {
+		t.Fatal("non-admin unlinked a server")
 	}
 }
 

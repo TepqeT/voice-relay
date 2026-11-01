@@ -120,6 +120,8 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 	s.mux.HandleFunc("GET /admin", s.withAdmin(s.handleAdmin))
 	s.mux.HandleFunc("POST /admin/grant", s.withAdmin(s.handleGrant))
 	s.mux.HandleFunc("POST /admin/revoke", s.withAdmin(s.handleRevoke))
+	s.mux.HandleFunc("POST /admin/limit", s.withAdmin(s.handleLimit))
+	s.mux.HandleFunc("POST /admin/unlink", s.withAdmin(s.handleUnlink))
 	return s, nil
 }
 

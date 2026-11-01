@@ -36,6 +36,9 @@ func (f fakeSiteManager) RoleSetupStatus(snowflake.ID) []manager.RoleSetup {
 func (f fakeSiteManager) OwnerGuilds() []manager.GuildRef {
 	return []manager.GuildRef{{ID: 444, Name: "Test Server"}}
 }
+func (f fakeSiteManager) GuildFacts(snowflake.ID, snowflake.ID) manager.GuildFacts {
+	return manager.GuildFacts{BotPresent: true, MemberCount: 42, Member: true}
+}
 func (f fakeSiteManager) CreateMissingRoles(context.Context, snowflake.ID) (manager.RoleSetupReport, error) {
 	return manager.RoleSetupReport{Created: []string{"Clerc"}}, nil
 }
@@ -69,6 +72,9 @@ func TestWebBackendGuildStatus(t *testing.T) {
 	}
 	if g := b.BotGuilds(); len(g) != 1 || g[0].ID != 444 || g[0].Name != "Test Server" {
 		t.Fatalf("bot guilds = %+v", g)
+	}
+	if sf := b.ServerFacts(777, 7); !sf.BotPresent || sf.MemberCount != 42 || !sf.Member || sf.Manages {
+		t.Fatalf("facts = %+v", sf)
 	}
 	if rep, _ := b.SetupRoles(context.Background(), 777); len(rep.Created) != 1 {
 		t.Fatalf("setup = %+v", rep)

@@ -313,6 +313,13 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			return nil, fmt.Errorf("subscriptions: %w", err)
 		}
 	}
+	if subs != nil {
+		cmdHandlers.OnRaidStarted(func(guildID snowflake.ID) {
+			if err := subs.RecordRaid(guildID); err != nil {
+				slog.Warn("failed to record raid for the subscription", slog.String("guildID", guildID.String()), slog.Any("err", err))
+			}
+		})
+	}
 	if cfg.Web.SubscriptionRequired {
 		cmdHandlers.RequireSubscription(subs.Coverage, cfg.Web.BaseURL)
 		slog.Info("subscriptions required to start a raid", slog.String("file", cfg.Web.SubscriptionsFile))

@@ -21,6 +21,7 @@ type siteManager interface {
 	RoleSetupStatus(guildID snowflake.ID) []manager.RoleSetup
 	CreateMissingRoles(ctx context.Context, guildID snowflake.ID) (manager.RoleSetupReport, error)
 	OwnerGuilds() []manager.GuildRef
+	GuildFacts(guildID, userID snowflake.ID) manager.GuildFacts
 }
 
 // siteOwnerPermissions is what the site's invite asks for: the speaker set,
@@ -102,6 +103,11 @@ func (b *webBackend) BotGuilds() []web.GuildRef {
 		out[i] = web.GuildRef{ID: g.ID, Name: g.Name}
 	}
 	return out
+}
+
+func (b *webBackend) ServerFacts(guildID, userID snowflake.ID) web.ServerFacts {
+	f := b.m.GuildFacts(guildID, userID)
+	return web.ServerFacts{BotPresent: f.BotPresent, MemberCount: f.MemberCount, Member: f.Member, Manages: f.Manages}
 }
 
 // permissionKeys lists perms as keys the site translates (perm.<key>).
