@@ -9,7 +9,7 @@ import (
 
 // The site speaks French and English. The language comes from the "lang"
 // cookie (set by the switch in the header), else the browser's
-// Accept-Language, else French.
+// Accept-Language, else English.
 
 const langCookie = "vr_lang"
 
@@ -31,7 +31,7 @@ func langFor(r *http.Request) string {
 			return "en"
 		}
 	}
-	return "fr"
+	return "en"
 }
 
 // tr returns the translator of lang: tr(key, args...) formats with fmt.
@@ -40,7 +40,7 @@ func tr(lang string) func(key string, args ...any) string {
 	return func(key string, args ...any) string {
 		s, ok := d[key]
 		if !ok {
-			s, ok = messages["fr"][key]
+			s, ok = messages["en"][key]
 		}
 		if !ok {
 			return key

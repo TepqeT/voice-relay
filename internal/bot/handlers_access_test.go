@@ -94,3 +94,38 @@ func TestCommandNamesWithoutFaction(t *testing.T) {
 		}
 	}
 }
+
+// Discord shows the English names by default and the French ones to French
+// clients; the router matches the English base name.
+func TestEnglishCommandNames(t *testing.T) {
+	cases := []struct {
+		label, faction           string
+		grant, revoke, name, dis string
+	}{
+		{"RvR", "", "RvR: grant access", "RvR: revoke access", "RvR: make squad lead", "RvR: remove squad lead"},
+		{"RvR", "Asmodiens", "RvR Asmodiens: grant access", "RvR Asmodiens: revoke access", "RvR Asmodiens: make squad lead", "RvR Asmodiens: remove squad lead"},
+	}
+	for _, c := range cases {
+		g, r := accessCommandNamesEN(c.label, c.faction)
+		n, d := squadLeadCommandNamesEN(c.label, c.faction)
+		if g != c.grant || r != c.revoke || n != c.name || d != c.dis {
+			t.Errorf("%q/%q: got %q %q %q %q", c.label, c.faction, g, r, n, d)
+		}
+	}
+	for _, label := range []string{"Guerre de territoire hebdomadaire", "RvR"} {
+		for _, f := range []string{"", "Une faction au nom beaucoup trop long"} {
+			g, r := accessCommandNamesEN(label, f)
+			n, d := squadLeadCommandNamesEN(label, f)
+			seen := map[string]bool{}
+			for _, s := range []string{g, r, n, d} {
+				if k := len([]rune(s)); k == 0 || k > 32 {
+					t.Errorf("%q/%q: %q has %d runes", label, f, s, k)
+				}
+				seen[s] = true
+			}
+			if len(seen) != 4 {
+				t.Errorf("%q/%q: names collide: %q %q %q %q", label, f, g, r, n, d)
+			}
+		}
+	}
+}

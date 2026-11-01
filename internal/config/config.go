@@ -102,7 +102,7 @@ type RvRConfig struct {
 	// "reports" next to the store file; "none" disables saving.
 	ReportsDir string
 	// ReportLang is the language of the report posted in Discord (fr or en).
-	// REPORT_LANG, default fr.
+	// REPORT_LANG, default en.
 	ReportLang string
 	// ReportToDiscord posts the quality report in the channel where /start
 	// was used. REPORT_TO_DISCORD, default true.
@@ -115,7 +115,7 @@ type RvRConfig struct {
 	// default 10s.
 	DiagInterval time.Duration
 	// SquadLeadRole is the role (name or ID) whose members call the raid leads
-	// from their squad channel. SQUAD_LEAD_ROLE, default "Chef d'escouade";
+	// from their squad channel. SQUAD_LEAD_ROLE, default "Squad Lead";
 	// "none" disables squad calls.
 	SquadLeadRole string
 	// RaidLeadRole is the role (name or ID) of the raid leads: the only members
@@ -156,7 +156,7 @@ type ChannelsConfig struct {
 	After string
 	// RaidLeadName is the raid lead channel name. RAID_LEAD_CHANNEL, default "Raid Lead".
 	RaidLeadName string
-	// SquadName prefixes the numbered squad channels. SQUAD_CHANNEL, default "Escouade".
+	// SquadName prefixes the numbered squad channels. SQUAD_CHANNEL, default "Squad".
 	SquadName string
 	// SquadCount is the number of squad channels, capped by the speaker bots.
 	// SQUAD_COUNT, default 10.
@@ -288,11 +288,11 @@ func loadRvR(store string) RvRConfig {
 		SoundOnStart:       noneToEmpty(envOr("SOUND_ON_START", "debut")),
 		SoundOnStop:        noneToEmpty(envOr("SOUND_ON_STOP", "fin")),
 		ReportsDir:         noneToEmpty(reports),
-		ReportLang:         strings.ToLower(envOr("REPORT_LANG", "fr")),
+		ReportLang:         strings.ToLower(envOr("REPORT_LANG", "en")),
 		ReportToDiscord:    parseBool("REPORT_TO_DISCORD", true),
 		DiagDir:            noneToEmpty(diagDir),
 		DiagInterval:       diagInterval,
-		SquadLeadRole:      noneToEmpty(envOr("SQUAD_LEAD_ROLE", "Chef d'escouade")),
+		SquadLeadRole:      noneToEmpty(envOr("SQUAD_LEAD_ROLE", "Squad Lead")),
 		RaidLeadRole:       noneToEmpty(envOr("RAID_LEAD_ROLE", "Raid Lead")),
 		SquadLeadKey:       squadKey(envOr("SQUAD_LEAD_KEY", "priority")),
 		SquadLeadsToSquads: parseBool("SQUAD_LEADS_TO_SQUADS", false),
@@ -320,7 +320,7 @@ func loadChannels(store string) ChannelsConfig {
 		Category:      category,
 		After:         noneToEmpty(envOr("RVR_CATEGORY_AFTER", "")),
 		RaidLeadName:  envOr("RAID_LEAD_CHANNEL", "Raid Lead"),
-		SquadName:     envOr("SQUAD_CHANNEL", "Escouade"),
+		SquadName:     envOr("SQUAD_CHANNEL", "Squad"),
 		SquadCount:    count,
 		Region:        noneToEmpty(envOr("VOICE_REGION", "")),
 		StateFile:     filepath.Join(filepath.Dir(store), "rvr-channels.json"),
