@@ -49,6 +49,7 @@ type Service struct {
 	rvr                rvrState       // announcements and quality reports (rvr.go)
 	squad              squadState     // squad lead calls to the raid leads (squad.go)
 	channels           channelState   // raid channels created per raid (rvr_channels.go)
+	sort               sortState      // class sorting from the waiting channel (rvr_class_sort.go)
 
 	accessMembersMu sync.Mutex
 	accessMembers   map[snowflake.ID]memberList // name lookups of the access channel (rvr_access_channel.go)

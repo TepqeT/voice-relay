@@ -107,6 +107,7 @@ func (h *CommandHandlers) Register(r handler.Router) {
 	h.registerPanel(r)
 	h.registerAccess(r)
 	h.registerSquadLeads(r)
+	h.registerClassSort(r)
 
 	// Main setup menu components
 	r.SelectMenuComponent("/setup/bind-role", h.withGuildSelectMenu(h.handleBindRoleMenu))

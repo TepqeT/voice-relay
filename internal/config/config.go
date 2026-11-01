@@ -138,6 +138,17 @@ type ChannelsConfig struct {
 	// to revoke). Needs the Message Content intent. ACCESS_CHANNEL, default none.
 	AccessChannel string
 	StateFile     string
+	// ClassRoles lists the class roles (names or IDs, comma separated) used
+	// to sort waiting players into the squads. CLASS_ROLES, default none:
+	// class sorting is off.
+	ClassRoles []string
+	// WaitingChannel is the voice channel (name or ID) players wait in before
+	// being sorted; created with the raid channels when Enabled. WAITING_CHANNEL,
+	// default none: class sorting is off.
+	WaitingChannel string
+	// ClassRule is the composition rule (see classsort.ParseRule). CLASS_RULE,
+	// default "balanced".
+	ClassRule string
 }
 
 const defaultSessionIdleTimeout = 10 * time.Minute
@@ -241,7 +252,22 @@ func loadChannels(store string) ChannelsConfig {
 		AccessRole:    noneToEmpty(envOr("ACCESS_ROLE", "")),
 		BoardRole:     noneToEmpty(envOr("BOARD_ROLE", "")),
 		AccessChannel: noneToEmpty(strings.TrimPrefix(envOr("ACCESS_CHANNEL", ""), "#")),
+
+		ClassRoles:     splitList(noneToEmpty(envOr("CLASS_ROLES", ""))),
+		WaitingChannel: noneToEmpty(strings.TrimPrefix(envOr("WAITING_CHANNEL", ""), "#")),
+		ClassRule:      envOr("CLASS_RULE", "balanced"),
 	}
+}
+
+// splitList splits a comma or semicolon separated list, dropping blanks.
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' }) {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func squadKey(v string) string {

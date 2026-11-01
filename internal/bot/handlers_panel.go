@@ -43,19 +43,25 @@ func (h *CommandHandlers) handlePanel(guildID snowflake.ID, loc *i18n.Localizer,
 }
 
 func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) discord.MessageCreate {
-	rows := []discord.LayoutComponent{
-		discord.NewActionRow(
-			discord.NewSuccessButton(loc.T("panel.btn.start"), panelStartID),
-			discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID),
-			discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID),
-		),
+	buttons := []discord.InteractiveComponent{
+		discord.NewSuccessButton(loc.T("panel.btn.start"), panelStartID),
+		discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID),
+		discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID),
 	}
+	sorter, sortOn := h.classSort()
+	if sortOn {
+		buttons = append(buttons, discord.NewPrimaryButton(loc.T("panel.btn.sort"), panelSortID))
+	}
+	rows := []discord.LayoutComponent{discord.NewActionRow(buttons...)}
 	content := loc.T("panel.content")
 	if h.dynamicChannels() {
 		content += "\n" + loc.T("panel.content_channels", "Category", h.rvr.ChannelCategory())
 	}
 	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
 		content += "\n" + loc.T("panel.content_squads")
+	}
+	if sortOn {
+		content += "\n" + loc.T("panel.content_sort", "Waiting", sorter.ClassSortWaiting())
 	}
 	return discord.MessageCreate{
 		Content:         content,

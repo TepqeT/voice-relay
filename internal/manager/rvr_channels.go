@@ -67,7 +67,9 @@ type RaidChannels struct {
 	Category snowflake.ID   `json:"category"`
 	RaidLead snowflake.ID   `json:"raid_lead"`
 	Squads   []snowflake.ID `json:"squads"`
-	Created  time.Time      `json:"created"`
+	// Waiting is the class sorting waiting channel, 0 when sorting is off.
+	Waiting snowflake.ID `json:"waiting,omitempty"`
+	Created time.Time    `json:"created"`
 	// CallerRole is the raid lead role the channels were created for: channels
 	// made for another role (or none) are never reused.
 	CallerRole snowflake.ID `json:"caller_role,omitempty"`
@@ -76,8 +78,11 @@ type RaidChannels struct {
 }
 
 func (r RaidChannels) all() []snowflake.ID {
-	ids := make([]snowflake.ID, 0, len(r.Squads)+2)
+	ids := make([]snowflake.ID, 0, len(r.Squads)+3)
 	ids = append(ids, r.Squads...)
+	if r.Waiting != 0 {
+		ids = append(ids, r.Waiting)
+	}
 	if r.RaidLead != 0 {
 		ids = append(ids, r.RaidLead)
 	}
@@ -238,7 +243,8 @@ func (m *Service) prepareRaidChannels(ctx context.Context, guildID snowflake.ID)
 // still exist and they hold exactly squads squad channels.
 func (m *Service) reusableChannels(guildID snowflake.ID, squads int, callerRole, viewRole snowflake.ID) (RaidChannels, bool) {
 	rc, ok := m.RaidChannelsOf(guildID)
-	if !ok || len(rc.Squads) != squads || rc.RaidLead == 0 || rc.CallerRole != callerRole || rc.ViewRole != viewRole {
+	if !ok || len(rc.Squads) != squads || rc.RaidLead == 0 || rc.CallerRole != callerRole || rc.ViewRole != viewRole ||
+		(rc.Waiting != 0) != m.ClassSortEnabled() {
 		return RaidChannels{}, false
 	}
 	for _, id := range rc.all() {
@@ -330,6 +336,12 @@ func (m *Service) createRaidChannels(ctx context.Context, guildID, factionRole, 
 			return rc, err
 		}
 		rc.Squads = append(rc.Squads, id)
+		m.rememberChannels(guildID, rc)
+	}
+	if m.ClassSortEnabled() {
+		if rc.Waiting, err = create(m.sort.opts.Waiting, channelWaiting); err != nil {
+			return rc, err
+		}
 		m.rememberChannels(guildID, rc)
 	}
 	return rc, nil
@@ -487,6 +499,7 @@ const (
 	channelCategory channelKind = iota
 	channelRaidLead
 	channelSquad
+	channelWaiting // class sorting waiting room: same access as the squads
 )
 
 const voiceMember = discord.PermissionViewChannel | discord.PermissionConnect |
@@ -586,7 +599,7 @@ func (m *Service) ReleaseRaidChannels(ctx context.Context, guildID snowflake.ID)
 // deleted; the others stay remembered for the next attempt. Caller holds op.
 func (m *Service) deleteRaidChannels(ctx context.Context, guildID snowflake.ID, rc RaidChannels, reason string) {
 	var left RaidChannels
-	left.Category, left.RaidLead, left.Created = rc.Category, rc.RaidLead, rc.Created
+	left.Category, left.RaidLead, left.Waiting, left.Created = rc.Category, rc.RaidLead, rc.Waiting, rc.Created
 	failed := map[snowflake.ID]bool{}
 	for _, id := range rc.all() {
 		err := m.ownerClient.Rest.DeleteChannel(id, rest.WithCtx(ctx), rest.WithReason("RvR raid end"))
@@ -608,6 +621,9 @@ func (m *Service) deleteRaidChannels(ctx context.Context, guildID snowflake.ID, 
 	}
 	if !failed[left.RaidLead] {
 		left.RaidLead = 0
+	}
+	if !failed[left.Waiting] {
+		left.Waiting = 0
 	}
 	if !failed[left.Category] {
 		left.Category = 0

@@ -81,6 +81,28 @@ Mise en place (une fois) :
 
 Si la touche prioritaire ne fonctionne pas en test, passer `SQUAD_LEAD_KEY: always` dans `docker-compose.yml` : les Chefs d'escouade sont alors relayés dès qu'ils parlent (ils doivent utiliser l'appuyer pour parler).
 
+## Tri automatique par classe
+
+Les joueurs prennent **un seul** rôle de classe et rejoignent le salon d'attente. Pendant un raid, le bot les déplace dans les escouades selon la règle des Raid Leads.
+
+- Déclenchement : à l'arrivée d'un joueur dans le salon d'attente (regroupé sur 2 s), ou bouton **Répartir** du panneau (Raid Leads uniquement).
+- Restent en attente, et apparaissent dans le récapitulatif du bouton Répartir : joueur sans rôle de classe, joueur avec plusieurs rôles de classe, classe sans place libre, Chef d'escouade (jamais déplacé).
+- Avec `DYNAMIC_CHANNELS`, le salon d'attente est créé avec les autres, visible par le même rôle que les escouades (`ACCESS_ROLE` ou rôle de faction). Sinon, il doit exister (nom ou ID).
+
+Mise en place :
+1. Créer un rôle par classe et les donner aux joueurs (un seul chacun).
+2. Vérifier que le bot principal a **Déplacer des membres** (déjà fait en v20). Sans elle, le récapitulatif l'indique et rien ne plante.
+3. Décommenter `CLASS_ROLES`, `WAITING_CHANNEL` et `CLASS_RULE` dans `docker-compose.yml`, relancer, puis republier le panneau (`/panneau`) pour voir le bouton.
+
+Règles (`CLASS_RULE`) :
+
+| Valeur | Effet |
+|---|---|
+| `balanced` | Chaque classe répartie le plus équitablement possible entre les escouades |
+| `balanced; max=6` | Idem, 6 membres au plus par escouade |
+| `Clerc=2; Templier=1; *=1` | Quotas par escouade ; `*` pour les autres classes (sans `*`, elles ne sont pas placées) |
+| `Clerc=2/1` | 2 Clercs dans l'escouade 1, puis 1 dans chacune des suivantes |
+
 ## Commandes Discord (alternative aux boutons)
 
 | Commande | Qui | Effet |
@@ -147,6 +169,9 @@ docker compose logs --since 3h asmos | Select-String -Pattern "rvr quality repor
 | `SQUAD_COUNT` | `5` | Nombre de salons d'escouade |
 | `RAID_LEAD_CHANNEL` / `SQUAD_CHANNEL` | `Raid Lead` / `Escouade` | Noms des salons |
 | `VOICE_REGION` | vide | Région vocale commune à tous les salons, vide = automatique |
+| `CLASS_ROLES` | vide | Rôles de classe (noms ou ID, séparés par des virgules), vide = tri désactivé |
+| `WAITING_CHANNEL` | vide | Salon d'attente du tri par classe, vide = tri désactivé |
+| `CLASS_RULE` | `balanced` | Règle de composition des escouades (voir Tri automatique par classe) |
 
 ## Voix prioritaire
 

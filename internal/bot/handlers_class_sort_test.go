@@ -1,0 +1,104 @@
+package bot
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/classsort"
+	"github.com/TepqeT/voice-relay/internal/i18n"
+	"github.com/TepqeT/voice-relay/internal/manager"
+)
+
+type fakeSortRvR struct {
+	fakeRvR
+	enabled bool
+}
+
+func (f fakeSortRvR) ClassSortEnabled() bool   { return f.enabled }
+func (f fakeSortRvR) ClassSortWaiting() string { return "Attente" }
+func (f fakeSortRvR) CanSortPlayers(snowflake.ID, []snowflake.ID, discord.Permissions) bool {
+	return true
+}
+func (f fakeSortRvR) SortPlayers(context.Context, snowflake.ID) (manager.SortReport, error) {
+	return manager.SortReport{}, nil
+}
+
+func TestBuildPanelSortButton(t *testing.T) {
+	bundle, err := i18n.NewBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc := bundle.For("fr", "")
+	for _, enabled := range []bool{false, true} {
+		h := &CommandHandlers{bundle: bundle}
+		h.SetRvR(fakeSortRvR{enabled: enabled})
+		msg := h.buildPanel(1, loc)
+		row := msg.Components[0].(discord.ActionRowComponent)
+		want := 3
+		if enabled {
+			want = 4
+		}
+		if len(row.Components) != want {
+			t.Fatalf("enabled=%v: %d buttons, want %d", enabled, len(row.Components), want)
+		}
+		if !enabled {
+			if strings.Contains(msg.Content, "Répartir") {
+				t.Fatalf("sort text shown while disabled: %q", msg.Content)
+			}
+			continue
+		}
+		b := row.Components[3].(discord.ButtonComponent)
+		if b.CustomID != panelSortID || b.Label != "Répartir" {
+			t.Fatalf("sort button %+v", b)
+		}
+		if !strings.Contains(msg.Content, "« Attente »") {
+			t.Fatalf("content %q", msg.Content)
+		}
+	}
+}
+
+func TestRenderSort(t *testing.T) {
+	bundle, err := i18n.NewBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc := bundle.For("fr", "")
+	got := renderSort(loc, "Attente", manager.SortReport{
+		Squads: 3, Moved: 5, Failed: 1, PermissionDenied: true,
+		Waiting: []manager.SortWaiting{
+			{UserID: 11, Reason: classsort.ReasonNoClass},
+			{UserID: 12, Reason: classsort.ReasonMultipleClasses},
+			{UserID: 13, Reason: classsort.ReasonSquadLead},
+			{UserID: 14, Reason: classsort.ReasonNoRoom},
+		},
+	}, nil)
+	for _, want := range []string{
+		"Joueurs déplacés : 5 (escouades : 3)", "refusés par Discord : 1", "Déplacer des membres",
+		"<@11> : aucun rôle de classe", "<@12> : plusieurs rôles de classe",
+		"<@13> : chef d'escouade", "<@14> : plus de place",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("recap misses %q:\n%s", want, got)
+		}
+	}
+	if got := renderSort(loc, "Attente", manager.SortReport{Squads: 2}, nil); !strings.Contains(got, "Plus personne en attente") {
+		t.Errorf("empty recap = %q", got)
+	}
+	errs := map[error]string{
+		manager.ErrNoActiveSession:       "Aucun raid en cours",
+		manager.ErrWaitingChannelMissing: "« Attente » introuvable",
+		manager.ErrNoSquadChannels:       "aucun salon d'escouade",
+		manager.ErrClassSortDisabled:     "pas configuré",
+		errors.New("boom"):               "boom",
+	}
+	for err, want := range errs {
+		if got := renderSort(loc, "Attente", manager.SortReport{}, err); !strings.Contains(got, want) {
+			t.Errorf("renderSort(%v) = %q, want %q", err, got, want)
+		}
+	}
+}
