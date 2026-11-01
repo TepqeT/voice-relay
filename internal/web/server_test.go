@@ -27,7 +27,7 @@ type fakeBackend struct {
 	canManage map[snowflake.ID]bool        // absent = unknown
 	setups    []snowflake.ID
 	removed   []snowflake.ID
-	panel     string // PanelChannel reported for every server
+	panel     string   // PanelChannel reported for every server
 	unFailed  []string // relay bots the next uninstall reports as stuck
 	srv       *Server
 	subs      *subscription.Store

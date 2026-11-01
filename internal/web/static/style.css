@@ -164,3 +164,15 @@ footer p { margin:6px 0; }
   .with-scene .scene, .hero-grid .scene { max-width:380px; margin:0 auto; }
   footer { padding:16px 12px; }
 }
+
+/* ---- Checkout ---- */
+.checkout { display:grid; gap:12px; max-width:460px; }
+.pay-title { margin:0; font-weight:600; }
+.plans { display:grid; gap:8px; }
+.plan { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; cursor:pointer; }
+.plan:has(input:checked) { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.plan input { accent-color:var(--accent); }
+.plan-name { flex:1; font-weight:600; }
+.plan-price { font-weight:700; }
+.paypal-buttons { min-height:48px; }
+.pay-msg:empty { display:none; }

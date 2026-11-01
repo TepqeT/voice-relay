@@ -94,7 +94,12 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
 - Retirer : bouton **Retirer**. Les serveurs restent associés au compte et le bot annonce que l'abonnement a pris fin.
 - Les abonnements et les serveurs activés sont dans `deploy/ovh/data/subscriptions.json` (à sauvegarder avec `data`).
 - Blocage des raids : désactivé par défaut. Une fois `SUBSCRIPTION_REQUIRED: "true"` activé, un lancement de raid sur un serveur non couvert affiche, dans la langue du serveur : pas d'abonnement, abonnement expiré le jj/mm/aaaa, ou abonnement terminé, avec le lien du site. Avant d'activer : t'offrir un abonnement à vie et l'activer sur Aion 2 France depuis le site.
-- Paiement : avec `PAYPAL_URL`, le site affiche "Payer avec PayPal" (montant `PRICE_LABEL`) et l'identifiant Discord du client à mettre dans la note du paiement. Le paiement arrive sur ton compte PayPal ; tu offres ensuite l'abonnement depuis Administration avec cet identifiant. Pas encore d'activation automatique.
+- Paiement sur le site (PayPal Checkout) : l'acheteur choisit une formule et paie dans la fenêtre PayPal ouverte depuis le site, avec un compte PayPal ou une carte. L'argent arrive sur le compte PayPal propriétaire de l'application, l'abonnement est activé tout seul et le paiement apparaît dans Administration > Paiements reçus (fichier `data/payments.jsonl`, à sauvegarder).
+  1. https://developer.paypal.com > Apps & Credentials > Create App (type Merchant). Un compte PayPal Business est nécessaire pour les identifiants Live.
+  2. Dans `.env` : `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE=sandbox`, `PAYPAL_PLANS=30d=4.99,365d=39,life=79` (durée=prix).
+  3. Relancer `mettre-a-jour.sh`, payer avec un compte de test sandbox, vérifier l'abonnement.
+  4. Passer aux identifiants de l'onglet Live et `PAYPAL_MODE=live`, relancer.
+- Ancien mode (lien `PAYPAL_URL`) : utilisé seulement si le paiement sur le site n'est pas configuré.
 - Support : bouton "Contacter le support" en bas de chaque page, vers ton profil Discord (propriétaire de l'application) ; `SUPPORT_URL` pour un autre lien.
 - Désinstaller : page du serveur > Désinstaller (case à cocher). Arrête le raid, supprime les salons du raid, fait partir le bot principal et les bots relais, libère l'abonnement. Les rôles restent.
 

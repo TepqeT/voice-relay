@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"github.com/TepqeT/voice-relay/internal/payment"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -374,6 +375,25 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			return ""
 		}, cfg.SpeakerTokens)
 		backend.panel = panel
+		var checkout *web.Checkout
+		if cfg.Web.CheckoutEnabled() {
+			plans, err := payment.ParsePlans(cfg.Web.PayPalPlans)
+			if err != nil {
+				return nil, fmt.Errorf("PAYPAL_PLANS: %w", err)
+			}
+			ledger, err := payment.OpenLedger(cfg.Web.PaymentsFile)
+			if err != nil {
+				return nil, fmt.Errorf("payments file: %w", err)
+			}
+			checkout = &web.Checkout{
+				Client:   payment.NewClient(cfg.Web.PayPalClientID, cfg.Web.PayPalSecret, cfg.Web.PayPalLive),
+				Plans:    plans,
+				Currency: cfg.Web.PayPalCurrency,
+				Ledger:   ledger,
+				Live:     cfg.Web.PayPalLive,
+			}
+			slog.Info("paypal checkout enabled", slog.Bool("live", cfg.Web.PayPalLive), slog.Int("plans", len(plans)), slog.String("currency", cfg.Web.PayPalCurrency))
+		}
 		var admins []snowflake.ID
 		for _, a := range cfg.Web.Admins {
 			if id, err := snowflake.Parse(a); err == nil {
@@ -383,7 +403,8 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			}
 		}
 		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins,
-			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL, PriceLabel: cfg.Web.PriceLabel}, backend, subs)
+			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL, PriceLabel: cfg.Web.PriceLabel,
+			Checkout: checkout}, backend, subs)
 		if err != nil {
 			return nil, fmt.Errorf("web site: %w", err)
 		}

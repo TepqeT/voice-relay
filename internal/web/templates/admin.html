@@ -58,4 +58,16 @@
   {{else}}<p class="muted">{{t "admin.empty"}}</p>
   {{end}}
 </section>
+{{if .Payments}}
+<section class="card">
+  <h2>{{t "admin.payments"}}</h2>
+  <table>
+    <thead><tr><th>{{t "admin.pay.date"}}</th><th>{{t "admin.pay.account"}}</th><th>{{t "admin.pay.plan"}}</th><th>{{t "admin.pay.amount"}}</th><th>PayPal</th></tr></thead>
+    <tbody>
+    {{range .Payments}}<tr><td>{{date .At}}</td><td>{{if .UserName}}{{.UserName}}{{else}}{{.UserID}}{{end}}</td><td>{{.Plan}}</td><td>{{.Amount}} {{.Currency}}</td><td><code>{{.CaptureID}}</code></td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
 {{template "foot" .}}
