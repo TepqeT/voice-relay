@@ -1,0 +1,183 @@
+# Metrics — voice-relay
+
+All telemetry is emitted via **OpenTelemetry** (OTLP gRPC) — there is no direct
+Prometheus client. Instruments are created from a single meter in
+`internal/telemetry/` and exported to the OTLP endpoint set by `OTEL_ENDPOINT`
+(empty disables telemetry — see `internal/config/config.go`). The collector /
+Alloy / Prometheus OTLP receiver translates each OTel instrument into one or
+more Prometheus series.
+
+This file lists every instrument by its **OTel name** (the dotted name in code)
+alongside the **Prometheus series** name produced by the default OTLP→Prometheus
+translation.
+
+---
+
+## OTel → Prometheus naming rules
+
+The Prometheus names below assume the **default** OTLP translation (Prometheus
+native OTLP receiver / OpenTelemetry Collector `prometheus` exporter, with unit
+and type suffixes enabled — the defaults):
+
+| OTel | Prometheus |
+|------|------------|
+| `.` and other illegal chars | `_` |
+| unit `ms` | `_milliseconds` suffix |
+| unit `s` | `_seconds` suffix |
+| monotonic counter | `_total` suffix (not doubled if the name already ends in `total`) |
+| `Float64Histogram` | `_bucket` / `_sum` / `_count` series |
+| `UpDownCounter`, `ObservableUpDownCounter`, `Gauge`, `ObservableGauge` | gauge, no suffix |
+
+> Names vary if the exporter is configured with `without_units` /
+> `without_type_suffix`, or if Prometheus is run with
+> `--enable-feature=otlp-deltatocumulative` style flags. The collector also adds
+> a `target_info` series and `otel_scope_*` labels. Tune accordingly.
+
+All instruments carry the resource attribute `service.name="voice-relay"`.
+
+---
+
+## 🤖 Bot / Discord entities (`internal/telemetry/bot_metrics.go`)
+
+| OTel instrument | Type | Prometheus series | Attributes | Description |
+|-----------------|------|-------------------|------------|-------------|
+| `gdc.discord.guild`  | ObservableGauge | `gdc_discord_guild`  | `guild_id`, `guild_name` | Info gauge (always `1`) for known guilds. Emitted from `internal/manager/service.go`. |
+| `gdc.bot.online`     | ObservableGauge | `gdc_bot_online`     | `user_id`, `guild_id`    | `1` while a bot is a registered member of the guild; absent otherwise. From `internal/manager/service.go`. |
+| `gdc.voice.callers`  | ObservableUpDownCounter | `gdc_voice_callers`  | `guild_id`, `channel_id` | Non-bot users with the caller role currently in a voice channel of a guild with an active raid (host or guest), recounted from the owner bot's cache on each collection; channels with none are absent. From `internal/manager/service.go`. |
+| `gdc.command.started.total` | Counter | `gdc_command_started_total` | `command`, `guild_id` ⚠️ | Slash command invocations **entering** the handler. Recorded before the handler runs, so a handler that never returns is still counted. From `internal/bot/middleware.go`. |
+| `gdc.command.total`  | Counter         | `gdc_command_total`  | `command`, `guild_id` ⚠️ | Slash command invocations that **completed**. A sustained `gdc_command_started_total - gdc_command_total` means handlers went in and never came out. From `internal/bot/middleware.go`. |
+| `gdc.command.duration` | Histogram (`s`) | `gdc_command_duration_seconds` (`_bucket`/`_sum`/`_count`) | `command`, `guild_id` ⚠️ | Slash command execution duration. From `internal/bot/middleware.go`. |
+
+> ⚠️ The three `gdc.command.*` instruments label the guild as `guild.id` (dotted)
+> in code — see `RecordCommand`. The OTLP→Prometheus translation rewrites this
+> to `guild_id`, so dashboards still query `guild_id`, but the attribute is
+> inconsistent with the `guild_id` used by every other instrument. Worth
+> normalising in code.
+
+---
+
+## 🛰️ Speaker pool (`internal/telemetry/pool_metrics.go`)
+
+Emitted from `internal/pool/service.go` (observable gauges via a registered
+callback; counters inline in the watchdog).
+
+| OTel instrument | Type | Prometheus series | Attributes | Description |
+|-----------------|------|-------------------|------------|-------------|
+| `gdc.discord.bot`                | ObservableGauge | `gdc_discord_bot`                | `bot_id`, `bot_name` | Info gauge (always `1`) for known speaker bots. |
+| `gdc.pool.bots.total`            | ObservableGauge | `gdc_pool_bots_total`            | —        | Total speaker bots registered in the pool. (Gauge — *not* a counter despite the `total` suffix.) |
+| `gdc.pool.bots.connected`        | ObservableGauge | `gdc_pool_bots_connected`        | —        | Speaker bots with a healthy gateway connection. |
+| `gdc.bot.gateway.latency`        | ObservableGauge (`ms`) | `gdc_bot_gateway_latency_milliseconds` | `bot_id` | Gateway WebSocket heartbeat RTT per bot. `0` until first ACK. See `docs/LATENCY.md` — this is the **control channel**, not audio latency. |
+| `gdc.pool.reconnect.attempts.total` | Counter | `gdc_pool_reconnect_attempts_total` | `bot_id` | Watchdog gateway reconnect attempts. |
+| `gdc.pool.reconnect.failures.total` | Counter | `gdc_pool_reconnect_failures_total` | `bot_id` | Watchdog gateway reconnect failures. |
+
+---
+
+## 🏰 Session lifecycle & fanout (`internal/telemetry/session_metrics.go`)
+
+Emitted from `internal/manager/voice_raid.go` (start/stop) and the auto-router
+pipelines in `internal/manager/pipeline/` (route transitions); frame drops from
+the opus pipeline via `FrameDropper`.
+
+| OTel instrument | Type | Prometheus series | Attributes | Description |
+|-----------------|------|-------------------|------------|-------------|
+| `gdc.voice.sessions.active`         | UpDownCounter | `gdc_voice_sessions_active`         | `guild_id` | Currently active voice raid sessions. |
+| `gdc.voice.session.start.total`     | Counter       | `gdc_voice_session_start_total`     | `guild_id` | Voice raid starts. |
+| `gdc.voice.session.stop.total`      | Counter       | `gdc_voice_session_stop_total`      | `guild_id` | Voice raid stops. |
+| `gdc.session.speakers`              | Gauge         | `gdc_session_speakers`              | `guild_id` | Speakers (pool speaker bots plus the owner bot, if it joined) in the active raid; reset to `0` on stop. |
+| `gdc.fanout.frames.dropped.total`   | Counter       | `gdc_fanout_frames_dropped_total`   | `guild_id`, `path` | Opus frames dropped on full channels. `path`: `mixer` / `direct` / `channel_mixer` / `relay_bridge` / `provider` / `receiver`. |
+| `gdc.session.route_transitions.total` | Counter     | `gdc_session_route_transitions_total` | `guild_id`, `from`, `to` | Auto-router source-mode transitions. `from`/`to`: `off` / `copy` / `mix`. |
+
+---
+
+## 🎙️ Opus / mixer timing (`internal/telemetry/opus_metrics.go`)
+
+All histograms, unit `ms`, attribute `guild_id`. Recorded on the hot path via a
+pre-baked `OpusRecorder` (`Metrics.ForGuild`) — zero-alloc per frame.
+
+| OTel instrument | Prometheus series (`_bucket`/`_sum`/`_count`) | Buckets (ms) | Emitter | Description |
+|-----------------|-----------------------------------------------|--------------|---------|-------------|
+| `gdc.opus.receive.duration`    | `gdc_opus_receive_duration_milliseconds`    | 0.5, 1, 2, 5, 12, 20    | `internal/opus/voice_receiver.go` | `ReceiveOpusFrame` execution time (excludes channel-wait). |
+| `gdc.opus.provide.duration`    | `gdc_opus_provide_duration_milliseconds`    | 0.5, 1, 2, 5, 12, 20    | `internal/opus/voice_provider.go` | `ProvideOpusFrame` drain+return time (excludes frame-wait). |
+| `gdc.opus.allow_user.duration` | `gdc_opus_allow_user_duration_milliseconds` | 1, 2, 5, 12, 20         | `internal/manager/allow_user.go`  | `allowUser` filter time per evaluated frame. |
+| `gdc.mixer.tick.duration`      | `gdc_mixer_tick_duration_milliseconds`      | 0.5, 1, 2, 5, 10, 20    | `internal/opus/mixer.go`          | Mixer tick processing time. |
+| `gdc.mixer.pipeline.latency`   | `gdc_mixer_pipeline_latency_milliseconds`   | 10, 15, 20, 25, 30, 35, 40, 50, 60, 80, 120 | `internal/opus/mixer.go`    | Latency from Discord receive to the mixer tick that consumes the frame. Floor ~20 ms (tick period), ceiling 60 ms (`audioSourceCap`). See `docs/LATENCY.md`. |
+
+---
+
+## 🖥️ Process & Go runtime (`internal/telemetry/process_metrics.go`)
+
+The process's own resource use, for capacity planning against the container limit. Compare `gdc_process_memory_usage_bytes` with `go_memory_used_bytes`: the gap is memory libdave and libopus allocate outside the Go heap, which `GOMEMLIMIT` does not cover.
+
+| OTel instrument | Type | Prometheus series | Attributes | Description |
+|-----------------|------|-------------------|------------|-------------|
+| `gdc.process.cpu.time`     | ObservableCounter (`s`) | `gdc_process_cpu_time_seconds_total` | — | CPU time consumed by the process, user plus system. `rate()` of it is the fraction of one core in use. |
+| `gdc.process.memory.usage` | ObservableGauge (`By`)  | `gdc_process_memory_usage_bytes`     | — | Resident set size, including C allocations. Linux only — absent elsewhere. |
+| `go.memory.used`, `go.memory.limit`, `go.memory.gc.goal`, `go.goroutine.count`, … | ObservableGauge / Counter | `go_memory_used_bytes`, `go_memory_limit_bytes`, `go_goroutine_count`, … | `go.memory.type` on `go.memory.used` | Go runtime metrics from `go.opentelemetry.io/contrib/instrumentation/runtime`, sampled at most every 15 s. |
+
+---
+
+## Implementation
+
+Instruments are defined in `internal/telemetry/`, split by subsystem:
+`bot_metrics.go`, `pool_metrics.go`, `session_metrics.go`, `opus_metrics.go`.
+`metrics.go` wires them together (`NewMetrics`); `setup.go` configures the OTLP
+exporters (traces, metrics, logs) and the periodic metric reader (15 s interval).
+
+Per-guild recorders are obtained via `Metrics.ForGuild(ctx, guildID)`
+(`guild_metrics.go`), which bakes the `guild_id` attribute once and returns a
+reusable `GuildMetrics` value — keeping the hot path allocation-free.
+
+### Example PromQL
+
+```promql
+# p99 mixer pipeline latency per guild (ms)
+histogram_quantile(0.99,
+  sum by (guild_id, le) (rate(gdc_mixer_pipeline_latency_milliseconds_bucket[5m])))
+
+# frame drop rate by pipeline stage
+sum by (path) (rate(gdc_fanout_frames_dropped_total[5m]))
+
+# speaker bots connected vs registered
+gdc_pool_bots_connected / gdc_pool_bots_total
+
+# active voice raids
+sum(gdc_voice_sessions_active)
+```
+
+---
+
+## Traces: session startup phases
+
+`/start` takes seconds before any audio flows (measured in production: ~0.8–1.9 s
+with 2 speakers, ~3 s with 5, ~3.2–4.1 s with 10), and the work is a chain of
+Discord round trips. `voice.session` / `voice.session.guest` spans last as long
+as the raid, so the startup cost has its own child span with one child per round
+trip. `startPhase` (`internal/manager/trace.go`) opens them.
+
+```
+voice.session                        (whole raid)
+└── voice.session.setup              (/start → first frame flowing)
+    ├── voice.speakers.setup         speaker.candidates, speaker.joined, capture
+    │   └── voice.bot.attach         bot.id, bot.kind=speaker (one per speaker, concurrent)
+    │       ├── voice.conn.open      voice handshake through SessionDescription
+    │       ├── voice.members.prefetch   user.count (capture modes only)
+    │       ├── voice.conn.apply     provider/receiver wiring + SetSpeaking op
+    │       └── voice.deaf.reconcile deaf.want, deaf.cached
+    ├── voice.bot.attach             bot.kind=owner (runs after every speaker)
+    │   └── … same four children
+    └── voice.pipeline.build         local graph construction, expected ~0
+```
+
+What to read off a trace:
+
+- `voice.bot.attach{bot.kind=owner}` starting only after the last speaker's
+  attach ends is the serialized owner handshake.
+- `voice.deaf.reconcile` spans with `deaf.cached=false` stacking one after
+  another are the per-guild REST bucket serializing member PATCHes — disgo holds
+  the bucket mutex across each request.
+- `voice.conn.open` is the irreducible part: op4 → voice server update → WSS+TLS
+  → identify/ready → UDP discovery → session description.
+
+Everything is sampled (default `ParentBased(AlwaysSample)`). The parent
+`voice.session` span only exports when the raid ends, so a trace looks
+incomplete while a raid is live — the startup children are already there.

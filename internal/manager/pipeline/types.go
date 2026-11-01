@@ -1,0 +1,117 @@
+// Package pipeline builds the audio topology for each raid mode and wires it
+// to the auto-router. Host and guest pipelines share a common shape: each
+// constructs router.SourceSlot / router.DestSlot graphs, supplies a
+// BuildInstall closure per source, and hands the constructed Session back to
+// the manager-package Service for lifecycle ownership.
+//
+// All five router-driven pipelines (oneCaller, guildCaller, starCaller,
+// guestCaller, guestStarCaller) live here. The listener guest pipeline does
+// not need the router (no capture) and is a degenerate case.
+package pipeline
+
+import (
+	"context"
+	"time"
+
+	"github.com/TepqeT/voice-relay/internal/guild"
+	"github.com/TepqeT/voice-relay/internal/opus"
+	"github.com/TepqeT/voice-relay/internal/pool"
+	"github.com/disgoorg/snowflake/v2"
+)
+
+// RelayInputID is the synthetic source ID used when adding a guest relay feed
+// as an input to a host-side ChannelMixer. Discord snowflakes are epoch-based
+// (minimum value ~4 billion) so 1 never collides with a real user/bot ID.
+const RelayInputID snowflake.ID = 1
+
+// RelayDestID is the synthetic destination channelID used to model the ally
+// relay mixer as a router.DestSlot. Discord snowflakes are epoch-based
+// (minimum ~4×10¹⁰); any small integer sits safely below that range.
+// RelayInputID uses 1, so 2 is the next safe choice.
+const RelayDestID snowflake.ID = 2
+
+// SquadDestID is the synthetic destination channelID of the star squad mixer:
+// the mixer that merges several raid leads talking at once before their voice
+// is sent to the squad channels. 3 follows RelayDestID.
+const SquadDestID snowflake.ID = 3
+
+// VoiceLeaveTimeout caps how long a voice.Conn.Leave call may block. Used by
+// the speaker-cleanup goroutine spawned in BuildSpeakerCleanup.
+const VoiceLeaveTimeout = 5 * time.Second
+
+// SpeakerResult holds the outcome of a single successfully joined speaker.
+// Constructed by manager.Service.setupSpeakers and consumed by pipelines via
+// Setup.
+type SpeakerResult struct {
+	Speaker guild.Speaker
+	ChOut   chan<- []byte
+	Handle  *opus.FanoutHandle // nil when withCapture is false
+	GV      pool.GuildVoice
+	Cleanup func() // closes provider/receiver; caller must invoke on teardown
+	// Undeafen clears the server-deaf flag this speaker was given at join time
+	// in non-capture modes; nil when the speaker was never deafened. It must
+	// run before GV.Leave — Discord rejects a member voice-state PATCH for a
+	// member who is no longer connected to voice.
+	Undeafen func(context.Context)
+}
+
+// DeafSink owns the server-deaf flag of the bots in one session. Implemented
+// by manager.deafController; kept as an interface here so pipeline stays free
+// of the manager package.
+type DeafSink interface {
+	// Register enrols a bot with the deaf state it already has.
+	Register(botID snowflake.ID, deaf bool)
+	// Observe receives the router's source → "is capturing" map after every
+	// recomputation and drives each registered bot toward hearing exactly
+	// while it is a live capture source.
+	Observe(capturing map[snowflake.ID]bool)
+	// Close stops pending changes and undeafens whatever it left deafened.
+	Close(ctx context.Context)
+}
+
+// Setup captures the common setup result for both host and guest flows.
+// Returned by manager.Service.setupSpeakers; passed verbatim into HostFor /
+// GuestFor pipeline builders via Params/GuestParams.
+type Setup struct {
+	Joined         []SpeakerResult
+	Speakers       []guild.Speaker
+	SpeakerCleanup func()
+	Outs           []chan<- []byte
+	// Deaf owns dynamic server-deaf state for the session; nil when the guild
+	// cannot deafen (no permission) or the mode has no router to drive it.
+	Deaf DeafSink
+}
+
+// CaptureObserver returns the router capture-observer callback for this setup,
+// or nil when nothing is driving deaf state. Nil-safe on the receiver so
+// pipelines can chain it unconditionally.
+func (s *Setup) CaptureObserver() func(capturing map[snowflake.ID]bool) {
+	if s == nil || s.Deaf == nil {
+		return nil
+	}
+	return s.Deaf.Observe
+}
+
+// SourceEntry is one audio capture source feeding the router graph. Handle
+// is non-nil when the source's VoiceReceiver dispatches via FanoutHandle
+// (inline fanout mode).
+type SourceEntry struct {
+	ID        snowflake.ID
+	ChannelID snowflake.ID
+	Handle    *opus.FanoutHandle
+}
+
+// DestChannel groups all speaker output channels that share the same voice
+// channel. Built by BuildDestinations from the SpeakerResult list.
+type DestChannel struct {
+	ChannelID snowflake.ID
+	Outs      []chan<- []byte
+}
+
+// mixerRef pairs a mixer with the input ID registered in it. Used by the
+// router-driven install closures to detach the mixer inputs they allocated
+// when transitioning out of mix mode or closing the session.
+type mixerRef struct {
+	mx *opus.Mixer
+	id snowflake.ID
+}

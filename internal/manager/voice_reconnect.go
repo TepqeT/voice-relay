@@ -1,0 +1,275 @@
+package manager
+
+import (
+	"context"
+	"log/slog"
+	"slices"
+	"time"
+
+	"github.com/TepqeT/voice-relay/internal/diag"
+	"github.com/TepqeT/voice-relay/internal/opus"
+	"github.com/TepqeT/voice-relay/internal/pool"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/rest"
+	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/godave"
+	"github.com/disgoorg/snowflake/v2"
+)
+
+// OnBotVoiceMove is called when a bot is moved to a different voice channel.
+// It reconnects the bot to its bound channel if the new channel differs, so that
+// bots cannot be permanently displaced during an active session.
+// No-op when there is no active session or the bot is already in its bound channel.
+func (m *Service) OnBotVoiceMove(ctx context.Context, guildID, botUserID snowflake.ID, currentChannelID *snowflake.ID) {
+	if !m.HasActiveSession(guildID) {
+		return
+	}
+	boundChID, ok := m.store.GetBoundChannel(guildID, botUserID)
+	if !ok {
+		return
+	}
+	if currentChannelID != nil && *currentChannelID == boundChID {
+		return // already in the right channel
+	}
+	go m.ReconnectBotChannel(ctx, guildID, botUserID)
+}
+
+// OnEncryptStall rejoins a bot whose DAVE session has stopped encrypting its
+// outbound audio (see dave.WithEncryptStall). The bot looks connected but is
+// silent; a fresh voice connection gets a fresh DAVE session. It runs on
+// disgo's audio send goroutine, so the rejoin happens in the background.
+func (m *Service) OnEncryptStall(selfUserID godave.UserID, conn godave.Callbacks) {
+	guildID, botUserID, ok := encryptStallTarget(selfUserID, conn)
+	if !ok {
+		return
+	}
+	diag.For(guildID).Event("dave_stall", map[string]any{"bot_id": botUserID.String()})
+	slog.Warn("voice: outbound encryption stalled, rejoining",
+		slog.String("guildID", guildID.String()),
+		slog.String("botUserID", botUserID.String()),
+	)
+	go m.ReconnectBotChannel(context.Background(), guildID, botUserID)
+}
+
+// encryptStallTarget resolves a stall report to the bot and guild it concerns.
+// disgo passes the voice.Conn as the DAVE session's callbacks; a report whose
+// callbacks are anything else resolves to nothing, so no rejoin happens.
+//
+// UPSTREAM(disgo v0.19.3): the DAVE session factory receives the conn itself
+// as its callbacks (voice/conn.go:80).
+func encryptStallTarget(selfUserID godave.UserID, conn godave.Callbacks) (guildID, botUserID snowflake.ID, ok bool) {
+	vc, isConn := conn.(voice.Conn)
+	if !isConn {
+		return 0, 0, false
+	}
+	botUserID, err := snowflake.Parse(string(selfUserID))
+	if err != nil {
+		return 0, 0, false
+	}
+	return vc.GuildID(), botUserID, true
+}
+
+// ReconnectBotChannel reconnects a bot to its bound voice channel in the given guild.
+// Called when a bot's voice connection drops or is moved away during an active session.
+// No-op if there is no active session, the bot has no bound channel, or a reconnect
+// for this bot is already in flight (prevents the leave→reconnect→leave→... loop).
+func (m *Service) ReconnectBotChannel(ctx context.Context, guildID, botUserID snowflake.ID) {
+	// Guard: one reconnect attempt per (guild, bot) at a time.
+	// Calling Leave below fires another GuildVoiceLeave which would re-enter here;
+	// tryLock makes that second call a no-op.
+	if !m.reconnect.tryLock(guildID, botUserID) {
+		return
+	}
+	defer m.reconnect.unlock(guildID, botUserID)
+
+	if !m.HasActiveSession(guildID) {
+		return
+	}
+	channelID, ok := m.liveBoundChannel(guildID, botUserID)
+	if !ok {
+		return
+	}
+	var gv pool.GuildVoice
+	if botUserID == m.ownerBotID {
+		gv = m.ownerVoice(guildID)
+	} else {
+		var found bool
+		gv, found = m.speakerVoice(guildID, botUserID)
+		if !found {
+			return
+		}
+	}
+
+	// Wait for the speaker bot's own gateway listener to observe the move/leave
+	// before we recreate the conn. The owner bot's listener (which fired this
+	// handler) and the speaker bot's listener consume independent gateway
+	// queues; if we tear down the speaker's OLD conn before its listener has
+	// drained the triggering VStateU, that stale event hits the NEW conn and
+	// derails the reconnect (e.g. it opens to the wrong channel).
+	m.waitSpeakerConnDrained(guildID, botUserID, channelID)
+
+	// Close the existing (possibly broken) voice connection so conn.Open starts
+	// fresh instead of re-using stale internal state that causes a timeout.
+	leaveCtx, leaveCancel := context.WithTimeout(ctx, voiceLeaveTimeout)
+	gv.Leave(leaveCtx, guildID)
+	leaveCancel()
+
+	if !m.HasActiveSession(guildID) {
+		return // session ended while we were closing
+	}
+
+	reconnCtx, cancel := context.WithTimeout(ctx, reconnectBudget)
+	defer cancel()
+	conn, err := gv.Join(reconnCtx, guildID)
+	if err != nil {
+		// Single retry after a short backoff to handle transient failures
+		// (Discord rate limits, brief network interruptions). The reconnect
+		// guard stays held so a concurrent leave event does not race us.
+		slog.WarnContext(ctx, "reconnect: first join attempt failed, retrying after a backoff",
+			slog.String("guildID", guildID.String()),
+			slog.String("botUserID", botUserID.String()),
+			slog.Any("err", err),
+		)
+		t := time.NewTimer(reconnectBackoff)
+		select {
+		case <-reconnCtx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+		}
+		if !m.HasActiveSession(guildID) {
+			return // session ended during backoff
+		}
+		conn, err = gv.Join(reconnCtx, guildID)
+		if err != nil {
+			slog.WarnContext(ctx, "reconnect: failed to rejoin bound channel",
+				slog.String("guildID", guildID.String()),
+				slog.String("botUserID", botUserID.String()),
+				slog.String("channelID", channelID.String()),
+				slog.Any("err", err),
+			)
+			return
+		}
+	}
+	if conn == nil {
+		return // the channel was deleted after the check above
+	}
+	// Re-apply voice provider/receiver to the new conn so audio flows again.
+	// Pass ctx (the reconnect context) so the applier's FrameDroppers use a live,
+	// uncancelled context rather than the stale session-start context.
+	if applier, ok := m.reconnect.loadApplier(guildID, botUserID); ok {
+		applier(ctx, conn)
+	}
+	slog.InfoContext(ctx, "reconnect: bot rejoined bound channel",
+		slog.String("guildID", guildID.String()),
+		slog.String("botUserID", botUserID.String()),
+		slog.String("channelID", channelID.String()),
+	)
+}
+
+// storeApplier saves a reconnectApplier for the given guild+bot pair.
+func (m *Service) storeApplier(guildID, botUserID snowflake.ID, a reconnectApplier) {
+	m.reconnect.storeApplier(guildID, botUserID, a)
+}
+
+// clearAppliers removes all reconnect appliers for a guild (call on session teardown).
+func (m *Service) clearAppliers(guildID snowflake.ID) {
+	m.reconnect.clearAppliers(guildID, m.poolSvc.GetIDs(), m.ownerBotID)
+}
+
+// buildApplier returns a reconnectApplier that re-wires provider/receiver on a fresh conn.
+//
+//   - chOut nil:  empty provider (owner-as-listener mode).
+//   - handle nil: empty receiver (no audio capture).
+//   - handle non-nil: the new receiver dispatches via the same FanoutHandle as
+//     the original, so the topology wired at session start keeps receiving
+//     frames after reconnect — no re-install required.
+//
+// FrameDropper is created lazily inside the closure using the call-time ctx so
+// metrics never attach to a stale session-start span.
+func (m *Service) buildApplier(guildID, botID snowflake.ID, chOut <-chan []byte, handle *opus.FanoutHandle, allowUser func(snowflake.ID) bool) reconnectApplier {
+	return func(ctx context.Context, conn voice.Conn) {
+		gm := m.metrics.ForGuild(ctx, guildID)
+		var provider voice.OpusFrameProvider
+		switch {
+		case chOut != nil:
+			p := opus.NewVoiceProvider(chOut, gm.Provider())
+			p.SetDiag(diag.For(guildID).Output(botID))
+			if attach := m.overlayFor(guildID, botID); attach != nil {
+				if o := attach(); o != nil {
+					p.SetOverlay(o)
+				}
+			}
+			provider = p
+		default:
+			provider = opus.NewEmptyVoiceProvider()
+		}
+		conn.SetOpusFrameProvider(provider)
+
+		var receiver voice.OpusFrameReceiver = opus.NewEmptyVoiceReceiver()
+		if handle != nil {
+			r := opus.NewVoiceReceiver(botID, allowUser, gm.Receiver(), handle)
+			r.SetDiag(diag.For(guildID))
+			receiver = r
+		}
+		conn.SetOpusFrameReceiver(receiver)
+		diag.For(guildID).Event("voice_reapplied", map[string]any{"bot_id": botID.String()})
+
+		// Re-arm the re-identify watcher. ReconnectBotChannel reaches this with a
+		// brand-new conn that carries no handler yet; reapplyAfterVoiceReady
+		// reaches it with the same conn, where this is a harmless overwrite.
+		m.watchVoiceReady(guildID, botID, conn)
+	}
+}
+
+// waitSpeakerConnDrained briefly waits for the speaker bot's voice gateway
+// listener to observe an external move/leave that took the bot out of
+// boundChID. The owner bot's listener (which fires this reconnect) and the
+// speaker bot's listener consume independent Discord gateway queues, so a
+// reconnect can race the speaker bot's processing of the same VStateU; if the
+// speaker's OLD conn is torn down before its listener processes the event,
+// the residual VStateU hits the NEW conn and corrupts its target channel.
+// Polls the speaker's conn for up to 500ms; returns immediately once the
+// move is observed or if the conn is already gone.
+//
+// UPSTREAM(disgo v0.19.3): two bots' gateway listeners consume independent queues.
+func (m *Service) waitSpeakerConnDrained(guildID, botUserID, boundChID snowflake.ID) {
+	client, ok := m.poolSvc.GetClientByID(botUserID)
+	if !ok || client.VoiceManager == nil {
+		return
+	}
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		conn := client.VoiceManager.GetConn(guildID)
+		if conn == nil {
+			return
+		}
+		cur := conn.ChannelID()
+		if cur == nil || *cur != boundChID {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// OnBotServerMuted lifts a server mute put on one of the relay bots during a
+// raid. Squad leads may server-mute members of their squad; a herald muted by
+// mistake would leave the whole squad without calls.
+func (m *Service) OnBotServerMuted(ctx context.Context, guildID, botUserID snowflake.ID) {
+	if !m.HasActiveSession(guildID) || m.ownerClient == nil {
+		return
+	}
+	if botUserID != m.ownerBotID && (m.poolSvc == nil || !slices.Contains(m.poolSvc.GetIDs(), botUserID)) {
+		return
+	}
+	unmute := false
+	if _, err := m.ownerClient.Rest.UpdateMember(guildID, botUserID, discord.MemberUpdate{Mute: &unmute},
+		rest.WithCtx(ctx), rest.WithReason("RvR: a relay bot must not be muted")); err != nil {
+		slog.Warn("relay bot was server-muted and could not be unmuted (Mute Members?)",
+			slog.String("guildID", guildID.String()), slog.String("botUserID", botUserID.String()), slog.Any("err", err))
+		return
+	}
+	slog.Warn("relay bot was server-muted during the raid: unmuted",
+		slog.String("guildID", guildID.String()), slog.String("botUserID", botUserID.String()))
+	diag.For(guildID).Event("bot_unmuted", map[string]any{"bot_id": botUserID.String()})
+}

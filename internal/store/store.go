@@ -1,0 +1,206 @@
+package store
+
+import (
+	"crypto/rand"
+	"encoding/base32"
+	"strings"
+	"sync"
+
+	"github.com/disgoorg/snowflake/v2"
+)
+
+// RoleType distinguishes the two role kinds the bot tracks per guild.
+type RoleType string
+
+const (
+	// RoleTypeCaller is the role whose members' voice is captured and relayed.
+	RoleTypeCaller RoleType = "caller"
+	// RoleTypeManager is the role whose members are allowed to setup, start and stop the bot.
+	RoleTypeManager RoleType = "manager"
+)
+
+// botKey identifies a bot within a guild.
+type botKey struct {
+	userID  snowflake.ID
+	guildID snowflake.ID
+}
+
+// roleKey is the composite key for a role binding.
+type roleKey struct {
+	guildID  snowflake.ID
+	roleType RoleType
+}
+
+// Store is the persistence layer for channel and role bindings.
+type Store interface {
+	BindChannel(guildID, userID, channelID snowflake.ID)
+	UnbindChannel(guildID, userID snowflake.ID)
+	GetBoundChannel(guildID, userID snowflake.ID) (snowflake.ID, bool)
+
+	BindRole(guildID snowflake.ID, roleType RoleType, roleID snowflake.ID)
+	UnbindRole(guildID snowflake.ID, roleType RoleType)
+	GetBoundRole(guildID snowflake.ID, roleType RoleType) (snowflake.ID, bool)
+
+	// GetOrCreateAllyCode returns the persistent ally code for guildID.
+	// If none exists it generates, persists, and returns a new one.
+	GetOrCreateAllyCode(guildID snowflake.ID) string
+	// GetAllyCode returns the stored ally code for guildID without creating one.
+	GetAllyCode(guildID snowflake.ID) (string, bool)
+
+	// BindLocale pins the bot's response language for guildID.
+	// Pass "" or call UnbindLocale to revert to per-user interaction locale.
+	BindLocale(guildID snowflake.ID, locale string)
+	// UnbindLocale clears any pinned locale for guildID.
+	UnbindLocale(guildID snowflake.ID)
+	// GetLocale returns the pinned locale for guildID, or "" if none is set.
+	GetLocale(guildID snowflake.ID) (string, bool)
+
+	// SetSpeakerEnabled records whether a speaker bot takes part in raids in guildID.
+	SetSpeakerEnabled(guildID, userID snowflake.ID, enabled bool)
+	// IsSpeakerEnabled reports whether a speaker bot takes part in raids in
+	// guildID. Speakers are enabled unless explicitly disabled.
+	IsSpeakerEnabled(guildID, userID snowflake.ID) bool
+
+	// Close flushes any pending writes and releases resources.
+	Close()
+}
+
+// generateAllyCode creates a cryptographically random 8-character uppercase code.
+func generateAllyCode() string {
+	b := make([]byte, 5)
+	_, _ = rand.Read(b)
+	return strings.ToUpper(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))[:8]
+}
+
+// uniqueAllyCode generates an ally code that does not already appear as a
+// value in existing. Must be called with the store's write lock held.
+func uniqueAllyCode(existing map[snowflake.ID]string) string {
+	used := make(map[string]struct{}, len(existing))
+	for _, c := range existing {
+		used[c] = struct{}{}
+	}
+	for {
+		code := generateAllyCode()
+		if _, collision := used[code]; !collision {
+			return code
+		}
+	}
+}
+
+// InMemoryStore is a thread-safe in-memory implementation of Store.
+type InMemoryStore struct {
+	mu         sync.RWMutex
+	channels   map[botKey]snowflake.ID  // (userID, guildID) -> channelID
+	roles      map[roleKey]snowflake.ID // (guildID, roleType) -> roleID
+	relayCodes map[snowflake.ID]string  // guildID -> relay code
+	locales    map[snowflake.ID]string  // guildID -> pinned bot locale
+	disabled   map[botKey]struct{}      // speakers excluded from raids
+}
+
+func NewInMemoryStore() *InMemoryStore {
+	return &InMemoryStore{
+		channels:   make(map[botKey]snowflake.ID),
+		roles:      make(map[roleKey]snowflake.ID),
+		relayCodes: make(map[snowflake.ID]string),
+		locales:    make(map[snowflake.ID]string),
+		disabled:   make(map[botKey]struct{}),
+	}
+}
+
+func (s *InMemoryStore) BindChannel(guildID, userID, channelID snowflake.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.channels[botKey{userID, guildID}] = channelID
+}
+
+func (s *InMemoryStore) UnbindChannel(guildID, userID snowflake.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.channels, botKey{userID, guildID})
+}
+
+func (s *InMemoryStore) GetBoundChannel(guildID, userID snowflake.ID) (snowflake.ID, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ch, ok := s.channels[botKey{userID, guildID}]
+	return ch, ok
+}
+
+func (s *InMemoryStore) BindRole(guildID snowflake.ID, roleType RoleType, roleID snowflake.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.roles[roleKey{guildID, roleType}] = roleID
+}
+
+func (s *InMemoryStore) UnbindRole(guildID snowflake.ID, roleType RoleType) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.roles, roleKey{guildID, roleType})
+}
+
+func (s *InMemoryStore) GetBoundRole(guildID snowflake.ID, roleType RoleType) (snowflake.ID, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	roleID, ok := s.roles[roleKey{guildID, roleType}]
+	return roleID, ok
+}
+
+func (s *InMemoryStore) GetOrCreateAllyCode(guildID snowflake.ID) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if code, ok := s.relayCodes[guildID]; ok {
+		return code
+	}
+	code := uniqueAllyCode(s.relayCodes)
+	s.relayCodes[guildID] = code
+	return code
+}
+
+func (s *InMemoryStore) GetAllyCode(guildID snowflake.ID) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	code, ok := s.relayCodes[guildID]
+	return code, ok
+}
+
+func (s *InMemoryStore) BindLocale(guildID snowflake.ID, locale string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if locale == "" {
+		delete(s.locales, guildID)
+		return
+	}
+	s.locales[guildID] = locale
+}
+
+func (s *InMemoryStore) UnbindLocale(guildID snowflake.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.locales, guildID)
+}
+
+func (s *InMemoryStore) GetLocale(guildID snowflake.ID) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	loc, ok := s.locales[guildID]
+	return loc, ok
+}
+
+func (s *InMemoryStore) SetSpeakerEnabled(guildID, userID snowflake.ID, enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if enabled {
+		delete(s.disabled, botKey{userID, guildID})
+		return
+	}
+	s.disabled[botKey{userID, guildID}] = struct{}{}
+}
+
+func (s *InMemoryStore) IsSpeakerEnabled(guildID, userID snowflake.ID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, disabled := s.disabled[botKey{userID, guildID}]
+	return !disabled
+}
+
+func (s *InMemoryStore) Close() {}

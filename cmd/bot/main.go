@@ -1,0 +1,56 @@
+package main
+
+import (
+	"context"
+	"log"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/TepqeT/voice-relay/internal/bot"
+	"github.com/TepqeT/voice-relay/internal/config"
+	"github.com/TepqeT/voice-relay/internal/store"
+	"github.com/TepqeT/voice-relay/internal/telemetry"
+	"github.com/TepqeT/voice-relay/internal/version"
+	"go.opentelemetry.io/otel"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	shutdownTelemetry, err := telemetry.Setup(ctx, cfg.OtelEndpoint, cfg.LogLevel)
+	if err != nil {
+		log.Fatalf("failed to setup telemetry: %v", err)
+	}
+	defer shutdownTelemetry()
+
+	telemetry.SetVoiceLogLevel(cfg.VoiceLogLevel)
+
+	slog.Info("aion-relay starting",
+		slog.String("version", version.Fork),
+		slog.String("faction", cfg.RvR.Channels.Faction),
+		slog.Bool("dynamicChannels", cfg.RvR.Channels.Enabled),
+		slog.Int("speakerTokens", len(cfg.SpeakerTokens)),
+	)
+
+	st, err := store.NewYAMLStore(cfg.StorePath)
+	if err != nil {
+		log.Fatalf("failed to open store %q: %v", cfg.StorePath, err)
+	}
+
+	b, err := bot.New(cfg, st, otel.Meter(telemetry.ServiceName))
+	if err != nil {
+		log.Fatalf("failed to create bot: %v", err)
+	}
+
+	if err := b.Run(ctx); err != nil {
+		log.Fatalf("bot error: %v", err)
+	}
+}

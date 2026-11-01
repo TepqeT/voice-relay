@@ -1,0 +1,153 @@
+# French translations. Plural forms: one (0, 1), other (CLDR fr rules).
+
+# ── Slash command descriptions ────────────────────────────────────────────────
+cmd.setup.description: "Lister et configurer tous les Hérauts de ce serveur"
+
+cmd.start.description: "Démarrer un raid RvR, ou en rejoindre un existant en tant qu'invité avec un code relay"
+cmd.start.opt.code.description: "Code relay d'un raid RvR actif d'un autre serveur (laisser vide pour en démarrer un nouveau)"
+cmd.start.opt.mode.description: "Mode : Un orateur / Plusieurs orateurs / Un↔Plusieurs. Par défaut : Un orateur."
+cmd.start.opt.mode.choice.one: "Un orateur"
+cmd.start.opt.mode.choice.many: "Plusieurs orateurs"
+cmd.start.opt.mode.choice.one_many: "Un↔Plusieurs orateurs"
+
+cmd.stop.description: "Faire quitter leurs salons vocaux à tous les Hérauts actifs"
+cmd.status.description: "Afficher les associations actuelles des Hérauts et l'état du raid RvR"
+
+# ── Generic errors ────────────────────────────────────────────────────────────
+err.need_manager: "❌ Vous avez besoin de la permission « Gérer le serveur » ou du rôle de gestionnaire du serveur pour utiliser cette commande."
+err.need_admin: "❌ Vous avez besoin de la permission « Gérer le serveur » ou du rôle de gestionnaire du serveur pour utiliser cette commande."
+err.guild_only: "cette commande ne peut être utilisée que dans un serveur"
+err.unexpected_data_type: "type de données d'interaction inattendu"
+err.invalid_speaker_id: "ID de Héraut invalide"
+err.speaker_not_found: "❌ Héraut introuvable sur ce serveur."
+err.no_more_tokens: "❌ Tous les jetons de Héraut du pool ont déjà été ajoutés."
+
+# ── Voice raid responses ──────────────────────────────────────────────────────
+setup.blocked_active_raid: "⚠️ La configuration n'est pas disponible pendant qu'un raid RvR est actif. Arrêtez d'abord le raid."
+
+raid.already_active: "⚠️ Un raid RvR est déjà actif sur ce serveur."
+raid.none_active: "⚠️ Aucun raid RvR actif sur ce serveur."
+raid.join_blocked_permissions: "❌ Impossible de rejoindre la session relay : corrigez d'abord les permissions des bots."
+raid.start_blocked_permissions: "❌ Impossible de démarrer le raid RvR : corrigez d'abord les permissions des bots."
+raid.join_failed: "❌ Échec de la connexion à la session relay `{{.Code}}` : {{.Err}}"
+raid.no_bound_speakers: "⚠️ Aucun Héraut n'est configuré sur ce serveur. Lancez `/setup` → **Associer les Hérauts**, activez un Héraut et choisissez son salon vocal, puis réessayez.\n_Les liaisons sont propres à chaque serveur : un code relay ne reprend pas la configuration de l'autre serveur._"
+raid.no_owner_channel: "⚠️ Le bot principal n'a pas de salon vocal — il a peut-être été supprimé. Lancez `/setup`, choisissez-en un, puis réessayez."
+raid.start_failed: "❌ Échec du démarrage du raid RvR : {{.Err}}"
+raid.stop_failed: "❌ Échec de l'arrêt du raid RvR : {{.Err}}"
+raid.joined: "🔴 **Connecté à la session relay** `{{.Code}}` en tant que {{.Mode}}. Les Hérauts rejoignent leurs escouades."
+raid.started: "🔴 **Raid RvR lancé.** Les Hérauts ont rejoint leurs escouades."
+raid.started_with_code: "🔴 **Raid RvR lancé.** Les Hérauts ont rejoint leurs escouades. Code relay : `{{.Code}}`"
+raid.deafen_unavailable: "⚠️ Astuce : accordez au bot la permission **Rendre les membres sourds** et placez son rôle au-dessus des bots haut-parleurs pour réduire la charge et le risque de coupures audio."
+raid.stopped: "⚫ **Raid RvR terminé.** Les Hérauts ont quitté leurs escouades."
+
+# ── Permissions warning ───────────────────────────────────────────────────────
+permissions.warning_header: "\n\n⚠️ **Certains bots ne peuvent pas accéder à leur salon (permission Connect/Speak manquante) :**"
+raid.skipped_missing_channel: "\n\n⚠️ **Ignorés — leur salon vocal n'existe plus (choisissez-en un nouveau dans `/setup`) :**"
+
+# ── Setup UI ──────────────────────────────────────────────────────────────────
+setup.main_title: "**Configuration des Hérauts**"
+setup.roles_title: "**Associations de rôles**"
+setup.speakers_title: "**Associations des Hérauts** — Page {{.Page}}/{{.Total}}"
+setup.no_speakers: "_Aucun Héraut enregistré pour le moment._"
+setup.speakers_count:
+  one: "_{{.Count}} Héraut au total._"
+  other: "_{{.Count}} Hérauts au total._"
+
+setup.bind_caller_placeholder: "Associer le bot caller à un salon vocal…"
+setup.bind_speaker_placeholder: "Associer {{.Username}} à un salon vocal…"
+setup.select_caller_role: "Sélectionner le rôle de capture…"
+setup.select_manager_role: "Sélectionner le rôle de gestionnaire…"
+setup.locale_placeholder: "Sélectionnez la langue du bot…"
+setup.locale_auto: "🌐 Auto (langue du client de l'utilisateur)"
+
+speaker.add_title: "**Ajouter un Héraut**"
+speaker.add_steps: "1. Cliquez sur **Inviter sur le serveur** — le bot sera pré-sélectionné pour ce serveur.\n2. Complétez l'autorisation dans le navigateur.\n3. Le bot sera enregistré automatiquement dès qu'il rejoindra le serveur."
+
+# ── Buttons ───────────────────────────────────────────────────────────────────
+btn.main_menu: "🏠 Menu principal"
+btn.bind_roles: "🎭 Associer les rôles"
+btn.bind_speakers: "⚙️ Associer les Hérauts"
+btn.add_speaker: "➕ Ajouter un Héraut"
+btn.invite: "🔗 Inviter sur le serveur"
+btn.enable: "Activer"
+btn.disable: "Désactiver"
+
+# ── Status (Status.Render) ────────────────────────────────────────────────────
+status.guild: "Serveur"
+status.capture_role: "Rôle de capture"
+status.manager_role: "Rôle de gestionnaire"
+status.owner_channel: "Salon du bot caller"
+status.not_set: "non défini"
+status.unbound: "non associé"
+status.ally_code: "Code allié"
+status.raid: "Raid RvR"
+status.raid_inactive: "⚫ inactif"
+status.speakers_header:
+  one: "Hérauts ({{.Count}}) :"
+  other: "Hérauts ({{.Count}}) :"
+status.raid_active:
+  one: "🔴 actif ({{.Count}} Héraut connecté)"
+  other: "🔴 actif ({{.Count}} Hérauts connectés)"
+status.raid_active_with_guests:
+  one: "🔴 actif ({{.Count}} Héraut connecté) — invités : {{.Guests}}"
+  other: "🔴 actif ({{.Count}} Hérauts connectés) — invités : {{.Guests}}"
+status.raid_guest:
+  one: "🔴 relay invité → {{.Host}} ({{.Count}} Héraut connecté)"
+  other: "🔴 relay invité → {{.Host}} ({{.Count}} Hérauts connectés)"
+
+# ── Raid mode labels (RaidMode.Pretty) ────────────────────────────────────────
+raid_mode.one_caller_host: "Un orateur (hôte)"
+raid_mode.many_callers_host: "Plusieurs orateurs (hôte)"
+raid_mode.listener_guest: "Auditeur (invité)"
+raid_mode.caller_guest: "Orateur (invité)"
+raid_mode.one_many_callers_host: "Un↔Plusieurs orateurs (hôte)"
+raid_mode.one_many_caller_guest: "Un↔Plusieurs orateurs (invité)"
+
+
+# ── RvR control panel ─────────────────────────────────────────────────────────
+cmd.panel.description: "Afficher le panneau de commande du raid (boutons Lancer, Arrêter, État)"
+panel.btn.start: "Lancer le raid"
+panel.btn.stop: "Arrêter le raid"
+panel.btn.status: "État"
+panel.content: "**Panneau de commande RvR** (réservé aux Raid Leads)\n**Lancer le raid** : les Hérauts rejoignent les escouades et y portent la voix des Raid Leads. Si plusieurs Raid Leads parlent en même temps, leurs voix sont mélangées automatiquement.\n**Arrêter le raid** : les Hérauts quittent les escouades et le rapport qualité est publié ici."
+panel.content_squads: "**Chefs d'escouade** (rôle « Chef d'escouade ») : pour parler au Raid Lead, maintenez la touche « Appuyer pour parler (prioritaire) » de Discord. Avec votre touche habituelle, seule votre escouade vous entend."
+panel.content_channels: "**Salons** : au lancement, la catégorie « {{.Category}} » est créée avec le salon Raid Lead et les salons d'escouade, visibles par votre faction uniquement. Elle est supprimée à l'arrêt."
+raid.channels_created: "Salons ouverts dans « {{.Category}} » : {{.RaidLead}} et {{.Squads}} salon(s) d'escouade."
+raid.stopped_channels: "Les salons RvR sont en cours de suppression."
+raid.channels_removed: "Aucun raid actif. Les salons RvR restants ont été supprimés."
+raid.faction_role_missing: "⚠️ Rôle de faction introuvable, salons non créés : {{.Err}}. Vérifiez FACTION_ROLE dans la configuration."
+raid.raid_lead_role_missing: "⚠️ Rôle Raid Lead introuvable, raid non lancé : {{.Err}}. Créez le rôle (nom exact, ou RAID_LEAD_ROLE dans la configuration) ou choisissez-le avec /setup."
+raid.channels_no_permission: "⚠️ Le bot principal ne peut pas créer les salons : donnez-lui la permission « Gérer les salons » (paramètres du serveur, rôle du bot), puis relancez."
+access.granted: "✅ {{.Member}} a maintenant le rôle {{.Role}} : il peut rejoindre les salons RvR."
+access.already: "{{.Member}} avait déjà le rôle {{.Role}}."
+access.revoked: "🚫 {{.Member}} n'a plus le rôle {{.Role}} : il ne peut plus rejoindre les salons RvR."
+access.revoked_kicked: "🚫 {{.Member}} n'a plus le rôle {{.Role}} et a été sorti du vocal RvR."
+access.not_on: "{{.Member}} n'avait pas le rôle {{.Role}}."
+access.denied: "⛔ Réservé au Board RvR de la faction."
+access.bot: "Les bots n'ont pas besoin de cet accès."
+access.wrong_faction: "⛔ {{.Member}} n'a pas le rôle de faction : accès refusé."
+access.role_missing: "⚠️ Rôle introuvable sur le serveur : {{.Err}}. Vérifiez ACCESS_ROLE et BOARD_ROLE."
+access.no_permission: "⚠️ Le bot ne peut pas changer ce rôle : donnez-lui « Gérer les rôles » et placez son rôle au-dessus de celui-ci."
+access.failed: "⚠️ Échec : {{.Err}}"
+access.batch.granted: "✅ Accès accordé : {{.List}}"
+access.batch.revoked: "🚫 Accès retiré : {{.List}}"
+access.batch.kicked: "🔇 Sortis du vocal RvR : {{.List}}"
+access.batch.already: "➖ Déjà dans cet état : {{.List}}"
+access.batch.wrong_faction: "⛔ Sans le rôle de faction, refusés : {{.List}}"
+access.batch.not_found: "❓ Introuvables (vérifiez l'orthographe du pseudo ou du nom d'utilisateur) : {{.List}}"
+access.batch.failed: "⚠️ Échec : {{.List}}"
+access.batch.truncated: "Seuls les {{.Max}} premiers membres ont été traités : envoyez la suite dans un autre message."
+access.batch.nothing: "Aucun joueur trouvé dans le message. Mentionnez-les (@pseudo) ou collez leurs pseudos, un par ligne. Commencez par « retirer » pour enlever l'accès."
+access.batch.ambiguous: "❔ Plusieurs membres portent ces noms, choisissez ci-dessous : {{.List}}"
+access.pick.prompt_grant: "❔ {{.Count}} membres s'appellent « {{.Name}} » : {{.List}}. Lequel doit recevoir l'accès RvR ?"
+access.pick.prompt_revoke: "❔ {{.Count}} membres s'appellent « {{.Name}} » : {{.List}}. Auquel faut-il retirer l'accès RvR ?"
+access.pick.none: "Aucun"
+access.pick.by: "(choix de {{.Who}})"
+access.pick.skipped: "Ignoré par {{.Who}}."
+squad.named: "✅ {{.Member}} est maintenant {{.Role}}."
+squad.already: "{{.Member}} était déjà {{.Role}}."
+squad.dismissed: "🚫 {{.Member}} n'est plus {{.Role}}."
+squad.not_on: "{{.Member}} n'était pas {{.Role}}."
+squad.access_added: "Accès RvR accordé en même temps ({{.Role}})."
+squad.denied: "⛔ Réservé aux Raid Leads de la faction."
+squad.role_missing: "⚠️ Rôle Chef d'escouade introuvable : {{.Err}}. Vérifiez SQUAD_LEAD_ROLE."

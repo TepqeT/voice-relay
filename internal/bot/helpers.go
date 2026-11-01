@@ -1,0 +1,114 @@
+package bot
+
+import (
+	"fmt"
+
+	"github.com/TepqeT/voice-relay/internal/i18n"
+	"github.com/TepqeT/voice-relay/internal/manager"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/snowflake/v2"
+)
+
+func requireGuild(loc *i18n.Localizer, guildID *snowflake.ID) (snowflake.ID, *discord.MessageCreate) {
+	if guildID == nil {
+		msg := ephemeral(loc.T("err.guild_only"))
+		return 0, &msg
+	}
+	return *guildID, nil
+}
+
+func ephemeral(content string) discord.MessageCreate {
+	return discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral}
+}
+
+func statusEmoji(enabled bool) string {
+	if enabled {
+		return "🔊"
+	}
+	return "🔇"
+}
+
+// formatAccessWarnings builds a Discord-formatted warning block from the access check
+// results. Returns "" when there are no warnings.
+func formatAccessWarnings(loc *i18n.Localizer, warnings []manager.ChannelAccessWarning) string {
+	return formatBotChannels(loc.T("permissions.warning_header"), warnings)
+}
+
+// formatSkippedSpeakers lists the speakers a raid skipped because their bound
+// channel no longer exists. Returns "" when none were skipped.
+func formatSkippedSpeakers(loc *i18n.Localizer, skipped []manager.ChannelAccessWarning) string {
+	return formatBotChannels(loc.T("raid.skipped_missing_channel"), skipped)
+}
+
+func formatBotChannels(header string, warnings []manager.ChannelAccessWarning) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+	msg := header
+	for _, w := range warnings {
+		msg += fmt.Sprintf("\n- <@%s> → <#%s>", w.BotID, w.ChannelID)
+	}
+	return msg
+}
+
+// botPermissions is the Discord permission bitmask required by speaker bots.
+// Bit 48 is an unnamed/reserved Discord permission retained from the original
+// install URL; remove it if Discord revokes or reassigns the bit.
+const botPermissions discord.Permissions = discord.PermissionAddReactions |
+	discord.PermissionPrioritySpeaker |
+	discord.PermissionSendMessages |
+	discord.PermissionSendTTSMessages |
+	discord.PermissionUseExternalEmojis |
+	discord.PermissionConnect |
+	discord.PermissionSpeak |
+	discord.PermissionUseVAD |
+	discord.PermissionUseApplicationCommands |
+	discord.PermissionUseExternalStickers |
+	discord.PermissionUseSoundboard |
+	discord.PermissionUseExternalSounds |
+	discord.PermissionSendVoiceMessages |
+	1<<48 // reserved/unnamed bit present in original install URL
+
+// ownerPermissions is what the owner bot asks for: everything a speaker needs,
+// plus DEAFEN_MEMBERS.
+//
+// The owner bot server-deafens speaker bots for the duration of a non-capture
+// raid, which is the only thing that stops Discord forwarding them RTP they
+// would decrypt and throw away (see manager.ensureSpeakerDeaf). Speaker bots
+// are the targets of that action, never the actors, so they do not get the
+// permission themselves.
+//
+// Deafening also needs the owner bot's role to sit above every speaker bot's
+// role — a permission Discord grants but hierarchy still vetoes. Guilds that
+// installed the owner bot before this was added keep working; the deafen is
+// skipped with a warning.
+const ownerPermissions = botPermissions | discord.PermissionDeafenMembers
+
+func installOwnerURL(clientID snowflake.ID) string {
+	return fmt.Sprintf(
+		"https://discord.com/oauth2/authorize?client_id=%s&scope=bot&permissions=%d",
+		clientID, ownerPermissions,
+	)
+}
+
+// channelPermissions are what the owner bot also needs when each raid creates
+// its own channels (DYNAMIC_CHANNELS): create and delete them, and set their
+// permission overwrites. Kept apart from ownerPermissions, which matches the
+// invite links of the README.
+const channelPermissions = discord.PermissionViewChannel | discord.PermissionManageChannels | discord.PermissionManageRoles
+
+// installOwnerChannelsURL is the owner invite with channelPermissions. Opening
+// it again on a server where the bot already is updates the bot's role.
+func installOwnerChannelsURL(clientID snowflake.ID) string {
+	return fmt.Sprintf(
+		"https://discord.com/oauth2/authorize?client_id=%s&scope=bot&permissions=%d",
+		clientID, ownerPermissions|channelPermissions,
+	)
+}
+
+func installURL(clientID snowflake.ID, guildID snowflake.ID) string {
+	return fmt.Sprintf(
+		"https://discord.com/oauth2/authorize?client_id=%s&scope=bot&permissions=%d&guild_id=%s",
+		clientID, botPermissions, guildID,
+	)
+}

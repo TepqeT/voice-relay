@@ -1,0 +1,153 @@
+# Türkçe
+
+# ── Eğik çizgi komutu açıklamaları ────────────────────────────────────────────
+cmd.setup.description: "Bu sunucudaki tüm hoparlör botlarını listele ve yapılandır"
+
+cmd.start.description: "Ses baskını başlat veya aktarım koduyla başka sunucunun baskınına misafir olarak katıl"
+cmd.start.opt.code.description: "Başka sunucunun aktarım kodu (yeni baskın başlatmak için boş bırakın)"
+cmd.start.opt.mode.description: "Ses modu: Tek Konuşmacı / Çoklu Konuşmacı / Tek↔Çoklu. Varsayılan: Tek Konuşmacı."
+cmd.start.opt.mode.choice.one: "Tek Konuşmacı"
+cmd.start.opt.mode.choice.many: "Çoklu Konuşmacı"
+cmd.start.opt.mode.choice.one_many: "Tek↔Çoklu Konuşmacı"
+
+cmd.stop.description: "Tüm aktif hoparlörlerin ses kanallarından ayrılmasını sağla"
+cmd.status.description: "Mevcut hoparlör bağlantılarını ve ses baskını durumunu göster"
+
+# ── Genel hatalar ─────────────────────────────────────────────────────────────
+err.need_manager: "❌ Bu komutu kullanmak için Sunucuyu Yönet iznine veya sunucunun sorumlu rolüne sahip olmalısınız."
+err.need_admin: "❌ Bu komutu kullanmak için Yönetici iznine veya sunucunun sorumlu rolüne sahip olmalısınız."
+err.guild_only: "bu komut yalnızca bir sunucu içinde kullanılabilir"
+err.unexpected_data_type: "beklenmeyen etkileşim veri türü"
+err.invalid_speaker_id: "geçersiz hoparlör kimliği"
+err.speaker_not_found: "❌ Bu sunucuda hoparlör bulunamadı."
+err.no_more_tokens: "❌ Havuzdaki tüm hoparlör tokenları zaten eklenmiş."
+
+# ── Ses baskını yanıtları ─────────────────────────────────────────────────────
+setup.blocked_active_raid: "⚠️ Bir ses baskını aktifken kurulum kullanılamaz. Önce baskını durdurun."
+
+raid.already_active: "⚠️ Bu sunucuda zaten aktif bir ses baskını var."
+raid.none_active: "⚠️ Bu sunucuda aktif bir ses baskını yok."
+raid.join_blocked_permissions: "❌ Aktarım oturumuna katılınamıyor: önce bot izinlerini düzeltin."
+raid.start_blocked_permissions: "❌ Ses baskını başlatılamıyor: önce bot izinlerini düzeltin."
+raid.join_failed: "❌ `{{.Code}}` aktarım oturumuna katılma başarısız oldu: {{.Err}}"
+raid.no_bound_speakers: "⚠️ Bu sunucuda yapılandırılmış hoparlör botu yok. `/setup` → **Hoparlörleri Bağla** menüsünü açın, bir hoparlörü etkinleştirip ses kanalını seçin ve tekrar deneyin.\n_Bağlantılar sunucuya özeldir — aktarım kodu diğer sunucunun yapılandırmasını taşımaz._"
+raid.no_owner_channel: "⚠️ Ana botun ses kanalı yok — silinmiş olabilir. `/setup` ile bir kanal seçip tekrar deneyin."
+raid.start_failed: "❌ Ses baskını başlatılamadı: {{.Err}}"
+raid.stop_failed: "❌ Ses baskını durdurulamadı: {{.Err}}"
+raid.joined: "🔴 **Aktarım oturumuna katılındı:** `{{.Code}}`, mod: {{.Mode}}. Hoparlörler bağlı oldukları kanallara bağlanıyor."
+raid.started: "🔴 **Ses baskını başladı.** Hoparlörler bağlı oldukları kanallara katıldı."
+raid.started_with_code: "🔴 **Ses baskını başladı.** Hoparlörler bağlı oldukları kanallara katıldı. Aktarım kodu: `{{.Code}}`"
+raid.deafen_unavailable: "⚠️ İpucu: bota **Üyelerin Sesini Kapat** iznini verin ve rolünü hoparlör botlarının üzerine taşıyın; böylece yük azalır ve ses kesilmesi riski düşer."
+raid.stopped: "⚫ **Ses baskını durduruldu.** Tüm hoparlörler kanallarından ayrıldı."
+
+# ── İzin uyarısı ──────────────────────────────────────────────────────────────
+permissions.warning_header: "\n\n⚠️ **Bazı botlar kanallarına erişemiyor (Bağlan/Konuş izni eksik):**"
+raid.skipped_missing_channel: "\n\n⚠️ **Atlandı — ses kanalları artık mevcut değil (`/setup` ile yenisini seçin):**"
+
+# ── Kurulum arayüzü ───────────────────────────────────────────────────────────
+setup.main_title: "**Hoparlör Kurulumu**"
+setup.roles_title: "**Rol Bağlantıları**"
+setup.speakers_title: "**Hoparlör Bağlantıları** — Sayfa {{.Page}}/{{.Total}}"
+setup.no_speakers: "_Henüz kayıtlı hoparlör yok._"
+setup.speakers_count:
+  one: "_Toplam {{.Count}} hoparlör._"
+  other: "_Toplam {{.Count}} hoparlör._"
+
+setup.bind_caller_placeholder: "Konuşmacı botu bir ses kanalına bağlayın…"
+setup.bind_speaker_placeholder: "{{.Username}} kullanıcısını bir ses kanalına bağlayın…"
+setup.select_caller_role: "Sesi yakalanacak rolünü seçin…"
+setup.select_manager_role: "Sorumlu rolünü seçin…"
+setup.locale_placeholder: "Bot dilini seçin…"
+setup.locale_auto: "🌐 Otomatik (kullanıcının istemci dili)"
+
+speaker.add_title: "**Hoparlör Botu Ekle**"
+speaker.add_steps: "1. **Sunucuya Davet Et** düğmesine tıklayın — bot bu sunucu için önceden seçilecektir.\n2. Tarayıcıda yetkilendirme işlemini tamamlayın.\n3. Bot sunucuya katıldığında otomatik olarak kaydedilecektir."
+
+# ── Düğmeler ──────────────────────────────────────────────────────────────────
+btn.main_menu: "🏠 Ana Menü"
+btn.bind_roles: "🎭 Rolleri Bağla"
+btn.bind_speakers: "⚙️ Hoparlörleri Bağla"
+btn.add_speaker: "➕ Hoparlör Ekle"
+btn.invite: "🔗 Sunucuya Davet Et"
+btn.enable: "Etkinleştir"
+btn.disable: "Devre Dışı Bırak"
+
+# ── Durum (Status.Render) ─────────────────────────────────────────────────────
+status.guild: "Sunucu"
+status.capture_role: "Yakalama Rolü"
+status.manager_role: "Sorumlu Rolü"
+status.owner_channel: "Ana Bot Kanalı"
+status.not_set: "ayarlanmadı"
+status.unbound: "bağlı değil"
+status.ally_code: "Müttefik Kodu"
+status.raid: "Ses Baskını"
+status.raid_inactive: "⚫ aktif değil"
+status.speakers_header:
+  one: "Hoparlörler ({{.Count}}):"
+  other: "Hoparlörler ({{.Count}}):"
+status.raid_active:
+  one: "🔴 aktif ({{.Count}} hoparlör katıldı)"
+  other: "🔴 aktif ({{.Count}} hoparlör katıldı)"
+status.raid_active_with_guests:
+  one: "🔴 aktif ({{.Count}} hoparlör katıldı) — misafirler: {{.Guests}}"
+  other: "🔴 aktif ({{.Count}} hoparlör katıldı) — misafirler: {{.Guests}}"
+status.raid_guest:
+  one: "🔴 misafir aktarımı → {{.Host}} ({{.Count}} hoparlör katıldı)"
+  other: "🔴 misafir aktarımı → {{.Host}} ({{.Count}} hoparlör katıldı)"
+
+# ── Baskın modu etiketleri (RaidMode.Pretty) ──────────────────────────────────
+raid_mode.one_caller_host: "Tek Konuşmacı (sunucu)"
+raid_mode.many_callers_host: "Çoklu Konuşmacı (sunucu)"
+raid_mode.listener_guest: "Dinleyici (misafir)"
+raid_mode.caller_guest: "Konuşmacı (misafir)"
+raid_mode.one_many_callers_host: "Tek↔Çoklu Konuşmacı (sunucu)"
+raid_mode.one_many_caller_guest: "Tek↔Çoklu Konuşmacı (misafir)"
+
+
+# ── RvR control panel ─────────────────────────────────────────────────────────
+cmd.panel.description: "Raid kontrol panelini göster (Başlat, Durdur, Durum)"
+panel.btn.start: "Raidi başlat"
+panel.btn.stop: "Raidi durdur"
+panel.btn.status: "Durum"
+panel.content: "**RvR kontrol paneli** (yalnızca raid liderleri)\n**Raidi başlat**: botlar kanallara katılır ve raid liderlerinin sesini tüm mangalara iletir. Birden fazla lider aynı anda konuşursa sesler otomatik olarak karıştırılır.\n**Raidi durdur**: botlar kanallardan ayrılır ve kalite raporu burada yayınlanır."
+panel.content_squads: "**Manga liderleri** (manga lideri rolü): raid liderleriyle konuşmak için Discord'un \"Bas-Konuş (Öncelikli)\" tuşunu basılı tutun. Normal tuşunuzla sizi yalnızca manganız duyar."
+panel.content_channels: "**Kanallar**: başlatınca \"{{.Category}}\" kategorisi Raid Lead kanalı ve ekip kanallarıyla oluşturulur, yalnızca sizin fraksiyonunuz görür. Durdurunca silinir."
+raid.channels_created: "\"{{.Category}}\" içinde kanallar açıldı: {{.RaidLead}} ve {{.Squads}} ekip kanalı."
+raid.stopped_channels: "RvR kanalları siliniyor."
+raid.channels_removed: "Aktif raid yok. Kalan RvR kanalları silindi."
+raid.faction_role_missing: "⚠️ Fraksiyon rolü bulunamadı, kanallar oluşturulmadı: {{.Err}}. Yapılandırmada FACTION_ROLE değerini kontrol edin."
+raid.raid_lead_role_missing: "⚠️ Raid Lead rolü bulunamadı, raid başlatılmadı: {{.Err}}. Rolü oluşturun (tam ad veya yapılandırmada RAID_LEAD_ROLE) ya da /setup ile seçin."
+raid.channels_no_permission: "⚠️ Ana bot kanalları oluşturamıyor: ona Kanalları Yönet iznini verip yeniden başlatın."
+access.granted: "✅ {{.Member}} now has the {{.Role}} role and can join the RvR channels."
+access.already: "{{.Member}} already had the {{.Role}} role."
+access.revoked: "🚫 {{.Member}} no longer has the {{.Role}} role and can no longer join the RvR channels."
+access.revoked_kicked: "🚫 {{.Member}} no longer has the {{.Role}} role and was removed from RvR voice."
+access.not_on: "{{.Member}} did not have the {{.Role}} role."
+access.denied: "⛔ Reserved for the faction's RvR board."
+access.bot: "Bots do not need this access."
+access.wrong_faction: "⛔ {{.Member}} does not have the faction role: access denied."
+access.role_missing: "⚠️ Role not found on the server: {{.Err}}. Check ACCESS_ROLE and BOARD_ROLE."
+access.no_permission: "⚠️ The bot cannot change this role: give it Manage Roles and move its role above this one."
+access.failed: "⚠️ Failed: {{.Err}}"
+access.batch.granted: "✅ Access granted: {{.List}}"
+access.batch.revoked: "🚫 Access revoked: {{.List}}"
+access.batch.kicked: "🔇 Removed from RvR voice: {{.List}}"
+access.batch.already: "➖ Already in that state: {{.List}}"
+access.batch.wrong_faction: "⛔ Without the faction role, refused: {{.List}}"
+access.batch.not_found: "❓ Not found (use the Discord username, not the display name): {{.List}}"
+access.batch.failed: "⚠️ Failed: {{.List}}"
+access.batch.truncated: "Only the first {{.Max}} members were handled: send the rest in another message."
+access.batch.nothing: "No player found in the message. Mention them (@name) or paste their usernames, one per line. Start with \"remove\" to revoke access."
+access.batch.ambiguous: "❔ Several members share these names, pick below: {{.List}}"
+access.pick.prompt_grant: "❔ {{.Count}} members are called \"{{.Name}}\": {{.List}}. Which one gets RvR access?"
+access.pick.prompt_revoke: "❔ {{.Count}} members are called \"{{.Name}}\": {{.List}}. Which one loses RvR access?"
+access.pick.none: "None"
+access.pick.by: "(picked by {{.Who}})"
+access.pick.skipped: "Skipped by {{.Who}}."
+squad.named: "✅ {{.Member}} is now {{.Role}}."
+squad.already: "{{.Member}} already was {{.Role}}."
+squad.dismissed: "🚫 {{.Member}} is no longer {{.Role}}."
+squad.not_on: "{{.Member}} was not {{.Role}}."
+squad.access_added: "RvR access granted as well ({{.Role}})."
+squad.denied: "⛔ Reserved for the faction's raid leads."
+squad.role_missing: "⚠️ Squad lead role not found: {{.Err}}. Check SQUAD_LEAD_ROLE."

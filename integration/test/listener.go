@@ -1,0 +1,319 @@
+//go:build integration || stress
+
+package test
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/TepqeT/voice-relay/internal/opus"
+	"github.com/TepqeT/voice-relay/internal/pool"
+	"github.com/disgoorg/disgo"
+	"github.com/disgoorg/disgo/bot"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/gateway"
+	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/godave/golibdave"
+	"github.com/disgoorg/snowflake/v2"
+)
+
+// CountingReceiver is a voice.OpusFrameReceiver that counts incoming frames per
+// source userID and records the timestamp of the first frame per source.
+// All methods are safe for concurrent use.
+type CountingReceiver struct {
+	counts     sync.Map // snowflake.ID → *atomic.Int64
+	firstFrame sync.Map // snowflake.ID → time.Time
+	done       chan struct{}
+	once       sync.Once
+}
+
+func NewCountingReceiver() *CountingReceiver {
+	return &CountingReceiver{done: make(chan struct{})}
+}
+
+func (r *CountingReceiver) ReceiveOpusFrame(userID snowflake.ID, pkt *voice.Packet) error {
+	if pkt == nil {
+		return nil
+	}
+	select {
+	case <-r.done:
+		return nil
+	default:
+	}
+
+	// Increment frame counter.
+	v, _ := r.counts.LoadOrStore(userID, &atomic.Int64{})
+	v.(*atomic.Int64).Add(1)
+
+	// Record first-frame timestamp once per userID.
+	r.firstFrame.LoadOrStore(userID, time.Now())
+	return nil
+}
+
+func (r *CountingReceiver) CleanupUser(_ snowflake.ID) {}
+
+func (r *CountingReceiver) Close() {
+	r.once.Do(func() { close(r.done) })
+}
+
+// FramesReceived returns the number of Opus frames received from userID.
+func (r *CountingReceiver) FramesReceived(userID snowflake.ID) int64 {
+	v, ok := r.counts.Load(userID)
+	if !ok {
+		return 0
+	}
+	return v.(*atomic.Int64).Load()
+}
+
+// FirstFrameAt returns the wall-clock time of the first frame from userID.
+func (r *CountingReceiver) FirstFrameAt(userID snowflake.ID) (time.Time, bool) {
+	v, ok := r.firstFrame.Load(userID)
+	if !ok {
+		return time.Time{}, false
+	}
+	return v.(time.Time), true
+}
+
+// Reset clears all frame counts and timestamps. Use between test cases.
+func (r *CountingReceiver) Reset() {
+	r.counts.Range(func(k, _ any) bool {
+		r.counts.Delete(k)
+		return true
+	})
+	r.firstFrame.Range(func(k, _ any) bool {
+		r.firstFrame.Delete(k)
+		return true
+	})
+}
+
+// Listener joins a voice channel and counts incoming Opus frames per source userID.
+type Listener struct {
+	client   *bot.Client
+	id       snowflake.ID
+	Receiver *CountingReceiver
+}
+
+func newTestListener(ctx context.Context, token string) (*Listener, error) {
+	client, err := disgo.New(token,
+		bot.WithGatewayConfigOpts(
+			gateway.WithIntents(gateway.IntentGuildVoiceStates),
+		),
+		bot.WithVoiceManagerConfigOpts(
+			voice.WithDaveSessionCreateFunc(golibdave.NewSession),
+			pool.SafeUDPConnOpt(),
+			pool.SafeAudioSenderOpt(),
+			pool.SafeGatewayOpt(),
+			voice.WithLogger(slog.New(slog.DiscardHandler)),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build listener bot client: %w", err)
+	}
+	if err := client.OpenGateway(ctx); err != nil {
+		return nil, fmt.Errorf("open listener bot gateway: %w", err)
+	}
+	self, _ := client.Caches.SelfUser()
+	return &Listener{
+		client:   client,
+		id:       self.ID,
+		Receiver: NewCountingReceiver(),
+	}, nil
+}
+
+// StartListening joins channelID in guildID and begins collecting frames.
+// Returns a cleanup func that stops listening and leaves the channel.
+// Resets the frame counters before joining so each test starts clean.
+func (l *Listener) StartListening(ctx context.Context, guildID, channelID snowflake.ID) (func(), error) {
+	// Fresh receiver per listening session so prior frames don't bleed in.
+	l.Receiver = NewCountingReceiver()
+
+	gv := pool.NewGuildVoice(l.client.VoiceManager, channelID)
+	conn, err := gv.Join(ctx, guildID)
+	if err != nil {
+		return nil, fmt.Errorf("listener bot join channel: %w", err)
+	}
+
+	conn.SetOpusFrameReceiver(l.Receiver)
+	conn.SetOpusFrameProvider(opus.NewEmptyVoiceProvider())
+
+	if err := conn.SetSpeaking(ctx, voice.SpeakingFlagMicrophone); err != nil {
+		l.Receiver.Close()
+		leaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gv.Leave(leaveCtx, guildID)
+		return nil, fmt.Errorf("listener bot set speaking: %w", err)
+	}
+
+	var stopped bool
+	cleanup := func() {
+		if stopped {
+			return
+		}
+		stopped = true
+		l.Receiver.Close()
+		leaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gv.Leave(leaveCtx, guildID)
+	}
+	return cleanup, nil
+}
+
+// StartPlaying joins channelID in guildID and streams .dca files from samplesDir
+// in random order. Returns a cleanup func that stops playback and leaves the channel.
+func (l *Listener) StartPlaying(ctx context.Context, guildID, channelID snowflake.ID, samplesDir string) (func(), error) {
+	paths, err := filepath.Glob(filepath.Join(samplesDir, "*.dca"))
+	if err != nil || len(paths) == 0 {
+		return nil, fmt.Errorf("no .dca files found in %q", samplesDir)
+	}
+	provider, err := NewRandomFileVoiceProvider(paths)
+	if err != nil {
+		return nil, fmt.Errorf("open dca files in %q: %w", samplesDir, err)
+	}
+
+	gv := pool.NewGuildVoice(l.client.VoiceManager, channelID)
+	leaveCtx, leaveCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	gv.Leave(leaveCtx, guildID)
+	leaveCancel()
+
+	conn, err := gv.Join(ctx, guildID)
+	if err != nil {
+		provider.Close()
+		return nil, fmt.Errorf("listener bot join channel: %w", err)
+	}
+
+	conn.SetOpusFrameProvider(provider)
+	conn.SetOpusFrameReceiver(opus.NewEmptyVoiceReceiver())
+
+	if err := conn.SetSpeaking(ctx, voice.SpeakingFlagMicrophone); err != nil {
+		provider.Close()
+		leaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gv.Leave(leaveCtx, guildID)
+		return nil, fmt.Errorf("listener bot set speaking: %w", err)
+	}
+
+	var stopped bool
+	cleanup := func() {
+		if stopped {
+			return
+		}
+		stopped = true
+		provider.Close()
+		leaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		gv.Leave(leaveCtx, guildID)
+	}
+	return cleanup, nil
+}
+
+// GetMember fetches a guild member via the listener bot's REST client.
+// The listener bot is the designated test-admin bot (Administrator role in the
+// test guild) so privileged setup calls go through it, keeping the owner bot at
+// production-identical permissions.
+func (l *Listener) GetMember(guildID, userID snowflake.ID) (*discord.Member, error) {
+	return l.client.Rest.GetMember(guildID, userID)
+}
+
+// UpdateMember modifies a guild member via the listener bot's REST client.
+// See GetMember for why this goes through the listener bot.
+func (l *Listener) UpdateMember(guildID, userID snowflake.ID, update discord.MemberUpdate) (*discord.Member, error) {
+	return l.client.Rest.UpdateMember(guildID, userID, update)
+}
+
+// AddMemberRole grants roleID to userID in guildID via the listener bot's REST
+// client. The listener bot must hold Administrator (or Manage Roles) in the guild.
+func (l *Listener) AddMemberRole(guildID, userID, roleID snowflake.ID) error {
+	return l.client.Rest.AddMemberRole(guildID, userID, roleID)
+}
+
+// RemoveMemberRole revokes roleID from userID in guildID via the listener bot.
+func (l *Listener) RemoveMemberRole(guildID, userID, roleID snowflake.ID) error {
+	return l.client.Rest.RemoveMemberRole(guildID, userID, roleID)
+}
+
+// Close shuts down the listener bot's gateway connection.
+func (l *Listener) Close(ctx context.Context) {
+	l.client.Close(ctx)
+}
+
+// MemberServerDeaf reports the server-deaf flag on a guild member, read fresh
+// over REST rather than from cache. Used by the non-capture deafen tests to
+// observe what the manager did to a speaker bot.
+func (l *Listener) MemberServerDeaf(guildID, userID snowflake.ID) (bool, error) {
+	member, err := l.client.Rest.GetMember(guildID, userID)
+	if err != nil {
+		return false, err
+	}
+	return member.Deaf, nil
+}
+
+// SetServerDeaf server-deafens (or undeafens) a guild member over REST. The
+// listener bot is the test-admin bot, so it holds DEAFEN_MEMBERS. Used to
+// strand a deaf flag on a speaker the way an unclean teardown would.
+func (l *Listener) SetServerDeaf(guildID, userID snowflake.ID, deaf bool) error {
+	_, err := l.client.Rest.UpdateMember(guildID, userID, discord.MemberUpdate{Deaf: &deaf})
+	return err
+}
+
+// CanDeafen reports whether actorID can server-deafen targetID in guildID:
+// DEAFEN_MEMBERS (or Administrator) somewhere in its roles, AND a highest role
+// positioned above the target's. Discord answers 50013 when either is missing,
+// so tests use this to tell "the feature is off in this guild" apart from
+// "the code stopped deafening".
+func (l *Listener) CanDeafen(guildID, actorID, targetID snowflake.ID) (bool, string, error) {
+	roles, err := l.client.Rest.GetRoles(guildID)
+	if err != nil {
+		return false, "", fmt.Errorf("get guild roles: %w", err)
+	}
+	byID := make(map[snowflake.ID]discord.Role, len(roles))
+	for _, r := range roles {
+		byID[r.ID] = r
+	}
+
+	inspect := func(userID snowflake.ID) (allowed bool, top int, err error) {
+		member, err := l.client.Rest.GetMember(guildID, userID)
+		if err != nil {
+			return false, 0, fmt.Errorf("get member %s: %w", userID, err)
+		}
+		// @everyone carries the guild ID as its role ID and applies to everyone.
+		if r, ok := byID[guildID]; ok {
+			allowed = r.Permissions.Has(discord.PermissionDeafenMembers) ||
+				r.Permissions.Has(discord.PermissionAdministrator)
+		}
+		for _, rid := range member.RoleIDs {
+			r, ok := byID[rid]
+			if !ok {
+				continue
+			}
+			if r.Permissions.Has(discord.PermissionDeafenMembers) ||
+				r.Permissions.Has(discord.PermissionAdministrator) {
+				allowed = true
+			}
+			top = max(top, r.Position)
+		}
+		return allowed, top, nil
+	}
+
+	actorAllowed, actorTop, err := inspect(actorID)
+	if err != nil {
+		return false, "", err
+	}
+	_, targetTop, err := inspect(targetID)
+	if err != nil {
+		return false, "", err
+	}
+
+	switch {
+	case !actorAllowed:
+		return false, fmt.Sprintf("owner bot %s lacks DEAFEN_MEMBERS in guild %s", actorID, guildID), nil
+	case actorTop <= targetTop:
+		return false, fmt.Sprintf("owner bot's highest role (pos %d) is not above speaker %s (pos %d)",
+			actorTop, targetID, targetTop), nil
+	}
+	return true, "", nil
+}

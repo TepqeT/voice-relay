@@ -1,0 +1,70 @@
+ARG GO_VERSION=latest
+ARG LIBDAVE_VERSION=v1.1.1
+
+FROM golang:${GO_VERSION} AS builder
+
+ARG LIBDAVE_VERSION
+
+WORKDIR /src
+COPY . .
+
+WORKDIR /src/cmd/bot
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends clang git ca-certificates bash pkg-config build-essential libusb-1.0-0-dev unzip cmake nasm zip libopus-dev libopusfile-dev \
+	&& git clone https://github.com/disgoorg/godave /tmp/godave \
+	&& chmod +x /tmp/godave/scripts/libdave_install.sh \
+	&& /bin/bash /tmp/godave/scripts/libdave_install.sh $LIBDAVE_VERSION
+
+ENV PKG_CONFIG_PATH="/root/.local/lib/pkgconfig"
+
+RUN CGO_ENABLED=1 go build \
+    -o /bin/runner
+
+# Collect all shared library dependencies of the binary
+RUN mkdir -p /runtime-libs && \
+    ldd /bin/runner \
+        | grep "=> /" \
+        | awk '{print $3}' \
+        | xargs -I{} cp --dereference {} /runtime-libs/
+
+# Unit tests and vet. Not part of the default build: run it with
+#   docker build --target test .
+FROM builder AS test
+
+ENV LD_LIBRARY_PATH="/root/.local/lib"
+WORKDIR /src
+RUN go vet ./... && go test -count=1 ./...
+
+FROM builder AS sec
+
+ARG GOSEC_VERSION=v2.29.0
+# UPSTREAM(gosec v2.29.0): bundles golang.org/x/tools v0.49.0, which cannot read
+# Go 1.27.2 export data, so every package fails to type-check and nothing is
+# scanned. Build it against a newer x/tools until a gosec release ships one.
+ARG XTOOLS_VERSION=v0.51.0
+
+WORKDIR /tmp/gosec
+RUN go mod init gosec-build \
+	&& go get github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION} golang.org/x/tools@${XTOOLS_VERSION} \
+	&& go build -o /go/bin/gosec github.com/securego/gosec/v2/cmd/gosec
+
+WORKDIR /src
+RUN gosec -tags=integration,stress ./...
+
+FROM gcr.io/distroless/base AS runtime
+
+LABEL org.opencontainers.image.title="voice-relay" \
+      org.opencontainers.image.description="Voice Relay: Discord raid voice relay (private)" \
+      org.opencontainers.image.source="https://github.com/TepqeT/voice-relay" \
+      org.opencontainers.image.authors="TepqeT" \
+      org.opencontainers.image.licenses="LicenseRef-Proprietary"
+
+COPY --from=builder /bin/runner /
+COPY --from=builder /runtime-libs/ /usr/local/lib/
+# Default announcement sounds; mount a folder on /sounds to replace them.
+COPY --from=builder /src/sounds/ /sounds/
+
+ENV LD_LIBRARY_PATH=/usr/local/lib
+
+CMD ["/runner"]

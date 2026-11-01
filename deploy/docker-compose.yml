@@ -1,0 +1,99 @@
+# Voice Relay : relais vocal RvR Aion 2
+# Une instance par faction, chacune avec ses propres bots.
+#   Asmodiens seuls       :  docker compose up -d --build --remove-orphans
+#   Asmodiens + Elyseens  :  docker compose --profile elyos up -d --build --remove-orphans
+#   Logs                  :  docker compose logs -f asmos   (ou elyos)
+#   Arret                 :  docker compose --profile elyos down
+#   Tests unitaires       :  docker build --target test ./voice-relay
+
+x-relay: &relay
+  image: aion-relay:local
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-rvr-env: &rvr-env
+  STORE_PATH: /data/store.yaml
+  LOG_LEVEL: info
+  SESSION_IDLE_TIMEOUT: 30m
+  # Bots en "voix prioritaire" : baisse les discussions d'escouade pendant le call
+  PRIORITY_SPEAKER: "true"
+  # Sons de debut et de fin : fichiers .ogg (Opus, trames 20 ms) du dossier ./sounds
+  SOUNDS_DIR: /sounds
+  SOUND_ON_START: debut
+  SOUND_ON_STOP: fin
+  # Rapport qualite en fin de raid : salon du lancement + fichiers dans data*/reports
+  REPORT_TO_DISCORD: "true"
+  REPORT_LANG: fr
+  REPORTS_DIR: /data/reports
+  # Diagnostic detaille par raid (fichier JSONL) dans data*/diagnostics
+  DIAG_DIR: /data/diagnostics
+  DIAG_INTERVAL: 10s
+  # Chefs d'escouade : role Discord dont les membres parlent au Raid Lead RvR
+  # (priority = touche "Appuyer pour parler (prioritaire)", always = des qu'ils parlent)
+  SQUAD_LEAD_ROLE: "Chef d'escouade"
+  SQUAD_LEAD_KEY: always
+  # true : les chefs d'escouade sont aussi entendus dans les autres escouades
+  # (chaque salon entend les Raid Leads et les autres chefs, jamais lui-meme)
+  SQUAD_LEADS_TO_SQUADS: "true"
+  # Raid Leads : seul ce role peut rejoindre le salon Raid Lead et y etre relaye
+  # (utilise si aucun role de capture n'a ete choisi avec /setup)
+  RAID_LEAD_ROLE: "Raid Lead"
+  # Salons crees au lancement du raid et supprimes a l'arret
+  DYNAMIC_CHANNELS: "true"
+  RAID_LEAD_CHANNEL: "Raid Lead"
+  SQUAD_CHANNEL: "Escouade"
+  # Nombre d'escouades par faction (plafonne au nombre de Herauts de la faction)
+  SQUAD_COUNT: "5"
+  # Region vocale Discord commune a tous les salons (vide = automatique)
+  VOICE_REGION: ""
+
+services:
+  # Asmodiens : Voix de Pandaemonium + Heraut d'Asmodae 1 a 5 (tokens dans .env)
+  asmos:
+    <<: *relay
+    build: ./voice-relay
+    container_name: aion-relay-asmos
+    env_file: .env
+    environment:
+      <<: *rvr-env
+      FACTION_NAME: Asmodiens
+      # Role Discord qui voit les salons (nom exact ou ID)
+      FACTION_ROLE: Asmodiens
+      # Categorie existante sous laquelle placer la categorie RvR (nom ou ID)
+      RVR_CATEGORY_AFTER: "Aion 2 faction Asmodienne"
+    volumes:
+      - ./data:/data
+      - ./sounds:/sounds:ro
+
+  # Elyseens : Voix de Sanctum + Heraut d'Elysea 1 a 5 (tokens dans .env.elyos)
+  elyos:
+    <<: *relay
+    container_name: aion-relay-elyos
+    profiles: ["elyos"]
+    # Meme image que asmos, construite par lui
+    pull_policy: never
+    env_file:
+      - path: .env.elyos
+        required: false
+    environment:
+      <<: *rvr-env
+      FACTION_NAME: "Élyséens"
+      FACTION_ROLE: "Élyséens"
+      RVR_CATEGORY_AFTER: "Aion 2 faction Elyséenne"
+      # Acces RvR controle : seul ce role voit et rejoint les salons RvR
+      # (Raid Leads et Chefs d'escouade compris). Le Board RvR l'accorde ou le
+      # retire : clic droit sur un membre > Applications.
+      ACCESS_ROLE: "Elyséens Confirmés"
+      BOARD_ROLE: "Board RvR"
+      # Salon texte ou le Board RvR donne l'acces en mentionnant les joueurs ou
+      # en collant leurs noms d'utilisateur ("retirer" en premier pour enlever).
+      # Exige l'intent "Message Content" de Voix de Sanctum (Developer Portal).
+      # A decommenter une fois l intent active :
+      # ACCESS_CHANNEL: "accès-rvr"
+    volumes:
+      - ./data-elyos:/data
+      - ./sounds:/sounds:ro

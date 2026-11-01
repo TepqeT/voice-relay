@@ -1,0 +1,274 @@
+package manager
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/TepqeT/voice-relay/internal/diag"
+	"github.com/TepqeT/voice-relay/internal/guild"
+	"github.com/TepqeT/voice-relay/internal/manager/pipeline"
+	"github.com/TepqeT/voice-relay/internal/opus"
+	"github.com/TepqeT/voice-relay/internal/store"
+	"github.com/TepqeT/voice-relay/internal/telemetry"
+	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/snowflake/v2"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+)
+
+// setupSpeakers snapshots and joins all enabled, bound speakers for a guild.
+// Returns an error if the guild has no status, already has an active session,
+// or no speakers could join.
+// gm carries the session context for the metric recorders the speakers' audio
+// pipeline keeps; ctx is only the parent of the startup phase spans and is not
+// retained past this call.
+func (m *Service) setupSpeakers(ctx context.Context, guildID snowflake.ID, mode guild.RaidMode, allowUser func(snowflake.ID) bool, gm telemetry.GuildMetrics) (setup *pipeline.Setup, err error) {
+	phaseCtx, endPhase := startPhase(ctx, "voice.speakers.setup",
+		attribute.Bool("capture", mode.WithCapture()))
+	defer func() { endPhase(err) }()
+
+	speakers, err := m.speakersAfterSeeding(guildID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Separate "nothing configured" from "configured but nothing connected" —
+	// the two have different remedies, so they get different errors.
+	candidates := boundSpeakers(m.store, guildID, speakers)
+	if len(candidates) == 0 {
+		return nil, ErrNoBoundSpeakers
+	}
+	candidates = m.withLiveChannel(guildID, candidates)
+	trace.SpanFromContext(phaseCtx).SetAttributes(attribute.Int("speaker.candidates", len(candidates)))
+
+	deaf := newDeafController(m, guildID)
+	joined := m.joinSpeakers(phaseCtx, guildID, candidates, mode.WithCapture(), allowUser, deaf, gm)
+	trace.SpanFromContext(phaseCtx).SetAttributes(attribute.Int("speaker.joined", len(joined)))
+	if len(joined) == 0 {
+		return nil, ErrNoSpeakers
+	}
+
+	outs := make([]chan<- []byte, 0, len(joined))
+	joinedSpeakers := make([]guild.Speaker, 0, len(joined))
+	for _, r := range joined {
+		outs = append(outs, r.ChOut)
+		joinedSpeakers = append(joinedSpeakers, r.Speaker)
+	}
+
+	// Undeafening must precede the voice leaves BuildSpeakerCleanup performs —
+	// Discord rejects a member voice-state PATCH once the member is out of
+	// voice — so the controller is closed first.
+	speakerCleanup := pipeline.BuildSpeakerCleanup(guildID, joined)
+	return &pipeline.Setup{
+		Joined:   joined,
+		Speakers: joinedSpeakers,
+		SpeakerCleanup: func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), pipeline.VoiceLeaveTimeout)
+			deaf.Close(closeCtx)
+			cancel()
+			speakerCleanup()
+		},
+		Outs: outs,
+		Deaf: deaf,
+	}, nil
+}
+
+// boundSpeakers returns the speakers eligible to join: enabled AND bound to a
+// voice channel in this guild. An empty result means the guild was never set up
+// (see ErrNoBoundSpeakers), not that a join failed.
+func boundSpeakers(st store.Store, guildID snowflake.ID, speakers []guild.Speaker) []guild.Speaker {
+	var candidates []guild.Speaker
+	for _, sp := range speakers {
+		if !sp.Enabled {
+			continue
+		}
+		if _, ok := st.GetBoundChannel(guildID, sp.ID); !ok {
+			continue
+		}
+		candidates = append(candidates, sp)
+	}
+	return candidates
+}
+
+// withLiveChannel drops the candidates whose bound channel no longer exists.
+func (m *Service) withLiveChannel(guildID snowflake.ID, candidates []guild.Speaker) []guild.Speaker {
+	live := make([]guild.Speaker, 0, len(candidates))
+	for _, sp := range candidates {
+		if _, ok := m.liveBoundChannel(guildID, sp.ID); ok {
+			live = append(live, sp)
+			continue
+		}
+		slog.Warn("speaker skipped: bound channel no longer exists",
+			slog.String("speakerID", sp.ID.String()),
+			slog.String("guildID", guildID.String()),
+		)
+	}
+	return live
+}
+
+// joinRetryDelay is the pause before the second join attempt of a speaker.
+const joinRetryDelay = 2 * time.Second
+
+// joinSpeakers joins the given candidate speakers in parallel; callers filter
+// with boundSpeakers first.
+// When withCapture is true each speaker also captures incoming frames, filtered by allowUser.
+func (m *Service) joinSpeakers(ctx context.Context, guildID snowflake.ID, candidates []guild.Speaker, withCapture bool, allowUser func(snowflake.ID) bool, deaf *deafController, gm telemetry.GuildMetrics) []pipeline.SpeakerResult {
+	resultCh := make(chan pipeline.SpeakerResult, len(candidates))
+	var wg sync.WaitGroup
+	wg.Add(len(candidates))
+	for _, sp := range candidates {
+		go func(sp guild.Speaker) {
+			defer wg.Done()
+			gv, ok := m.speakerVoice(guildID, sp.ID)
+			if !ok {
+				slog.WarnContext(ctx, "speaker not in pool", slog.String("speakerID", sp.ID.String()))
+				return
+			}
+			attachCtx, endAttach := startPhase(ctx, "voice.bot.attach",
+				botAttr(sp.ID), attribute.String("bot.kind", "speaker"))
+			openCtx, endOpen := startPhase(attachCtx, "voice.conn.open", botAttr(sp.ID))
+			conn, err := gv.Join(openCtx, guildID)
+			// A fresh channel sometimes times out the first voice handshake:
+			// one more try keeps that squad from going silent for the raid.
+			if err != nil && ctx.Err() == nil {
+				slog.WarnContext(ctx, "speaker join failed, retrying once", slog.String("speakerID", sp.ID.String()), slog.Any("err", err))
+				select {
+				case <-ctx.Done():
+				case <-time.After(joinRetryDelay):
+					conn, err = gv.Join(openCtx, guildID)
+				}
+			}
+			endOpen(err)
+			if err != nil {
+				endAttach(err)
+				slog.WarnContext(ctx, "speaker failed to join channel", slog.String("speakerID", sp.ID.String()), slog.Any("err", err))
+				return
+			}
+			if withCapture {
+				m.prefetchChannelMembers(attachCtx, conn, sp.ID, guildID)
+			}
+			chOut := make(chan []byte, opus.AudioChanBuf)
+			applyCtx, endApply := startPhase(attachCtx, "voice.conn.apply", botAttr(sp.ID))
+			handle, cleanup, err := m.consumeSpeaker(applyCtx, guildID, sp.ID, conn, chOut, withCapture, allowUser, gm)
+			endApply(err)
+			if err != nil {
+				endAttach(err)
+				slog.ErrorContext(ctx, "failed to consume voice data", slog.String("speakerID", sp.ID.String()), slog.Any("err", err))
+				gv.Leave(ctx, guildID)
+				return
+			}
+			deafCtx, endDeaf := startPhase(attachCtx, "voice.deaf.reconcile",
+				botAttr(sp.ID), attribute.Bool("deaf.want", !withCapture))
+			undeafen := m.reconcileSpeakerDeaf(deafCtx, guildID, sp.ID, withCapture, deaf)
+			endDeaf(nil)
+			// The controller takes over from here: the router tells it when
+			// this speaker stops being a live capture source. A speaker that
+			// captures starts undeafened; one that does not starts deafened
+			// (or would have, had the guild granted the permission — a failed
+			// deafen returns a nil undo, and register mirrors that).
+			deaf.Register(sp.ID, !withCapture && undeafen != nil)
+			m.storeApplier(guildID, sp.ID, m.buildApplier(guildID, sp.ID, chOut, handle, allowUser))
+			resultCh <- pipeline.SpeakerResult{Speaker: sp, ChOut: chOut, Handle: handle, GV: gv, Cleanup: cleanup, Undeafen: undeafen}
+			endAttach(nil)
+		}(sp)
+	}
+	wg.Wait()
+	close(resultCh)
+
+	results := make([]pipeline.SpeakerResult, 0, len(candidates))
+	for r := range resultCh {
+		results = append(results, r)
+	}
+	return results
+}
+
+// commitSession stores session under write lock, re-checking for conflicts.
+// Also publishes the session's AutoRouter into the lock-free activeRouters
+// snapshot so voice-event handlers can dispatch via AutoRoute without
+// taking m.mu.
+func (m *Service) commitSession(session *guild.Session) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st := m.statuses[session.GuildID]
+	if st == nil {
+		return fmt.Errorf("commit session: guild status disappeared")
+	}
+	if st.HasActiveSession() {
+		return ErrSessionExists
+	}
+	st.Session = session
+	if session.AutoRouter != nil {
+		m.setActiveRouter(session.GuildID, session.AutoRouter)
+	}
+	return nil
+}
+
+// consumeSpeaker sets up audio provider and receiver for a speaker's voice connection.
+// chOut is the provider channel (frames to play). When withCapture is true the
+// receiver decodes incoming frames inline via the returned FanoutHandle, which
+// the topology wiring code must Install with mixer/raw targets.
+// The caller is responsible for calling the returned cleanup function.
+func (m *Service) consumeSpeaker(ctx context.Context, guildID, speakerID snowflake.ID, conn voice.Conn, chOut <-chan []byte, withCapture bool, allowUser func(snowflake.ID) bool, gm telemetry.GuildMetrics) (*opus.FanoutHandle, func(), error) {
+	session := NewVoiceConnSetup(speakerID)
+	session.WithAnnouncements(m.overlayFor(guildID, speakerID))
+	session.WithDiag(diag.For(guildID))
+	session.WithVoiceProvider(gm.Provider())
+
+	if withCapture {
+		session.WithVoiceReceiver(allowUser, gm.Receiver())
+	}
+
+	handle, cleanup, err := session.Apply(ctx, conn, chOut)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Repair the pipeline if disgo silently re-identifies this voice gateway;
+	// that swaps the UDP socket out from under the sender/receiver.
+	m.watchVoiceReady(guildID, speakerID, conn)
+
+	return handle, cleanup, nil
+}
+
+// speakersAfterSeeding snapshots the guild's speakers, seeding it on demand
+// when the detached startup seeding has not reached it yet — a guild's slash
+// commands are already registered on Discord from the previous run, so a
+// /start can land first.
+func (m *Service) speakersAfterSeeding(guildID snowflake.ID) ([]guild.Speaker, error) {
+	speakers, err := m.snapshotSpeakers(guildID)
+	if !errors.Is(err, ErrNoGuildStatus) {
+		return speakers, err
+	}
+	m.seedGuildSpeakers(guildID, m.ownerBotID)
+	return m.snapshotSpeakers(guildID)
+}
+
+// snapshotSpeakers returns a deep copy of the guild's speakers as a slice.
+// Returns an error if the guild has no status or already has an active session.
+func (m *Service) snapshotSpeakers(guildID snowflake.ID) ([]guild.Speaker, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	st := m.statuses[guildID]
+	if st == nil {
+		return nil, ErrNoGuildStatus
+	}
+	if st.Session != nil {
+		return nil, ErrSessionExists
+	}
+	speakers := make([]guild.Speaker, 0, len(st.Speakers))
+	for _, v := range st.Speakers {
+		speakers = append(speakers, *v)
+	}
+	return speakers, nil
+}
+
+// endSpanErr records an error on a span and ends it.
+func endSpanErr(span trace.Span, err error) {
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	span.End()
+}
