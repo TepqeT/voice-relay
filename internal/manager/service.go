@@ -48,6 +48,8 @@ type Service struct {
 	accessMode         accessModes      // raid channels open to everyone or restricted, per guild
 	home               homeCategories   // permanent category per guild (HomeCategory)
 	onboarded          sync.Map         // guild and channel set already in the onboarding defaults
+	grantedAll         sync.Map         // guilds whose members got the access role this run
+	homeRefreshed      sync.Map         // guilds whose home category overwrites were set this run
 	squadChoice        squadChoices     // squads per raid chosen on the panel
 	feedback           listenerFeedback // squad lead returns cut on the panel
 	sessionIdleTimeout time.Duration    // 0 disables; set via SetSessionIdleTimeout

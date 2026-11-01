@@ -297,8 +297,9 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "panel.json"))
 		if managerSvc.HomeCategoryEnabled() {
 			panel.home = managerSvc.EnsureHomeCategory
-			panel.onboard = managerSvc.EnsureOnboardingDefaults
+			panel.onboard = managerSvc.SyncOnboardingDefaults
 		}
+		panel.viewRole = managerSvc.AccessRoleID
 		client.AddEventListeners(
 			bot.NewListenerFunc(func(e *events.GuildReady) { go panel.Ensure(context.Background(), e.GuildID) }),
 			bot.NewListenerFunc(func(e *events.GuildJoin) { go panel.Ensure(context.Background(), e.GuildID) }),
@@ -311,6 +312,20 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		)
 		cmdHandlers.OnPanelChange(func(guildID snowflake.ID) { go panel.Ensure(context.Background(), guildID) })
 		slog.Info("panel channel enabled", slog.String("channel", name))
+	}
+
+	// Every member gets the access role: the Voice Relay channels are
+	// private to it, which Discord shows even on servers with onboarding.
+	if managerSvc.AccessEnabled() {
+		client.AddEventListeners(
+			bot.NewListenerFunc(func(e *events.GuildReady) { go managerSvc.GrantAccessToAll(context.Background(), e.GuildID) }),
+			bot.NewListenerFunc(func(e *events.GuildJoin) { go managerSvc.GrantAccessToAll(context.Background(), e.GuildID) }),
+			bot.NewListenerFunc(func(e *events.GuildMemberJoin) {
+				if !e.Member.User.Bot {
+					go managerSvc.GrantAccessOnJoin(context.Background(), e.GuildID, e.Member.User.ID)
+				}
+			}),
+		)
 	}
 
 	if cfg.RvR.ReportToDiscord {
