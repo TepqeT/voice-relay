@@ -200,3 +200,22 @@ func TestEventLabel(t *testing.T) {
 		t.Fatalf("RVR_CATEGORY must win, got %q", c.Category)
 	}
 }
+
+func TestLoadWeb(t *testing.T) {
+	t.Setenv("WEB_ADDR", "")
+	t.Setenv("WEB_BASE_URL", "")
+	t.Setenv("DISCORD_CLIENT_SECRET", "")
+	if loadWeb().Enabled() {
+		t.Fatal("site on by default")
+	}
+	t.Setenv("WEB_ADDR", ":8080")
+	if loadWeb().Enabled() {
+		t.Fatal("site on without base URL and secret")
+	}
+	t.Setenv("WEB_BASE_URL", "https://relais.example.fr/ ")
+	t.Setenv("DISCORD_CLIENT_SECRET", "s3cret")
+	w := loadWeb()
+	if !w.Enabled() || w.BaseURL != "https://relais.example.fr" {
+		t.Fatalf("web = %+v", w)
+	}
+}

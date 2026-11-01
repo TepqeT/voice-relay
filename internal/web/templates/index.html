@@ -1,0 +1,24 @@
+{{template "head" .}}
+<section class="card hero">
+  <div class="hero-grid">
+    <div>
+      <h1>La voix de vos Raid Leads dans chaque escouade</h1>
+      <p>Les Hérauts diffusent en direct les calls des Raid Leads dans tous les salons d'escouade. Installation en quatre étapes depuis ce site : il ne vous restera qu'à donner les rôles à vos joueurs.</p>
+      {{if eq .Error "session"}}<p class="bad">La connexion a expiré ou a été interrompue. Recommencez.</p>{{end}}
+      {{if eq .Error "refus"}}<p class="bad">Connexion annulée sur Discord.</p>{{end}}
+      {{if eq .Error "discord"}}<p class="bad">Discord n'a pas répondu correctement. Réessayez dans un instant.</p>{{end}}
+      <p><a class="button" href="/login">Se connecter avec Discord</a></p>
+      <p class="muted">Le site lit seulement votre identité et la liste de vos serveurs. Il ne garde aucun accès à votre compte.</p>
+    </div>
+    {{template "scene-raid"}}
+  </div>
+</section>
+
+<h2>Comment ça marche</h2>
+<div class="steps">
+  <div class="step">{{template "scene-login"}}<h3><span class="num">1</span>Connectez-vous</h3><p>Avec votre compte Discord, puis choisissez le serveur à équiper.</p></div>
+  <div class="step">{{template "scene-invite"}}<h3><span class="num">2</span>Invitez les bots</h3><p>{{.Bot}} puis un Héraut par escouade, chacun en un clic, déjà réglé sur votre serveur.</p></div>
+  <div class="step">{{template "scene-roles"}}<h3><span class="num">3</span>Créez les rôles</h3><p>Raid Lead, chefs d'escouade, accès, classes : tout est créé en un clic.</p></div>
+  <div class="step">{{template "scene-assign"}}<h3><span class="num">4</span>Donnez les rôles</h3><p>Attribuez-les à vos joueurs dans Discord. C'est prêt pour le prochain raid.</p></div>
+</div>
+{{template "foot" .}}

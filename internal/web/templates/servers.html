@@ -1,0 +1,14 @@
+{{template "head" .}}
+<h1>Vos serveurs</h1>
+<p class="muted">Seuls les serveurs où vous avez la permission « Gérer le serveur » apparaissent.</p>
+{{if not .Guilds}}<p class="card">Aucun serveur géré. Il faut la permission « Gérer le serveur » pour installer le relais.</p>{{end}}
+<ul class="list">
+{{range .Guilds}}
+  <li class="card row">
+    <span class="name">{{.Name}}</span>
+    {{if .Ready}}<span class="tag ok">Prêt</span>{{else if .BotPresent}}<span class="tag warn">À terminer</span>{{else}}<span class="tag">Bot absent</span>{{end}}
+    <a class="button small" href="/servers/{{.ID}}">{{if .BotPresent}}Configurer{{else}}Installer{{end}}</a>
+  </li>
+{{end}}
+</ul>
+{{template "foot" .}}
