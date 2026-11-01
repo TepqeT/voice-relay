@@ -174,3 +174,7 @@ sort.reason.squad_lead: "chef d'escouade, jamais déplacé"
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 sub.required: "❌ Ce serveur n'a pas d'abonnement actif : le raid ne peut pas démarrer."
 sub.required_site: "❌ Ce serveur n'a pas d'abonnement actif : le raid ne peut pas démarrer. Voir {{.URL}}"
+sub.expired: "❌ L'abonnement de ce serveur a expiré le {{.Date}} : le raid ne peut pas démarrer. Son titulaire peut le renouveler."
+sub.expired_site: "❌ L'abonnement de ce serveur a expiré le {{.Date}} : le raid ne peut pas démarrer. Son titulaire peut le renouveler sur {{.URL}}"
+sub.ended: "❌ L'abonnement qui couvrait ce serveur a pris fin : le raid ne peut pas démarrer."
+sub.ended_site: "❌ L'abonnement qui couvrait ce serveur a pris fin : le raid ne peut pas démarrer. Voir {{.URL}}"

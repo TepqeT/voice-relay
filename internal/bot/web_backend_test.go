@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/TepqeT/voice-relay/internal/i18n"
 	"github.com/TepqeT/voice-relay/internal/manager"
+	"github.com/TepqeT/voice-relay/internal/subscription"
 )
 
 type fakeSiteManager struct {
@@ -56,7 +58,7 @@ func TestWebBackendGuildStatus(t *testing.T) {
 	if !strings.Contains(st.Heralds[1].InviteURL, "client_id=1002") || !strings.Contains(st.Heralds[1].InviteURL, "guild_id=777") {
 		t.Fatalf("herald invite = %q", st.Heralds[1].InviteURL)
 	}
-	if len(st.MissingPermissions) != 1 || st.MissingPermissions[0] != "Déplacer des membres" {
+	if len(st.MissingPermissions) != 1 || st.MissingPermissions[0] != "move" {
 		t.Fatalf("missing = %v", st.MissingPermissions)
 	}
 	if len(st.Roles) != 2 || !st.Roles[0].Exists || st.Roles[1].Exists {
@@ -103,16 +105,45 @@ func TestRaidRefusedWithoutSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	subs, _ := subscription.Open("")
+	_ = subs.Grant(subscription.Subscription{UserID: 7, Plan: subscription.PlanLifetime})
+	_ = subs.Activate(7, 1, "Couvert")
+	_ = subs.Grant(subscription.Subscription{UserID: 8, Plan: subscription.PlanUntil, Expires: time.Now().Add(time.Hour)})
+	_ = subs.Activate(8, 3, "Bientôt expiré")
+	_ = subs.Grant(subscription.Subscription{UserID: 9, Plan: subscription.PlanLifetime})
+	_ = subs.Activate(9, 4, "Retiré")
+	_ = subs.Revoke(9)
+
 	h := &CommandHandlers{bundle: bundle}
-	h.RequireSubscription(func(id snowflake.ID) bool { return id == 1 }, "https://relais.example.fr")
-	var got string
-	h.startHostRaid(context.Background(), 2, bundle.For("fr", ""), "", func(s string) { got = s })
-	if !strings.Contains(got, "pas d'abonnement actif") || !strings.Contains(got, "https://relais.example.fr") {
-		t.Fatalf("reply = %q", got)
+	fr := bundle.For("fr", "")
+	reply := func(guildID snowflake.ID) string {
+		var got string
+		h.startHostRaid(context.Background(), guildID, fr, "", func(s string) { got = s })
+		return got
 	}
-	h.RequireSubscription(func(snowflake.ID) bool { return false }, "")
-	h.startHostRaid(context.Background(), 2, bundle.For("fr", ""), "", func(s string) { got = s })
-	if strings.Contains(got, "http") {
-		t.Fatalf("reply without site = %q", got)
+	h.RequireSubscription(subs.Coverage, "https://relais.example.fr")
+	if got := reply(2); !strings.Contains(got, "pas d'abonnement actif") || !strings.Contains(got, "https://relais.example.fr") {
+		t.Fatalf("never subscribed = %q", got)
+	}
+	if got := reply(4); !strings.Contains(got, "a pris fin") {
+		t.Fatalf("revoked = %q", got)
+	}
+	// Expired: the bot names the last covered day.
+	h.RequireSubscription(func(id snowflake.ID) subscription.Coverage {
+		c := subs.Coverage(id)
+		if id == 3 {
+			c.State = subscription.StateExpired
+			c.Sub.Expires = time.Date(2026, 12, 1, 0, 0, 0, 0, time.Local)
+		}
+		return c
+	}, "")
+	if got := reply(3); !strings.Contains(got, "a expiré le 30/11/2026") || strings.Contains(got, "http") {
+		t.Fatalf("expired = %q", got)
+	}
+	if got := h.subscriptionRefusal(1, fr); got != "" {
+		t.Fatalf("covered server refused: %q", got)
+	}
+	if got := h.subscriptionRefusal(3, bundle.For("en", "")); !strings.Contains(got, "expired on 2026-11-30") {
+		t.Fatalf("english expired = %q", got)
 	}
 }

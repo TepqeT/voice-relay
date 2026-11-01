@@ -1,7 +1,8 @@
-// Package subscription records which Discord servers may use the relay. A
-// server is identified by its ID only: administrators sign in with Discord,
-// there is no separate account. Subscriptions are kept in a JSON file next to
-// the store until the service moves to a database.
+// Package subscription records who may use the relay. A subscription belongs
+// to a Discord account (people sign in with Discord, there is no separate
+// account); its owner activates it on the servers they manage, as many as
+// the plan allows. Data is kept in a JSON file next to the store until the
+// service moves to a database.
 package subscription
 
 import (
@@ -29,13 +30,14 @@ const (
 	PlanUntil Plan = "until"
 )
 
-// Subscription is the right of one server to use the relay.
+// Subscription is the right of one Discord account to run the relay.
 type Subscription struct {
-	GuildID   snowflake.ID `json:"guild_id"`
-	GuildName string       `json:"guild_name,omitempty"`
+	UserID    snowflake.ID `json:"user_id"`
+	UserName  string       `json:"user_name,omitempty"`
 	Plan      Plan         `json:"plan"`
-	Expires   time.Time    `json:"expires,omitzero"` // PlanUntil only
-	Gift      bool         `json:"gift"`             // offered by an administrator, nothing to pay
+	Expires   time.Time    `json:"expires,omitzero"` // PlanUntil only, exclusive
+	MaxGuilds int          `json:"max_guilds,omitempty"`
+	Gift      bool         `json:"gift"` // offered by an administrator
 	Note      string       `json:"note,omitempty"`
 	GrantedBy snowflake.ID `json:"granted_by,omitempty"`
 	GrantedAt time.Time    `json:"granted_at"`
@@ -52,42 +54,68 @@ func (s Subscription) Active(now time.Time) bool {
 	return false
 }
 
-// Label describes the subscription in French, dates as jj/mm/aaaa.
-func (s Subscription) Label(now time.Time) string {
-	gift := ""
-	if s.Gift {
-		gift = " (offert)"
-	}
-	switch {
-	case s.Plan == PlanLifetime:
-		return "À vie" + gift
-	case s.Active(now):
-		// Expires is exclusive: show the last day still covered.
-		return "Jusqu'au " + s.Expires.Add(-time.Nanosecond).Format("02/01/2006") + gift
-	default:
-		return "Expiré le " + s.Expires.Format("02/01/2006")
-	}
+// LastDay is the last day covered by a PlanUntil subscription.
+func (s Subscription) LastDay() time.Time { return s.Expires.Add(-time.Nanosecond) }
+
+// Link activates a subscription on a server.
+type Link struct {
+	GuildID   snowflake.ID `json:"guild_id"`
+	GuildName string       `json:"guild_name,omitempty"`
+	UserID    snowflake.ID `json:"user_id"`
+	LinkedAt  time.Time    `json:"linked_at"`
+}
+
+// State is what a server's coverage looks like now.
+type State int
+
+const (
+	// StateNone: no subscription was ever activated on the server.
+	StateNone State = iota
+	// StateActive: covered.
+	StateActive
+	// StateExpired: the subscription activated on the server has ended or
+	// was removed.
+	StateExpired
+)
+
+// Coverage tells whether a server may run raids, and why.
+type Coverage struct {
+	State State
+	Link  Link
+	Sub   Subscription // zero when the subscription was removed
 }
 
 var (
 	// ErrInvalid is returned for a subscription that cannot be stored.
 	ErrInvalid = errors.New("invalid subscription")
-	// ErrNotFound is returned when revoking a server without subscription.
-	ErrNotFound = errors.New("no subscription for this server")
+	// ErrNotFound is returned for an unknown account or server.
+	ErrNotFound = errors.New("not found")
+	// ErrNoSubscription: the account has no active subscription.
+	ErrNoSubscription = errors.New("no active subscription")
+	// ErrLimit: the plan's server limit is reached.
+	ErrLimit = errors.New("server limit reached")
+	// ErrTaken: another account's subscription covers the server.
+	ErrTaken = errors.New("server covered by another account")
 )
 
-// Store keeps the subscriptions, saved to a JSON file on every change.
-type Store struct {
-	path string
-	mu   sync.RWMutex
-	m    map[snowflake.ID]Subscription
-	now  func() time.Time
+type fileData struct {
+	Subscriptions []Subscription `json:"subscriptions"`
+	Links         []Link         `json:"links"`
 }
 
-// Open loads path, or starts empty when it does not exist yet. An empty path
+// Store keeps subscriptions and links, saved on every change.
+type Store struct {
+	path  string
+	mu    sync.RWMutex
+	subs  map[snowflake.ID]Subscription // by user
+	links map[snowflake.ID]Link         // by guild
+	now   func() time.Time
+}
+
+// Open loads path, or starts empty when it does not exist. An empty path
 // keeps everything in memory (tests).
 func Open(path string) (*Store, error) {
-	s := &Store{path: path, m: make(map[snowflake.ID]Subscription), now: time.Now}
+	s := &Store{path: path, subs: map[snowflake.ID]Subscription{}, links: map[snowflake.ID]Link{}, now: time.Now}
 	if path == "" {
 		return s, nil
 	}
@@ -98,48 +126,87 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	var list []Subscription
-	if err := json.Unmarshal(data, &list); err != nil {
+	var f fileData
+	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	for _, sub := range list {
-		s.m[sub.GuildID] = sub
+	for _, sub := range f.Subscriptions {
+		s.subs[sub.UserID] = sub
+	}
+	for _, l := range f.Links {
+		s.links[l.GuildID] = l
 	}
 	return s, nil
 }
 
-// Get returns the subscription of guildID.
-func (s *Store) Get(guildID snowflake.ID) (Subscription, bool) {
+// Now is the store's clock.
+func (s *Store) Now() time.Time { return s.now() }
+
+// Get returns the subscription of userID.
+func (s *Store) Get(userID snowflake.ID) (Subscription, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sub, ok := s.m[guildID]
+	sub, ok := s.subs[userID]
 	return sub, ok
 }
 
-// Active reports whether guildID has a subscription covering now.
-func (s *Store) Active(guildID snowflake.ID) bool {
-	sub, ok := s.Get(guildID)
-	return ok && sub.Active(s.now())
+// Coverage describes guildID's coverage now.
+func (s *Store) Coverage(guildID snowflake.ID) Coverage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	l, ok := s.links[guildID]
+	if !ok {
+		return Coverage{State: StateNone}
+	}
+	sub, ok := s.subs[l.UserID]
+	if ok && sub.Active(s.now()) {
+		return Coverage{State: StateActive, Link: l, Sub: sub}
+	}
+	return Coverage{State: StateExpired, Link: l, Sub: sub}
 }
 
-// List returns every subscription, by server name.
-func (s *Store) List() []Subscription {
+// Active reports whether guildID is covered now.
+func (s *Store) Active(guildID snowflake.ID) bool { return s.Coverage(guildID).State == StateActive }
+
+// Guilds lists the servers userID's subscription is activated on.
+func (s *Store) Guilds(userID snowflake.ID) []Link {
 	s.mu.RLock()
-	out := make([]Subscription, 0, len(s.m))
-	for _, sub := range s.m {
-		out = append(out, sub)
+	defer s.mu.RUnlock()
+	return s.guildsLocked(userID)
+}
+
+func (s *Store) guildsLocked(userID snowflake.ID) []Link {
+	var out []Link
+	for _, l := range s.links {
+		if l.UserID == userID {
+			out = append(out, l)
+		}
 	}
-	s.mu.RUnlock()
-	slices.SortFunc(out, func(a, b Subscription) int {
+	slices.SortFunc(out, func(a, b Link) int {
 		return cmp.Or(strings.Compare(strings.ToLower(a.GuildName), strings.ToLower(b.GuildName)), cmp.Compare(a.GuildID, b.GuildID))
 	})
 	return out
 }
 
-// Grant creates or replaces the subscription of sub.GuildID.
+// List returns every subscription, by account name.
+func (s *Store) List() []Subscription {
+	s.mu.RLock()
+	out := make([]Subscription, 0, len(s.subs))
+	for _, sub := range s.subs {
+		out = append(out, sub)
+	}
+	s.mu.RUnlock()
+	slices.SortFunc(out, func(a, b Subscription) int {
+		return cmp.Or(strings.Compare(strings.ToLower(a.UserName), strings.ToLower(b.UserName)), cmp.Compare(a.UserID, b.UserID))
+	})
+	return out
+}
+
+// Grant creates or replaces the subscription of sub.UserID. Its servers stay
+// linked.
 func (s *Store) Grant(sub Subscription) error {
-	if sub.GuildID == 0 {
-		return fmt.Errorf("%w: missing server ID", ErrInvalid)
+	if sub.UserID == 0 {
+		return fmt.Errorf("%w: missing account ID", ErrInvalid)
 	}
 	switch sub.Plan {
 	case PlanLifetime:
@@ -151,50 +218,95 @@ func (s *Store) Grant(sub Subscription) error {
 	default:
 		return fmt.Errorf("%w: unknown plan %q", ErrInvalid, sub.Plan)
 	}
+	if sub.MaxGuilds < 0 {
+		return fmt.Errorf("%w: negative server limit", ErrInvalid)
+	}
 	if sub.GrantedAt.IsZero() {
 		sub.GrantedAt = s.now().UTC()
 	}
+	return s.mutate(func() { s.subs[sub.UserID] = sub })
+}
+
+// Revoke removes userID's subscription. Its servers stay linked and report
+// StateExpired, so their members are told why raids stopped.
+func (s *Store) Revoke(userID snowflake.ID) error {
+	s.mu.RLock()
+	_, ok := s.subs[userID]
+	s.mu.RUnlock()
+	if !ok {
+		return ErrNotFound
+	}
+	return s.mutate(func() { delete(s.subs, userID) })
+}
+
+// Activate links guildID to userID's subscription.
+func (s *Store) Activate(userID, guildID snowflake.ID, guildName string) error {
+	s.mu.RLock()
+	sub, ok := s.subs[userID]
+	cur, linked := s.links[guildID]
+	n := len(s.guildsLocked(userID))
+	s.mu.RUnlock()
+	switch {
+	case !ok || !sub.Active(s.now()):
+		return ErrNoSubscription
+	case linked && cur.UserID == userID:
+		return nil
+	case linked && s.Active(guildID):
+		return ErrTaken
+	case sub.MaxGuilds > 0 && n >= sub.MaxGuilds:
+		return ErrLimit
+	}
+	l := Link{GuildID: guildID, GuildName: guildName, UserID: userID, LinkedAt: s.now().UTC()}
+	return s.mutate(func() { s.links[guildID] = l })
+}
+
+// Deactivate unlinks guildID from userID's subscription.
+func (s *Store) Deactivate(userID, guildID snowflake.ID) error {
+	s.mu.RLock()
+	cur, ok := s.links[guildID]
+	s.mu.RUnlock()
+	if !ok || cur.UserID != userID {
+		return ErrNotFound
+	}
+	return s.mutate(func() { delete(s.links, guildID) })
+}
+
+// mutate applies fn under the lock and saves; on a save failure the change is
+// rolled back.
+func (s *Store) mutate(fn func()) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	prev, had := s.m[sub.GuildID]
-	s.m[sub.GuildID] = sub
+	subs, links := maps(s.subs), maps(s.links)
+	fn()
 	if err := s.saveLocked(); err != nil {
-		if had {
-			s.m[sub.GuildID] = prev
-		} else {
-			delete(s.m, sub.GuildID)
-		}
+		s.subs, s.links = subs, links
 		return err
 	}
 	return nil
 }
 
-// Revoke removes the subscription of guildID.
-func (s *Store) Revoke(guildID snowflake.ID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	prev, ok := s.m[guildID]
-	if !ok {
-		return ErrNotFound
+func maps[V any](m map[snowflake.ID]V) map[snowflake.ID]V {
+	out := make(map[snowflake.ID]V, len(m))
+	for k, v := range m {
+		out[k] = v
 	}
-	delete(s.m, guildID)
-	if err := s.saveLocked(); err != nil {
-		s.m[guildID] = prev
-		return err
-	}
-	return nil
+	return out
 }
 
 func (s *Store) saveLocked() error {
 	if s.path == "" {
 		return nil
 	}
-	list := make([]Subscription, 0, len(s.m))
-	for _, sub := range s.m {
-		list = append(list, sub)
+	var f fileData
+	for _, sub := range s.subs {
+		f.Subscriptions = append(f.Subscriptions, sub)
 	}
-	slices.SortFunc(list, func(a, b Subscription) int { return cmp.Compare(a.GuildID, b.GuildID) })
-	data, err := json.MarshalIndent(list, "", "  ")
+	for _, l := range s.links {
+		f.Links = append(f.Links, l)
+	}
+	slices.SortFunc(f.Subscriptions, func(a, b Subscription) int { return cmp.Compare(a.UserID, b.UserID) })
+	slices.SortFunc(f.Links, func(a, b Link) int { return cmp.Compare(a.GuildID, b.GuildID) })
+	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}

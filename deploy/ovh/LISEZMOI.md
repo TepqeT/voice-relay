@@ -85,12 +85,13 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
 
 ## Abonnements
 
-- Personne ne crée de compte : chacun se connecte avec Discord et voit, pour ses serveurs, l'état de l'abonnement.
-- Administrateur : le propriétaire de l'application Discord du bot principal (toi) l'est automatiquement. Un lien **Administration** apparaît en haut du site. D'autres administrateurs : `SITE_ADMINS` dans `docker-compose.yml` (identifiants Discord, séparés par des virgules).
-- Offrir un abonnement : Administration > choisir le serveur (ou coller son identifiant : clic droit sur le serveur dans Discord > Copier l'identifiant, mode développeur activé) > **À vie** ou **Jusqu'au** une date > Offrir. Rien à payer, le serveur est marqué "offert".
-- Retirer : bouton **Retirer** dans la liste.
-- Les abonnements sont dans `deploy/ovh/data/subscriptions.json` (à sauvegarder avec le reste de `data`).
-- Blocage des raids sans abonnement : désactivé par défaut. Pour l'activer, offrir d'abord un abonnement à vie à Aion 2 France, puis décommenter `SUBSCRIPTION_REQUIRED: "true"` et relancer `mettre-a-jour.sh`.
+- Personne ne crée de compte : chacun se connecte avec Discord. Le site est en français et en anglais (bouton en haut à droite, sinon langue du navigateur).
+- L'abonnement est attaché au **compte Discord**, pas à un serveur : son titulaire l'active sur chaque serveur qu'il gère ("Activer mon abonnement ici" dans "Mes serveurs"), autant que le permet le nombre maximum fixé (0 = illimité). Un serveur déjà couvert par un autre compte actif ne peut pas être pris.
+- Administrateur : le propriétaire de l'application Discord du bot principal (toi) l'est automatiquement, lien **Administration** en haut du site. Autres administrateurs : `SITE_ADMINS` (identifiants Discord séparés par des virgules).
+- Offrir un abonnement : Administration > identifiant Discord du compte (mode développeur activé, clic droit sur la personne > Copier l'identifiant) > **À vie** ou **Jusqu'au** une date > nombre de serveurs maximum > Offrir. Rien à payer, l'abonnement est marqué "offert". La personne se connecte ensuite et l'active sur ses serveurs.
+- Retirer : bouton **Retirer**. Les serveurs restent associés au compte et le bot annonce que l'abonnement a pris fin.
+- Les abonnements et les serveurs activés sont dans `deploy/ovh/data/subscriptions.json` (à sauvegarder avec `data`).
+- Blocage des raids : désactivé par défaut. Une fois `SUBSCRIPTION_REQUIRED: "true"` activé, un lancement de raid sur un serveur non couvert affiche, dans la langue du serveur : pas d'abonnement, abonnement expiré le jj/mm/aaaa, ou abonnement terminé, avec le lien du site. Avant d'activer : t'offrir un abonnement à vie et l'activer sur Aion 2 France depuis le site.
 - Paiement en ligne : pas encore en place (voir `docs/saas-plan.md`, lot 6).
 
 ## Mettre à jour plus tard

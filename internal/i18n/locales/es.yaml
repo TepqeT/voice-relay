@@ -174,3 +174,7 @@ sort.reason.squad_lead: "jefe de escuadrón, nunca se mueve"
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 sub.required: "❌ Este servidor no tiene una suscripción activa: el raid no puede empezar."
 sub.required_site: "❌ Este servidor no tiene una suscripción activa: el raid no puede empezar. Consulta {{.URL}}"
+sub.expired: "❌ La suscripción de este servidor caducó el {{.Date}}: el raid no puede empezar. Su titular puede renovarla."
+sub.expired_site: "❌ La suscripción de este servidor caducó el {{.Date}}: el raid no puede empezar. Su titular puede renovarla en {{.URL}}"
+sub.ended: "❌ La suscripción que cubría este servidor ha terminado: el raid no puede empezar."
+sub.ended_site: "❌ La suscripción que cubría este servidor ha terminado: el raid no puede empezar. Consulta {{.URL}}"

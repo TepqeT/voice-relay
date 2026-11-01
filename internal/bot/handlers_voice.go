@@ -109,12 +109,8 @@ func (h *CommandHandlers) handleStartVoiceRaid(guildID snowflake.ID, loc *i18n.L
 // through reply. Shared by /start and the control panel buttons; the caller
 // must have deferred its interaction response.
 func (h *CommandHandlers) startHostRaid(cmdCtx context.Context, guildID snowflake.ID, loc *i18n.Localizer, mode guild.RaidMode, reply func(string)) {
-	if h.entitled != nil && !h.entitled(guildID) {
-		if h.siteURL != "" {
-			reply(loc.T("sub.required_site", "URL", h.siteURL))
-		} else {
-			reply(loc.T("sub.required"))
-		}
+	if msg := h.subscriptionRefusal(guildID, loc); msg != "" {
+		reply(msg)
 		return
 	}
 	ctx, cancelFunc := context.WithCancel(trace.ContextWithSpan(context.Background(), trace.SpanFromContext(cmdCtx)))

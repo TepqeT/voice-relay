@@ -174,3 +174,7 @@ sort.reason.squad_lead: "Truppführer, wird nie verschoben"
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 sub.required: "❌ Dieser Server hat kein aktives Abonnement: Der Raid kann nicht starten."
 sub.required_site: "❌ Dieser Server hat kein aktives Abonnement: Der Raid kann nicht starten. Siehe {{.URL}}"
+sub.expired: "❌ Das Abonnement dieses Servers ist am {{.Date}} abgelaufen: Der Raid kann nicht starten. Der Inhaber kann es verlängern."
+sub.expired_site: "❌ Das Abonnement dieses Servers ist am {{.Date}} abgelaufen: Der Raid kann nicht starten. Der Inhaber kann es auf {{.URL}} verlängern"
+sub.ended: "❌ Das Abonnement für diesen Server ist beendet: Der Raid kann nicht starten."
+sub.ended_site: "❌ Das Abonnement für diesen Server ist beendet: Der Raid kann nicht starten. Siehe {{.URL}}"

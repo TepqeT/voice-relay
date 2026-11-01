@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,47 +13,56 @@ import (
 	"github.com/TepqeT/voice-relay/internal/subscription"
 )
 
-// Administration: the operators of the service offer subscriptions (for
-// life or until a date) to servers, free of charge, and take them back.
+// Administration: the operators of the service offer subscriptions to
+// Discord accounts (for life or until a date, free of charge) and take them
+// back. The account owner then activates it on their servers.
 
-func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, sess *session) {
-	s.renderAdmin(w, sess, r.URL.Query().Get("ok"), "")
+type adminRow struct {
+	Sub     subscription.Subscription
+	Label   string
+	Servers []subscription.Link
 }
 
-func (s *Server) renderAdmin(w http.ResponseWriter, sess *session, ok, errMsg string) {
-	guilds := s.backend.BotGuilds()
-	names := make(map[snowflake.ID]string, len(guilds))
-	for _, g := range guilds {
-		names[g.ID] = g.Name
+func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, sess *session) {
+	s.renderAdmin(w, r, sess, "")
+}
+
+func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, sess *session, errKey string) {
+	lang := langFor(r)
+	var rows []adminRow
+	for _, sub := range s.subs.List() {
+		rows = append(rows, adminRow{Sub: sub, Label: s.planLabel(lang, sub), Servers: s.subs.Guilds(sub.UserID)})
 	}
-	s.render(w, "admin.html", map[string]any{
+	ok := ""
+	switch r.URL.Query().Get("ok") {
+	case "granted":
+		ok = "admin.granted"
+	case "revoked":
+		ok = "admin.revoked"
+	}
+	s.render(w, r, "admin.html", map[string]any{
 		"User": sess.userName, "CSRF": sess.csrf, "Admin": true,
-		"Subs": s.subs.List(), "BotGuilds": guilds, "OK": ok, "Error": errMsg,
+		"Rows": rows, "OK": ok, "Error": errKey,
 		"Tomorrow": time.Now().AddDate(0, 0, 1).Format("2006-01-02"),
 	})
 }
 
 func (s *Server) handleGrant(w http.ResponseWriter, r *http.Request, sess *session) {
-	raw := strings.TrimSpace(r.PostFormValue("guild_id"))
-	if raw == "" {
-		raw = strings.TrimSpace(r.PostFormValue("guild_pick"))
-	}
-	id, err := snowflake.Parse(raw)
+	id, err := snowflake.Parse(strings.TrimSpace(r.PostFormValue("user_id")))
 	if err != nil || id == 0 {
-		s.renderAdmin(w, sess, "", "Identifiant de serveur invalide.")
+		s.renderAdmin(w, r, sess, "aerr.userid")
 		return
 	}
-	name := strings.TrimSpace(r.PostFormValue("guild_name"))
-	if name == "" {
-		for _, g := range s.backend.BotGuilds() {
-			if g.ID == id {
-				name = g.Name
-			}
+	maxGuilds := 0
+	if v := strings.TrimSpace(r.PostFormValue("max_guilds")); v != "" {
+		if maxGuilds, err = strconv.Atoi(v); err != nil || maxGuilds < 0 || maxGuilds > 1000 {
+			s.renderAdmin(w, r, sess, "aerr.max")
+			return
 		}
 	}
 	sub := subscription.Subscription{
-		GuildID: id, GuildName: name, Gift: true, GrantedBy: sess.userID,
-		Note: strings.TrimSpace(r.PostFormValue("note")),
+		UserID: id, UserName: strings.TrimSpace(r.PostFormValue("user_name")), Gift: true,
+		GrantedBy: sess.userID, MaxGuilds: maxGuilds, Note: strings.TrimSpace(r.PostFormValue("note")),
 	}
 	switch r.PostFormValue("plan") {
 	case "lifetime":
@@ -61,36 +71,36 @@ func (s *Server) handleGrant(w http.ResponseWriter, r *http.Request, sess *sessi
 		sub.Plan = subscription.PlanUntil
 		day, err := time.ParseInLocation("2006-01-02", r.PostFormValue("until"), time.Local)
 		if err != nil {
-			s.renderAdmin(w, sess, "", "Date de fin invalide.")
+			s.renderAdmin(w, r, sess, "aerr.date")
 			return
 		}
-		sub.Expires = day.AddDate(0, 0, 1) // valid through the whole chosen day
+		sub.Expires = day.AddDate(0, 0, 1) // the whole chosen day is included
 	default:
-		s.renderAdmin(w, sess, "", "Choisissez une durée.")
+		s.renderAdmin(w, r, sess, "aerr.plan")
 		return
 	}
 	if err := s.subs.Grant(sub); err != nil {
-		msg := "Enregistrement impossible : " + err.Error()
+		key := "aerr.save"
 		if errors.Is(err, subscription.ErrInvalid) {
-			msg = "Abonnement refusé : la date de fin doit être dans le futur."
+			key = "aerr.past"
 		}
-		s.renderAdmin(w, sess, "", msg)
+		s.renderAdmin(w, r, sess, key)
 		return
 	}
-	slog.Info("web: subscription granted", slog.String("guildID", id.String()), slog.String("plan", string(sub.Plan)), slog.String("by", sess.userID.String()))
-	http.Redirect(w, r, "/admin?ok=offert", http.StatusSeeOther)
+	slog.Info("web: subscription granted", slog.String("userID", id.String()), slog.String("plan", string(sub.Plan)), slog.String("by", sess.userID.String()))
+	http.Redirect(w, r, "/admin?ok=granted", http.StatusSeeOther)
 }
 
 func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request, sess *session) {
-	id, err := snowflake.Parse(r.PostFormValue("guild_id"))
+	id, err := snowflake.Parse(r.PostFormValue("user_id"))
 	if err != nil {
-		s.renderAdmin(w, sess, "", "Identifiant de serveur invalide.")
+		s.renderAdmin(w, r, sess, "aerr.userid")
 		return
 	}
 	if err := s.subs.Revoke(id); err != nil {
-		s.renderAdmin(w, sess, "", "Retrait impossible : "+err.Error())
+		s.renderAdmin(w, r, sess, "aerr.revoke")
 		return
 	}
-	slog.Info("web: subscription revoked", slog.String("guildID", id.String()), slog.String("by", sess.userID.String()))
-	http.Redirect(w, r, "/admin?ok=retire", http.StatusSeeOther)
+	slog.Info("web: subscription revoked", slog.String("userID", id.String()), slog.String("by", sess.userID.String()))
+	http.Redirect(w, r, "/admin?ok=revoked", http.StatusSeeOther)
 }

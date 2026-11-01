@@ -174,3 +174,7 @@ sort.reason.squad_lead: "tim lideri, asla taşınmaz"
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 sub.required: "❌ Bu sunucunun etkin aboneliği yok: akın başlatılamaz."
 sub.required_site: "❌ Bu sunucunun etkin aboneliği yok: akın başlatılamaz. Bkz. {{.URL}}"
+sub.expired: "❌ Bu sunucunun aboneliği {{.Date}} tarihinde sona erdi: akın başlatılamaz. Sahibi yenileyebilir."
+sub.expired_site: "❌ Bu sunucunun aboneliği {{.Date}} tarihinde sona erdi: akın başlatılamaz. Sahibi {{.URL}} adresinden yenileyebilir"
+sub.ended: "❌ Bu sunucuyu kapsayan abonelik sona erdi: akın başlatılamaz."
+sub.ended_site: "❌ Bu sunucuyu kapsayan abonelik sona erdi: akın başlatılamaz. Bkz. {{.URL}}"

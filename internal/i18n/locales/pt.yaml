@@ -174,3 +174,7 @@ sort.reason.squad_lead: "líder de esquadrão, nunca é movido"
 # ── Subscriptions ─────────────────────────────────────────────────────────────
 sub.required: "❌ Este servidor não tem assinatura ativa: o raid não pode começar."
 sub.required_site: "❌ Este servidor não tem assinatura ativa: o raid não pode começar. Veja {{.URL}}"
+sub.expired: "❌ A assinatura deste servidor expirou em {{.Date}}: o raid não pode começar. O titular pode renová-la."
+sub.expired_site: "❌ A assinatura deste servidor expirou em {{.Date}}: o raid não pode começar. O titular pode renová-la em {{.URL}}"
+sub.ended: "❌ A assinatura que cobria este servidor terminou: o raid não pode começar."
+sub.ended_site: "❌ A assinatura que cobria este servidor terminou: o raid não pode começar. Veja {{.URL}}"

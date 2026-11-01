@@ -1,89 +1,89 @@
 {{template "head" .}}
-<p><a href="/servers">Vos serveurs</a></p>
+<p><a href="/servers">{{t "guild.back"}}</a></p>
 <h1>{{.Guild.Name}}</h1>
+{{if .OK}}<p class="card ok">{{t .OK}}</p>{{end}}
+{{if .Err}}<p class="card bad">{{t .Err}}</p>{{end}}
 {{if .Error}}<p class="card bad">{{.Error}}</p>{{end}}
+
 <section class="card">
-  <h2>Abonnement</h2>
-  {{with .Sub}}<p><span class="tag sub">{{subLabel .}}</span></p>
-  {{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
-  {{else}}<p>Ce serveur n'a pas encore d'abonnement.</p>
-  <p class="muted">Le paiement en ligne arrive bientôt. En attendant, contactez l'équipe du service.</p>{{end}}
-  {{if .Admin}}<p class="muted"><a href="/admin">Gérer les abonnements</a></p>{{end}}
+  <h2>{{t "admin.sub"}}</h2>
+  <div class="row">{{template "coverage" dict "Cov" .Cov "ID" .Guild.ID "CSRF" .CSRF "From" "guild"}}</div>
+  {{if not .Account.Has}}<p class="muted">{{t "sub.soon"}}</p>{{end}}
 </section>
 
 {{with .Report}}
 <div class="card">
-  <h2>Résultat</h2>
-  {{if .Created}}<p class="ok">Rôles créés : {{range $i, $n := .Created}}{{if $i}}, {{end}}{{$n}}{{end}}</p>{{end}}
-  {{if .Failed}}<p class="bad">Non créés : {{range $i, $n := .Failed}}{{if $i}}, {{end}}{{$n}}{{end}}</p>{{end}}
-  {{if .PermissionDenied}}<p class="bad">Le bot n'a pas la permission « Gérer les rôles ». Réinvitez-le avec le bouton de l'étape 1.</p>{{end}}
-  {{if and (not .Created) (not .Failed)}}<p>Tous les rôles existaient déjà.</p>{{end}}
+  <h2>{{t "guild.result"}}</h2>
+  {{if .Created}}<p class="ok">{{t "guild.created" (join .Created)}}</p>{{end}}
+  {{if .Failed}}<p class="bad">{{t "guild.failed" (join .Failed)}}</p>{{end}}
+  {{if .PermissionDenied}}<p class="bad">{{t "guild.denied"}}</p>{{end}}
+  {{if and (not .Created) (not .Failed)}}<p>{{t "guild.allexist"}}</p>{{end}}
 </div>
 {{end}}
 
 <section class="card with-scene">
   <div>
-  <h2>1. Bot principal ({{.Bot}})</h2>
-  {{if .Status.BotPresent}}<p class="ok">Présent sur le serveur.</p>
-  <p class="muted">Pour mettre à jour ses permissions, réouvrez l'invitation : <a href="{{.Status.BotInviteURL}}" rel="noopener">réinviter</a>.</p>
-  {{else}}<p>Le bot n'est pas encore sur ce serveur.</p>
-  <p><a class="button" href="{{.Status.BotInviteURL}}" rel="noopener">Inviter {{.Bot}}</a></p>
-  <p class="muted">Revenez ensuite sur cette page et rechargez-la.</p>{{end}}
+  <h2>{{t "guild.s1" .Bot}}</h2>
+  {{if .Status.BotPresent}}<p class="ok">{{t "guild.present"}}</p>
+  <p class="muted">{{t "guild.reinvite"}} <a href="{{.Status.BotInviteURL}}" rel="noopener">{{t "guild.reinvite2"}}</a>.</p>
+  {{else}}<p>{{t "guild.absent"}}</p>
+  <p><a class="button" href="{{.Status.BotInviteURL}}" rel="noopener">{{t "guild.invite" .Bot}}</a></p>
+  <p class="muted">{{t "guild.reload"}}</p>{{end}}
   </div>
-  {{template "scene-invite"}}
+  {{template "scene-invite" .}}
 </section>
 
 <section class="card">
-  <h2>2. Hérauts</h2>
-  <p class="muted">Un Héraut par escouade. Discord demande une autorisation par bot : un clic chacun.</p>
+  <h2>{{t "guild.s2"}}</h2>
+  <p class="muted">{{t "guild.s2hint"}}</p>
   <ul class="list">
   {{range .Status.Heralds}}
     <li class="row"><span class="name">{{.Name}}</span>
-    {{if .Present}}<span class="tag ok">Présent</span>{{else}}<a class="button small" href="{{.InviteURL}}" rel="noopener">Inviter</a>{{end}}</li>
-  {{else}}<li class="muted">Aucun Héraut configuré sur cette instance.</li>
+    {{if .Present}}<span class="tag ok">{{t "guild.here"}}</span>{{else}}<a class="button small" href="{{.InviteURL}}" rel="noopener">{{t "guild.inv"}}</a>{{end}}</li>
+  {{else}}<li class="muted">{{t "guild.noherald"}}</li>
   {{end}}
   </ul>
 </section>
 
 {{if .Status.BotPresent}}
 <section class="card">
-  <h2>3. Permissions du bot</h2>
-  {{if .Status.MissingPermissions}}<p class="bad">Il manque : {{range $i, $p := .Status.MissingPermissions}}{{if $i}}, {{end}}{{$p}}{{end}}.</p>
-  <p class="muted">Réinvitez le bot (étape 1) ou cochez ces permissions sur son rôle dans les paramètres du serveur.</p>
-  {{else}}<p class="ok">Toutes les permissions nécessaires sont accordées.</p>{{end}}
+  <h2>{{t "guild.s3"}}</h2>
+  {{if .Status.MissingPermissions}}<p class="bad">{{t "guild.missing" (permList .Status.MissingPermissions)}}</p>
+  <p class="muted">{{t "guild.fixperm"}}</p>
+  {{else}}<p class="ok">{{t "guild.permok"}}</p>{{end}}
 </section>
 
 <section class="card with-scene">
   <div>
-  <h2>4. Rôles</h2>
+  <h2>{{t "guild.s4"}}</h2>
   <table>
-    <thead><tr><th>Usage</th><th>Rôle</th><th>État</th></tr></thead>
+    <thead><tr><th>{{t "guild.usage"}}</th><th>{{t "guild.role"}}</th><th>{{t "guild.state"}}</th></tr></thead>
     <tbody>
     {{range .Status.Roles}}
       <tr><td>{{purpose .Purpose}}</td><td>{{.Name}}</td>
-      <td>{{if not .Exists}}<span class="tag warn">À créer</span>{{else if .AboveBot}}<span class="tag bad">Au-dessus du bot</span>{{else}}<span class="tag ok">OK</span>{{end}}</td></tr>
-    {{else}}<tr><td colspan="3" class="muted">Aucun rôle configuré.</td></tr>
+      <td>{{if not .Exists}}<span class="tag warn">{{t "guild.tocreate"}}</span>{{else if .AboveBot}}<span class="tag bad">{{t "guild.above"}}</span>{{else}}<span class="tag ok">{{t "guild.ok"}}</span>{{end}}</td></tr>
+    {{else}}<tr><td colspan="3" class="muted">{{t "guild.noroles"}}</td></tr>
     {{end}}
     </tbody>
   </table>
   {{if .Status.MissingRoles}}
   <form method="post" action="/servers/{{.Guild.ID}}/setup">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button class="button">Créer les rôles manquants</button>
+    <button class="button">{{t "guild.create"}}</button>
   </form>
   {{end}}
-  <p class="muted">Un rôle « Au-dessus du bot » ne peut pas être géré par lui : dans Paramètres du serveur, Rôles, glissez le rôle du bot au-dessus.</p>
+  <p class="muted">{{t "guild.abovehint"}}</p>
   </div>
-  {{template "scene-roles"}}
+  {{template "scene-roles" .}}
 </section>
 
 <section class="card with-scene">
   <div>
-  <h2>5. Dernière étape</h2>
-  {{if .Status.Ready}}<p class="ok">Installation terminée.</p>{{end}}
-  <p>Donnez les rôles à vos joueurs, puis tapez <code>/panneau</code> dans le salon où les Raid Leads lanceront les raids.</p>
+  <h2>{{t "guild.s5"}}</h2>
+  {{if .Status.Ready}}<p class="ok">{{t "guild.done"}}</p>{{end}}
+  <p>{{t "guild.last"}} <code>{{t "guild.panel"}}</code> {{t "guild.last2"}}</p>
   </div>
-  {{template "scene-assign"}}
+  {{template "scene-assign" .}}
 </section>
 {{end}}
 {{template "foot" .}}

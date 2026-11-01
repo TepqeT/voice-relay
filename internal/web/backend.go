@@ -36,7 +36,7 @@ type GuildStatus struct {
 	BotPresent         bool
 	BotInviteURL       string // locked to the server
 	Heralds            []BotStatus
-	MissingPermissions []string
+	MissingPermissions []string // keys translated by the site: perm.<key>
 	Roles              []RoleStatus
 }
 

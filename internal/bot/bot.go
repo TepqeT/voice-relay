@@ -314,7 +314,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		}
 	}
 	if cfg.Web.SubscriptionRequired {
-		cmdHandlers.RequireSubscription(subs.Active, cfg.Web.BaseURL)
+		cmdHandlers.RequireSubscription(subs.Coverage, cfg.Web.BaseURL)
 		slog.Info("subscriptions required to start a raid", slog.String("file", cfg.Web.SubscriptionsFile))
 	}
 	if cfg.Web.Enabled() {

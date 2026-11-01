@@ -1,14 +1,24 @@
 {{template "head" .}}
-<h1>Vos serveurs</h1>
-<p class="muted">Seuls les serveurs où vous avez la permission « Gérer le serveur » apparaissent. Votre compte Discord suffit : aucun compte à créer sur ce site.</p>
-{{if not .Guilds}}<p class="card">Aucun serveur géré. Il faut la permission « Gérer le serveur » pour installer le relais.</p>{{end}}
+{{if .OK}}<p class="card ok">{{t .OK}}</p>{{end}}
+{{if .Err}}<p class="card bad">{{t .Err}}</p>{{end}}
+
+<section class="card">
+  <h2>{{t "sub.h2"}}</h2>
+  {{if .Account.Has}}<p><span class="tag sub">{{.Account.Label}}</span> <span class="muted">{{.Account.Count}}</span></p>
+  {{if .Account.Active}}<p class="muted">{{t "sub.multi"}}</p>{{else}}<p class="muted">{{t "sub.soon"}}</p>{{end}}
+  {{else}}<p>{{t "sub.none"}}</p><p class="muted">{{t "sub.soon"}}</p>{{end}}
+</section>
+
+<h1>{{t "servers.h1"}}</h1>
+<p class="muted">{{t "servers.hint"}}</p>
+{{if not .Guilds}}<p class="card">{{t "servers.none"}}</p>{{end}}
 <ul class="list">
 {{range .Guilds}}
   <li class="card row">
     <span class="name">{{.Name}}</span>
-    {{if .Sub}}<span class="tag sub">{{subLabel .Sub}}</span>{{else}}<span class="tag">Sans abonnement</span>{{end}}
-    {{if .Ready}}<span class="tag ok">Prêt</span>{{else if .BotPresent}}<span class="tag warn">À terminer</span>{{else}}<span class="tag">Bot absent</span>{{end}}
-    <a class="button small" href="/servers/{{.ID}}">{{if .BotPresent}}Configurer{{else}}Installer{{end}}</a>
+    {{template "coverage" dict "Cov" .Cov "ID" .ID "CSRF" $.CSRF "From" "list"}}
+    {{if .Ready}}<span class="tag ok">{{t "servers.ready"}}</span>{{else if .BotPresent}}<span class="tag warn">{{t "servers.todo"}}</span>{{else}}<span class="tag">{{t "servers.nobot"}}</span>{{end}}
+    <a class="button small" href="/servers/{{.ID}}">{{if .BotPresent}}{{t "servers.config"}}{{else}}{{t "servers.install"}}{{end}}</a>
   </li>
 {{end}}
 </ul>

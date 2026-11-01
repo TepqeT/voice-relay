@@ -68,7 +68,7 @@ services:
       # l'application Discord administre le site ; autres administrateurs :
       # SITE_ADMINS: "123456789012345678"
       # true : un serveur sans abonnement actif ne peut plus lancer de raid.
-      # Offrir d'abord un abonnement a vie a Aion 2 France avant d'activer.
+      # Avant d'activer : s'offrir un abonnement a vie et l'activer sur Aion 2 France.
       # SUBSCRIPTION_REQUIRED: "true"
     expose:
       - "8080"
