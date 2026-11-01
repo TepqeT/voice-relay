@@ -5,8 +5,8 @@
 <section class="card">
   <h2>{{t "sub.h2"}}</h2>
   {{if .Account.Has}}<p><span class="tag sub">{{.Account.Label}}</span> <span class="muted">{{.Account.Count}}</span></p>
-  {{if .Account.Active}}<p class="muted">{{t "sub.multi"}}</p>{{else}}<p class="muted">{{t "sub.soon"}}</p>{{end}}
-  {{else}}<p>{{t "sub.none"}}</p><p class="muted">{{t "sub.soon"}}</p>{{end}}
+  {{if .Account.Active}}<p class="muted">{{t "sub.multi"}}</p>{{else}}{{template "pay" $}}{{end}}
+  {{else}}<p>{{t "sub.none"}}</p>{{template "pay" $}}{{end}}
 </section>
 
 <h1>{{t "servers.h1"}}</h1>

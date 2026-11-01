@@ -25,6 +25,16 @@ type Backend interface {
 	BotGuilds() []GuildRef
 	// ServerFacts describes guildID as seen from userID, to spot lending.
 	ServerFacts(guildID, userID snowflake.ID) ServerFacts
+	// Uninstall removes the tool from guildID: stops the raid, deletes the
+	// raid channels, makes the relay bots then the owner bot leave.
+	Uninstall(ctx context.Context, guildID snowflake.ID) (UninstallReport, error)
+}
+
+// UninstallReport is the outcome of Uninstall.
+type UninstallReport struct {
+	Left      []string // relay bots that left the server
+	Failed    []string // relay bots that could not leave
+	OwnerLeft bool
 }
 
 // ServerFacts is what the bot knows of a server and a subscriber in it.

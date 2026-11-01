@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{t "title"}}</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="/">{{t "title"}}</a>
+  <a class="brand" href="/"><img src="/static/logo.svg" alt="" class="logo" width="28" height="28">{{t "title"}}</a>
   <div class="top-right">
     {{if .User}}<nav class="inline">{{if .Admin}}<a href="/admin">{{t "nav.admin"}}</a> · {{end}}<a href="/servers">{{t "nav.servers"}}</a></nav>
     <form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><span class="muted">{{.User}}</span> <button class="link">{{t "nav.logout"}}</button></form>{{end}}
@@ -18,7 +19,17 @@
 <main>
 {{end}}
 {{define "foot"}}</main>
-<footer class="muted">{{t "footer"}}</footer>
+<footer class="muted">
+  {{if .Support}}<p><a class="button support" href="{{.Support}}" rel="noopener" target="_blank"><img src="/static/support.svg" alt="" class="icon" width="18" height="18">{{t "support.button"}}</a></p>
+  <p>{{t "support.hint"}}</p>{{end}}
+  <p>{{t "footer"}}</p>
+</footer>
 </body>
 </html>
 {{end}}
+{{define "pay"}}{{if .PayPal}}<div class="pay">
+  {{if .Price}}<p class="price">{{.Price}}</p>{{end}}
+  <p><a class="button paypal" href="{{.PayPal}}" rel="noopener" target="_blank"><img src="/static/paypal.svg" alt="" class="icon" width="18" height="18">{{t "pay.button"}}</a></p>
+  <p class="muted">{{t "pay.note"}} <code>{{.UserID}}</code></p>
+  <p class="muted">{{t "pay.after"}}</p>
+</div>{{else}}<p class="muted">{{t "sub.soon"}}</p>{{end}}{{end}}

@@ -26,6 +26,8 @@ type fakeBackend struct {
 	facts     map[snowflake.ID]ServerFacts // by guild; default: bot present, holder manages
 	canManage map[snowflake.ID]bool        // absent = unknown
 	setups    []snowflake.ID
+	removed   []snowflake.ID
+	unFailed  []string // relay bots the next uninstall reports as stuck
 	srv       *Server
 	subs      *subscription.Store
 }
@@ -56,6 +58,11 @@ func (f *fakeBackend) CanManage(g, _ snowflake.ID) (bool, bool) {
 func (f *fakeBackend) SetupRoles(_ context.Context, g snowflake.ID) (SetupReport, error) {
 	f.setups = append(f.setups, g)
 	return SetupReport{Created: []string{"Clerc"}, Existing: []string{"Raid Lead"}}, nil
+}
+
+func (f *fakeBackend) Uninstall(_ context.Context, g snowflake.ID) (UninstallReport, error) {
+	f.removed = append(f.removed, g)
+	return UninstallReport{Left: []string{"Héraut 1"}, Failed: f.unFailed, OwnerLeft: true}, nil
 }
 
 // fakeDiscord answers the OAuth token, user and guild endpoints.
@@ -638,5 +645,98 @@ func TestCalledTemplatesExist(t *testing.T) {
 				t.Errorf("%s calls undefined template %q", e.Name(), m[1])
 			}
 		}
+	}
+}
+
+func TestUninstall(t *testing.T) {
+	site, be, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/servers/111")
+	if !strings.Contains(page, `action="/servers/111/uninstall"`) || !strings.Contains(page, "Je confirme vouloir retirer Voice Relay") {
+		t.Fatalf("uninstall form missing:\n%s", page)
+	}
+	csrf := csrfRe.FindStringSubmatch(page)[1]
+	_ = be.subs.Grant(subscription.Subscription{UserID: 7, Plan: subscription.PlanLifetime, Gift: true})
+	if err := be.subs.Activate(7, 111, "Zeta"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Box not ticked: nothing happens.
+	resp, _ := c.PostForm(site.URL+"/servers/111/uninstall", url.Values{"csrf": {csrf}})
+	if resp.Header.Get("Location") != "/servers/111?err=confirm" || len(be.removed) != 0 {
+		t.Fatalf("unconfirmed = %q, removed %v", resp.Header.Get("Location"), be.removed)
+	}
+	// Bad CSRF.
+	resp, _ = c.PostForm(site.URL+"/servers/111/uninstall", url.Values{"csrf": {"wrong"}, "confirm": {"yes"}})
+	if resp.StatusCode != http.StatusForbidden || len(be.removed) != 0 {
+		t.Fatalf("bad csrf = %d", resp.StatusCode)
+	}
+	// Not a server they manage.
+	resp, _ = c.PostForm(site.URL+"/servers/222/uninstall", url.Values{"csrf": {csrf}, "confirm": {"yes"}})
+	if resp.StatusCode != http.StatusForbidden || len(be.removed) != 0 {
+		t.Fatalf("unmanaged = %d", resp.StatusCode)
+	}
+
+	resp, _ = c.PostForm(site.URL+"/servers/111/uninstall", url.Values{"csrf": {csrf}, "confirm": {"yes"}})
+	if resp.Header.Get("Location") != "/servers?ok=uninstalled" || len(be.removed) != 1 || be.removed[0] != managedGuild {
+		t.Fatalf("uninstall = %q, removed %v", resp.Header.Get("Location"), be.removed)
+	}
+	if be.subs.Active(111) {
+		t.Error("the server must be released from the subscription")
+	}
+	if _, page = get(t, c, site.URL+"/servers?ok=uninstalled"); !strings.Contains(page, "Voice Relay a été retiré du serveur") {
+		t.Fatalf("confirmation missing:\n%s", page)
+	}
+
+	be.unFailed = []string{"Héraut 2"}
+	resp, _ = c.PostForm(site.URL+"/servers/111/uninstall", url.Values{"csrf": {csrf}, "confirm": {"yes"}})
+	if resp.Header.Get("Location") != "/servers?ok=uninstalled_partial" {
+		t.Fatalf("partial uninstall = %q", resp.Header.Get("Location"))
+	}
+}
+
+func TestSupportButtonAndLogo(t *testing.T) {
+	site, be, c := newTestSite(t)
+	_, page := get(t, c, site.URL+"/")
+	if strings.Contains(page, "Contacter le support") {
+		t.Fatal("no support button before the owner is known")
+	}
+	if !strings.Contains(page, `href="/static/logo.svg"`) || !strings.Contains(page, `class="logo"`) {
+		t.Fatalf("logo or favicon missing:\n%s", page)
+	}
+	if code, _ := get(t, c, site.URL+"/static/logo.svg"); code != http.StatusOK {
+		t.Fatalf("logo = %d", code)
+	}
+	be.srv.SetSupportUser(123456789012345678)
+	if _, page = get(t, c, site.URL+"/"); !strings.Contains(page, `href="https://discord.com/users/123456789012345678"`) {
+		t.Fatalf("support link to the owner's profile missing:\n%s", page)
+	}
+	be.srv.cfg.SupportURL = "https://discord.gg/support"
+	be.srv.SetSupportUser(1)
+	if _, page = get(t, c, site.URL+"/"); !strings.Contains(page, `href="https://discord.gg/support"`) {
+		t.Fatal("SUPPORT_URL must win over the owner's profile")
+	}
+}
+
+func TestPayPalButton(t *testing.T) {
+	site, be, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	if _, page := get(t, c, site.URL+"/servers"); strings.Contains(page, "Payer avec PayPal") || !strings.Contains(page, "Le paiement en ligne arrive bientôt") {
+		t.Fatalf("no PayPal button without PAYPAL_URL:\n%s", page)
+	}
+	be.srv.cfg.PayPalURL = "https://www.paypal.com/paypalme/test"
+	be.srv.cfg.PriceLabel = "3 EUR / mois"
+	_, page := get(t, c, site.URL+"/servers")
+	for _, want := range []string{`href="https://www.paypal.com/paypalme/test"`, "Payer avec PayPal", "3 EUR / mois", "<code>7</code>"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("servers page lacks %q:\n%s", want, page)
+		}
+	}
+	_ = be.subs.Grant(subscription.Subscription{UserID: 7, Plan: subscription.PlanLifetime, Gift: true})
+	if _, page = get(t, c, site.URL+"/servers"); strings.Contains(page, "Payer avec PayPal") {
+		t.Fatal("an active subscriber must not be asked to pay")
+	}
+	if _, page = get(t, c, site.URL+"/servers/111"); strings.Contains(page, "Payer avec PayPal") {
+		t.Fatal("guild page: an active subscriber must not be asked to pay")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -38,7 +39,7 @@ func (h *CommandHandlers) access() (AccessService, bool) {
 func accessCommandNames(label, faction string) (grant, revoke string) {
 	grant = fmt.Sprintf("%s %s : autoriser", label, faction)
 	revoke = fmt.Sprintf("%s %s : retirer", label, faction)
-	if len([]rune(grant)) > 32 {
+	if strings.TrimSpace(faction) == "" || len([]rune(grant)) > 32 {
 		grant, revoke = shortCommandName(label, "autoriser"), shortCommandName(label, "retirer")
 	}
 	return grant, revoke

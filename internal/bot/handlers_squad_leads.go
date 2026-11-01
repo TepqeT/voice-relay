@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -34,7 +35,7 @@ func (h *CommandHandlers) squadLeads() (SquadLeadService, bool) {
 func squadLeadCommandNames(label, faction string) (name, dismiss string) {
 	name = fmt.Sprintf("%s %s : nommer chef", label, faction)
 	dismiss = fmt.Sprintf("%s %s : retirer chef", label, faction)
-	if len([]rune(dismiss)) > 32 {
+	if strings.TrimSpace(faction) == "" || len([]rune(dismiss)) > 32 {
 		name, dismiss = shortCommandName(label, "nommer chef"), shortCommandName(label, "retirer chef")
 	}
 	return name, dismiss

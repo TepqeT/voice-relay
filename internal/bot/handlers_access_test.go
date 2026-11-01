@@ -81,3 +81,16 @@ func TestLongEventLabelCommandNames(t *testing.T) {
 		}
 	}
 }
+
+// Without a faction the names drop it instead of leaving a double space.
+func TestCommandNamesWithoutFaction(t *testing.T) {
+	g, r := accessCommandNames("RvR", "")
+	n, d := squadLeadCommandNames("RvR", " ")
+	got := []string{g, r, n, d}
+	want := []string{"RvR : autoriser", "RvR : retirer", "RvR : nommer chef", "RvR : retirer chef"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("name %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

@@ -8,7 +8,7 @@
 <section class="card">
   <h2>{{t "admin.sub"}}</h2>
   <div class="row">{{template "coverage" dict "Cov" .Cov "ID" .Guild.ID "CSRF" .CSRF "From" "guild"}}</div>
-  {{if not .Account.Has}}<p class="muted">{{t "sub.soon"}}</p>{{end}}
+  {{if not .Account.Has}}{{template "pay" $}}{{end}}
 </section>
 
 {{with .Report}}
@@ -84,6 +84,17 @@
   <p>{{t "guild.last"}} <code>{{t "guild.panel"}}</code> {{t "guild.last2"}}</p>
   </div>
   {{template "scene-assign" .}}
+</section>
+
+<section class="card danger-zone">
+  <h2>{{t "guild.un.title"}}</h2>
+  <p>{{t "guild.un.what"}}</p>
+  <p class="muted">{{t "guild.un.roles"}}</p>
+  <form method="post" action="/servers/{{.Guild.ID}}/uninstall" class="uninstall">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label><input type="checkbox" name="confirm" value="yes" required> {{t "guild.un.confirm"}}</label>
+    <button class="button danger">{{t "guild.un.button"}}</button>
+  </form>
 </section>
 {{end}}
 {{template "foot" .}}

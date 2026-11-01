@@ -38,6 +38,13 @@ type Config struct {
 	// Admins may grant and revoke subscriptions (SITE_ADMINS); the owner of
 	// the bot application is added at startup with AddAdmins.
 	Admins []snowflake.ID
+	// SupportURL is where "Contact support" leads; empty until SetSupportUser
+	// points it at a Discord profile.
+	SupportURL string
+	// PayPalURL is the "Pay with PayPal" link, empty for no button;
+	// PriceLabel the price shown next to it.
+	PayPalURL  string
+	PriceLabel string
 }
 
 // Server is the administration site.
@@ -51,6 +58,7 @@ type Server struct {
 	mux      *http.ServeMux
 	subs     *subscription.Store
 	admins   atomic.Pointer[map[snowflake.ID]bool]
+	support  atomic.Pointer[string]
 }
 
 // New builds the site. subs records which servers may use the relay.
@@ -117,6 +125,7 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 	s.mux.HandleFunc("POST /servers/{id}/setup", s.withSession(s.handleSetup))
 	s.mux.HandleFunc("POST /servers/{id}/activate", s.withSession(s.handleActivate))
 	s.mux.HandleFunc("POST /servers/{id}/deactivate", s.withSession(s.handleDeactivate))
+	s.mux.HandleFunc("POST /servers/{id}/uninstall", s.withSession(s.handleUninstall))
 	s.mux.HandleFunc("GET /admin", s.withAdmin(s.handleAdmin))
 	s.mux.HandleFunc("POST /admin/grant", s.withAdmin(s.handleGrant))
 	s.mux.HandleFunc("POST /admin/revoke", s.withAdmin(s.handleRevoke))
@@ -126,6 +135,27 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 }
 
 // AddAdmins lets ids grant subscriptions. Safe while serving.
+// SetSupportUser makes "Contact support" open the Discord profile of userID
+// (send a message, add as a friend), unless SUPPORT_URL is set.
+func (s *Server) SetSupportUser(userID snowflake.ID) {
+	if s.cfg.SupportURL != "" || userID == 0 {
+		return
+	}
+	u := "https://discord.com/users/" + userID.String()
+	s.support.Store(&u)
+}
+
+// supportURL is the link of the support button, "" when none is known.
+func (s *Server) supportURL() string {
+	if s.cfg.SupportURL != "" {
+		return s.cfg.SupportURL
+	}
+	if u := s.support.Load(); u != nil {
+		return *u
+	}
+	return ""
+}
+
 func (s *Server) AddAdmins(ids ...snowflake.ID) {
 	for {
 		old := s.admins.Load()
@@ -366,14 +396,14 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request, sess *ses
 	s.render(w, r, "servers.html", map[string]any{
 		"User": sess.userName, "CSRF": sess.csrf, "Guilds": rows, "Bot": s.backend.BotName(),
 		"Admin": s.isAdmin(sess.userID), "Account": s.account(lang, sess.userID),
-		"OK": okKey(r), "Err": errKey(r),
+		"OK": okKey(r), "Err": errKey(r), "UserID": sess.userID,
 	})
 }
 
 // okKey and errKey read the flash message of a redirect, known keys only.
 func okKey(r *http.Request) string {
 	switch k := r.URL.Query().Get("ok"); k {
-	case "activated", "deactivated":
+	case "activated", "deactivated", "uninstalled", "uninstalled_partial":
 		return "ok." + k
 	}
 	return ""
@@ -381,7 +411,7 @@ func okKey(r *http.Request) string {
 
 func errKey(r *http.Request) string {
 	switch k := r.URL.Query().Get("err"); k {
-	case "nosub", "limit", "taken", "generic":
+	case "nosub", "limit", "taken", "generic", "confirm", "uninstall":
 		return "err." + k
 	}
 	return ""
@@ -421,6 +451,38 @@ func (s *Server) handleDeactivate(w http.ResponseWriter, r *http.Request, sess *
 	}
 	slog.Info("web: subscription deactivated", slog.String("guildID", g.ID.String()), slog.String("by", sess.userID.String()))
 	http.Redirect(w, r, dest+"?ok=deactivated", http.StatusSeeOther)
+}
+
+// handleUninstall removes the tool from the server once the box is ticked,
+// and frees the server from the subscription of the person who uninstalls.
+func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request, sess *session) {
+	g, ok := s.authorizedGuild(w, r, sess)
+	if !ok {
+		return
+	}
+	page := "/servers/" + g.ID.String()
+	if r.PostFormValue("confirm") != "yes" {
+		http.Redirect(w, r, page+"?err=confirm", http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	defer cancel()
+	rep, err := s.backend.Uninstall(ctx, g.ID)
+	if err != nil && !rep.OwnerLeft {
+		slog.Warn("web: uninstall failed", slog.String("guildID", g.ID.String()), slog.String("by", sess.userID.String()), slog.Any("err", err))
+		http.Redirect(w, r, page+"?err=uninstall", http.StatusSeeOther)
+		return
+	}
+	if err := s.subs.Deactivate(sess.userID, g.ID); err != nil && !errors.Is(err, subscription.ErrNotFound) {
+		slog.Warn("web: subscription not released after uninstall", slog.String("guildID", g.ID.String()), slog.Any("err", err))
+	}
+	slog.Info("web: uninstalled", slog.String("guildID", g.ID.String()), slog.String("by", sess.userID.String()),
+		slog.Int("left", len(rep.Left)), slog.Int("failed", len(rep.Failed)))
+	if len(rep.Failed) > 0 {
+		http.Redirect(w, r, "/servers?ok=uninstalled_partial", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/servers?ok=uninstalled", http.StatusSeeOther)
 }
 
 // backTo is where an activation returns: the server page or the list.
@@ -484,7 +546,7 @@ func (s *Server) renderGuild(w http.ResponseWriter, r *http.Request, sess *sessi
 		"User": sess.userName, "CSRF": sess.csrf, "Guild": g, "Status": st,
 		"Report": rep, "Error": errMsg, "Bot": s.backend.BotName(),
 		"Cov": s.coverage(lang, sess.userID, g.ID), "Account": s.account(lang, sess.userID),
-		"Admin": s.isAdmin(sess.userID), "OK": okKey(r), "Err": errKey(r),
+		"Admin": s.isAdmin(sess.userID), "OK": okKey(r), "Err": errKey(r), "UserID": sess.userID,
 	})
 }
 
@@ -492,6 +554,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, dat
 	lang := langFor(r)
 	data["Lang"] = lang
 	data["Other"] = map[string]string{"fr": "en", "en": "fr"}[lang]
+	data["Support"] = s.supportURL()
+	data["PayPal"] = s.cfg.PayPalURL
+	data["Price"] = s.cfg.PriceLabel
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Language", lang)
 	w.Header().Set("Cache-Control", "no-store")
