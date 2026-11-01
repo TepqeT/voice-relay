@@ -363,8 +363,13 @@ func (m *Service) createRaidChannels(ctx context.Context, guildID, viewRole, cal
 		m.rememberChannels(guildID, rc)
 	}
 	// Servers with onboarding hide channels members did not opt into.
-	ids := append([]snowflake.ID{rc.Category, rc.RaidLead, rc.Waiting}, rc.Squads...)
-	m.EnsureOnboardingDefaults(ctx, guildID, ids...)
+	// Only open channels qualify: Discord refuses a default channel
+	// @everyone cannot see, and a restricted channel is shown anyway to
+	// those who can.
+	if viewRole == 0 {
+		ids := append([]snowflake.ID{rc.RaidLead, rc.Waiting}, rc.Squads...)
+		m.EnsureOnboardingDefaults(ctx, guildID, ids...)
+	}
 	return rc, nil
 }
 
