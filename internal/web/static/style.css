@@ -137,3 +137,30 @@ nav.inline a { margin-right:4px; }
 .button.paypal { background:#0070ba; }
 .pay .price { font-size:20px; font-weight:700; margin:0 0 4px; }
 footer p { margin:6px 0; }
+
+/* ---- Use cases ---- */
+.uses { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; margin:12px 0 4px; }
+.use { margin:0; }
+.use h3 { margin:8px 0 4px; font-size:17px; }
+.use p { margin:0; color:var(--muted); }
+.use-icon { width:32px; height:32px; padding:6px; border-radius:9px; background:var(--accent); fill:#fff; }
+.use-icon .stroke { fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+/* ---- Phones ---- */
+@media (max-width:640px) {
+  .uses { grid-template-columns:1fr; }
+}
+@media (max-width:560px) {
+  main { padding:12px; }
+  h1 { font-size:24px; line-height:1.25; }
+  h2 { font-size:19px; }
+  .top { flex-wrap:wrap; gap:8px; padding:10px 12px; }
+  .top-right { gap:10px; font-size:14px; justify-content:flex-start; }
+  .card { padding:14px; }
+  .button { display:block; width:100%; text-align:center; }
+  .button.small { display:inline-block; width:auto; }
+  .row .name { min-width:100%; }
+  table { display:block; overflow-x:auto; white-space:nowrap; }
+  .with-scene .scene, .hero-grid .scene { max-width:380px; margin:0 auto; }
+  footer { padding:16px 12px; }
+}

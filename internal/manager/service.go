@@ -45,6 +45,7 @@ type Service struct {
 	metrics            *telemetry.Metrics
 	reconnect          reconnectState // typed reconnect subsystem (applier registry + in-flight guard)
 	starting           startGuard     // one raid start per guild at a time
+	accessMode         accessModes    // raid channels open to everyone or restricted, per guild
 	sessionIdleTimeout time.Duration  // 0 disables; set via SetSessionIdleTimeout
 	rvr                rvrState       // announcements and quality reports (rvr.go)
 	squad              squadState     // squad lead calls to the raid leads (squad.go)

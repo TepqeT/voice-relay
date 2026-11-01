@@ -181,10 +181,7 @@ func (m *Service) prepareRaidChannels(ctx context.Context, guildID snowflake.ID)
 
 	// The role that sees and joins the channels: the vetted access role when
 	// configured, else the faction role.
-	viewName := c.opts.FactionRole
-	if c.opts.AccessRole != "" {
-		viewName = c.opts.AccessRole
-	}
+	viewName := m.viewRoleName(guildID)
 	var factionRole snowflake.ID
 	if viewName != "" {
 		if factionRole = m.resolveRole(guildID, viewName); factionRole == 0 {

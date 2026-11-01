@@ -42,18 +42,21 @@ type AccessResult struct {
 	Disconnected bool // revoked while in a raid channel: kicked from voice
 }
 
-// AccessEnabled reports whether the board can manage RvR access.
+// AccessEnabled reports whether raid access is managed (an access role is
+// configured with dynamic channels). The board role is optional: raid leads
+// and squad leads approve players too.
 func (m *Service) AccessEnabled() bool {
 	o := m.channels.opts
-	return o.Enabled && o.AccessRole != "" && o.BoardRole != ""
+	return o.Enabled && o.AccessRole != ""
 }
 
 // AccessFaction is the faction name shown in the command names.
 func (m *Service) AccessFaction() string { return m.channels.opts.Faction }
 
 // CanManageAccess reports whether a member with roleIDs and perms may grant
-// or revoke access: server managers always, otherwise the board role together
-// with the faction role, so the board of the other faction cannot.
+// or revoke access: server managers always, otherwise the raid lead, squad
+// lead or board role, together with the faction role when one is set (so the
+// leaders of the other faction cannot).
 func (m *Service) CanManageAccess(guildID snowflake.ID, roleIDs []snowflake.ID, perms discord.Permissions) bool {
 	if !m.AccessEnabled() {
 		return false
@@ -61,8 +64,14 @@ func (m *Service) CanManageAccess(guildID snowflake.ID, roleIDs []snowflake.ID, 
 	if perms.Has(discord.PermissionAdministrator) || perms.Has(discord.PermissionManageGuild) {
 		return true
 	}
-	board := m.resolveRole(guildID, m.channels.opts.BoardRole)
-	if board == 0 || !slices.Contains(roleIDs, board) {
+	leader := false
+	for _, id := range m.ApproverRoleIDs(guildID) {
+		if slices.Contains(roleIDs, id) {
+			leader = true
+			break
+		}
+	}
+	if !leader {
 		return false
 	}
 	if f := m.channels.opts.FactionRole; f != "" {
@@ -70,6 +79,29 @@ func (m *Service) CanManageAccess(guildID snowflake.ID, roleIDs []snowflake.ID, 
 		return faction != 0 && slices.Contains(roleIDs, faction)
 	}
 	return true
+}
+
+// ApproverRoleIDs are the roles that approve access requests (and are pinged
+// by them): raid lead, squad lead, and the board role when one is set.
+func (m *Service) ApproverRoleIDs(guildID snowflake.ID) []snowflake.ID {
+	if !m.AccessEnabled() {
+		return nil
+	}
+	var out []snowflake.ID
+	if b := m.channels.opts.BoardRole; b != "" {
+		if id := m.resolveRole(guildID, b); id != 0 {
+			out = append(out, id)
+		}
+	}
+	if id, ok := m.callerRole(guildID); ok && id != 0 && !slices.Contains(out, id) {
+		out = append(out, id)
+	}
+	if name := m.rvr.opts.SquadLeadRole; name != "" {
+		if id := m.resolveRole(guildID, name); id != 0 && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // SetRvRAccess grants (grant=true) or revokes the access role of targetID.

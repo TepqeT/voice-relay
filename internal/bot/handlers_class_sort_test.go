@@ -38,26 +38,22 @@ func TestBuildPanelSortButton(t *testing.T) {
 		h := &CommandHandlers{bundle: bundle}
 		h.SetRvR(fakeSortRvR{enabled: enabled})
 		msg := h.buildPanel(1, loc)
-		row := msg.Components[0].(discord.ActionRowComponent)
-		want := 3
-		if enabled {
-			want = 4
-		}
-		if len(row.Components) != want {
-			t.Fatalf("enabled=%v: %d buttons, want %d", enabled, len(row.Components), want)
+		ids := panelButtonIDs(msg)
+		has := strings.Contains(strings.Join(ids, " "), panelSortID)
+		if has != enabled {
+			t.Fatalf("enabled=%v: buttons %v", enabled, ids)
 		}
 		if !enabled {
-			if strings.Contains(msg.Content, "Répartir") {
-				t.Fatalf("sort text shown while disabled: %q", msg.Content)
+			if strings.Contains(panelText(msg), "Répartir") {
+				t.Fatalf("sort text shown while disabled: %q", panelText(msg))
 			}
 			continue
 		}
-		b := row.Components[3].(discord.ButtonComponent)
-		if b.CustomID != panelSortID || b.Label != "Répartir" {
-			t.Fatalf("sort button %+v", b)
+		if len(msg.Components) != 2 {
+			t.Fatalf("sort must sit on the players row: %d rows", len(msg.Components))
 		}
-		if !strings.Contains(msg.Content, "« Attente »") {
-			t.Fatalf("content %q", msg.Content)
+		if !strings.Contains(panelText(msg), "Attente") {
+			t.Fatalf("content %q", panelText(msg))
 		}
 	}
 }

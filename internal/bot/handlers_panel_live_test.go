@@ -16,30 +16,24 @@ import (
 // liveRvR reports a raid state and has access management on.
 type liveRvR struct {
 	fakeRvR
-	st manager.PanelStatus
+	st   manager.PanelStatus
+	open bool
 }
 
 func (f liveRvR) PanelStatus(snowflake.ID) manager.PanelStatus { return f.st }
-func (f liveRvR) AccessEnabled() bool                          { return true }
-func (f liveRvR) AccessFaction() string                        { return "" }
+func (f liveRvR) AccessRoleID(snowflake.ID) snowflake.ID       { return 902 }
+func (f liveRvR) ApproverRoleIDs(snowflake.ID) []snowflake.ID  { return []snowflake.ID{900, 901} }
+func (f liveRvR) AccessOpen(snowflake.ID) bool                 { return f.open }
+func (f liveRvR) SetAccessOpen(context.Context, snowflake.ID, bool) error {
+	return nil
+}
+func (f liveRvR) AccessEnabled() bool   { return true }
+func (f liveRvR) AccessFaction() string { return "" }
 func (f liveRvR) CanManageAccess(snowflake.ID, []snowflake.ID, discord.Permissions) bool {
 	return false
 }
 func (f liveRvR) SetRvRAccess(context.Context, snowflake.ID, snowflake.ID, snowflake.ID, []snowflake.ID, bool, bool) (manager.AccessResult, error) {
 	return manager.AccessResult{}, nil
-}
-
-func panelButtons(t *testing.T, msg discord.MessageCreate) []string {
-	t.Helper()
-	row, ok := msg.Components[0].(discord.ActionRowComponent)
-	if !ok {
-		t.Fatalf("first row %#v", msg.Components[0])
-	}
-	var ids []string
-	for _, c := range row.Components {
-		ids = append(ids, c.(discord.ButtonComponent).CustomID)
-	}
-	return ids
 }
 
 func TestPanelShowsLiveState(t *testing.T) {
@@ -52,11 +46,20 @@ func TestPanelShowsLiveState(t *testing.T) {
 
 	h.SetRvR(liveRvR{})
 	msg := h.buildPanel(1, loc)
-	if got := strings.Join(panelButtons(t, msg), " "); got != panelStartID+" "+panelStatusID+" "+panelAccessID {
-		t.Fatalf("idle buttons = %s, want Start, Status, Request access", got)
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelAccessID+" "+panelOpenID {
+		t.Fatalf("idle buttons = %s, want Start, Status | Request access, Open", got)
 	}
-	if !strings.Contains(msg.Content, "No raid running") {
-		t.Fatalf("idle content %q", msg.Content)
+	if len(msg.Components) != 2 {
+		t.Fatalf("rows = %d, want raid row and players row", len(msg.Components))
+	}
+	text := panelText(msg)
+	for _, want := range []string{"No raid running", "Restricted", "<@&902>"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("idle panel lacks %q:\n%s", want, text)
+		}
+	}
+	if msg.Embeds[0].Color != panelColorIdle {
+		t.Error("idle colour expected")
 	}
 
 	since := time.Unix(1793550000, 0)
@@ -67,13 +70,27 @@ func TestPanelShowsLiveState(t *testing.T) {
 		Squads:   []manager.ChannelCount{{ChannelID: 8, Members: 5}, {ChannelID: 9, Members: 0}},
 	}})
 	msg = h.buildPanel(1, loc)
-	if got := strings.Join(panelButtons(t, msg), " "); got != panelStopID+" "+panelStatusID+" "+panelAccessID {
-		t.Fatalf("running buttons = %s, want Stop, Status, Request access", got)
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStopID+" "+panelStatusID+" "+panelAccessID+" "+panelOpenID {
+		t.Fatalf("running buttons = %s, want Stop, Status | Request access, Open", got)
 	}
-	for _, want := range []string{"Raid running", "<t:1793550000:R>", "<#7> **2**", "<#8> **5**", "<#9> **0**"} {
-		if !strings.Contains(msg.Content, want) {
-			t.Fatalf("running content lacks %q:\n%s", want, msg.Content)
+	text = panelText(msg)
+	for _, want := range []string{"Raid running", "<t:1793550000:R>", "<#7>  **2**", "<#8>  **5**", "<#9>  **0**"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("running panel lacks %q:\n%s", want, text)
 		}
+	}
+	if msg.Embeds[0].Color != panelColorRunning {
+		t.Error("running colour expected")
+	}
+
+	// Open to everyone: no request button, the switch offers to restrict.
+	h.SetRvR(liveRvR{open: true})
+	msg = h.buildPanel(1, loc)
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelRestrictID {
+		t.Fatalf("open buttons = %s, want Start, Status | Restrict", got)
+	}
+	if !strings.Contains(panelText(msg), "Open: anyone") {
+		t.Fatalf("open panel %q", panelText(msg))
 	}
 }
 
@@ -82,8 +99,8 @@ func TestPanelInFrench(t *testing.T) {
 	h := &CommandHandlers{bundle: bundle}
 	h.SetRvR(liveRvR{})
 	msg := h.buildPanel(1, bundle.For("fr", ""))
-	if !strings.Contains(msg.Content, "Aucun raid en cours") {
-		t.Fatalf("French panel %q", msg.Content)
+	if !strings.Contains(panelText(msg), "Aucun raid en cours") {
+		t.Fatalf("French panel %q", panelText(msg))
 	}
 }
 

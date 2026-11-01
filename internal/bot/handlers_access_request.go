@@ -1,9 +1,11 @@
 package bot
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +30,59 @@ const accessRequestTTL = 12 * time.Hour
 // test doubles stay valid.
 type accessRequester interface {
 	AccessRoleID(guildID snowflake.ID) snowflake.ID
-	BoardRoleID(guildID snowflake.ID) snowflake.ID
+	ApproverRoleIDs(guildID snowflake.ID) []snowflake.ID
+}
+
+// accessModeSwitch is implemented by the manager: raid channels open to
+// everyone or restricted to the access role, chosen from the panel.
+type accessModeSwitch interface {
+	AccessOpen(guildID snowflake.ID) bool
+	SetAccessOpen(ctx context.Context, guildID snowflake.ID, open bool) error
+}
+
+func (h *CommandHandlers) accessMode() (accessModeSwitch, bool) {
+	s, ok := h.rvr.(accessModeSwitch)
+	return s, ok
+}
+
+// accessRoleMention is the access role as a mention, or its configured name.
+func (h *CommandHandlers) accessRoleMention(guildID snowflake.ID) string {
+	if r, ok := h.rvr.(accessRequester); ok {
+		if id := r.AccessRoleID(guildID); id != 0 {
+			return fmt.Sprintf("<@&%s>", id)
+		}
+	}
+	return "the access role"
+}
+
+// handleAccessMode opens the raid channels to everyone or restricts them.
+// Reserved to those who manage access (raid leads, squad leads, board,
+// server managers).
+func (h *CommandHandlers) handleAccessMode(open bool) guildButtonHandler {
+	return func(guildID snowflake.ID, loc *i18n.Localizer, _ discord.ButtonInteractionData, e *handler.ComponentEvent) error {
+		a, ok := h.access()
+		mode, ok2 := h.accessMode()
+		if !ok || !ok2 {
+			return e.CreateMessage(ephemeral(loc.T("access.req.unavailable")))
+		}
+		actor := e.Member()
+		if actor == nil || !a.CanManageAccess(guildID, actor.RoleIDs, actor.Permissions) {
+			return e.CreateMessage(ephemeral(loc.T("access.denied")))
+		}
+		if err := e.DeferCreateMessage(true); err != nil {
+			return err
+		}
+		msg := loc.T("access.mode.restricted")
+		if open {
+			msg = loc.T("access.mode.opened")
+		}
+		if err := mode.SetAccessOpen(e.Ctx, guildID, open); err != nil {
+			msg = loc.T("access.mode.failed", "Err", err.Error())
+		}
+		h.notifyPanel(guildID)
+		h.componentFollowUp(e, msg)
+		return nil
+	}
 }
 
 // accessRequests remembers pending requests, one per member and server.
@@ -77,6 +131,9 @@ func (h *CommandHandlers) handleAccessRequest(guildID snowflake.ID, loc *i18n.Lo
 	if slices.Contains(member.RoleIDs, role) {
 		return e.CreateMessage(ephemeral(loc.T("access.req.already")))
 	}
+	if mode, ok := h.accessMode(); ok && mode.AccessOpen(guildID) {
+		return e.CreateMessage(ephemeral(loc.T("access.req.open")))
+	}
 	if a.CanManageAccess(guildID, member.RoleIDs, member.Permissions) {
 		// The board does not need to ask itself.
 		return e.CreateMessage(ephemeral(loc.T("access.req.self")))
@@ -85,17 +142,16 @@ func (h *CommandHandlers) handleAccessRequest(guildID snowflake.ID, loc *i18n.Lo
 		return e.CreateMessage(ephemeral(loc.T("access.req.pending")))
 	}
 
-	board := req.BoardRoleID(guildID)
 	gloc := h.bundle.For(h.manager.GetLocale(guildID), "")
-	boardMention := ""
 	mentions := &discord.AllowedMentions{}
-	if board != 0 {
-		boardMention = fmt.Sprintf("<@&%s>", board)
-		mentions.Roles = []snowflake.ID{board}
+	var leaders []string
+	for _, id := range req.ApproverRoleIDs(guildID) {
+		leaders = append(leaders, fmt.Sprintf("<@&%s>", id))
+		mentions.Roles = append(mentions.Roles, id)
 	}
 	userID := member.User.ID.String()
 	_, err := e.Client().Rest.CreateMessage(e.Channel().ID(), discord.MessageCreate{
-		Content: gloc.T("access.req.message", "Board", boardMention, "Member", "<@"+userID+">"),
+		Content: gloc.T("access.req.message", "Leaders", strings.Join(leaders, " "), "Member", "<@"+userID+">"),
 		Components: []discord.LayoutComponent{discord.NewActionRow(
 			discord.NewSuccessButton(gloc.T("access.req.approve"), accessReqID+"/yes/"+userID),
 			discord.NewDangerButton(gloc.T("access.req.deny"), accessReqID+"/no/"+userID),
