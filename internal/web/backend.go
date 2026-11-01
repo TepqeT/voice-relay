@@ -79,6 +79,31 @@ func (g GuildStatus) Ready() bool {
 	return true
 }
 
+// RelayCount is the number of relay bots, present or not.
+func (g GuildStatus) RelayCount() int { return len(g.RelayBots) }
+
+// RelayPresent counts the relay bots already in the server.
+func (g GuildStatus) RelayPresent() int {
+	n := 0
+	for _, h := range g.RelayBots {
+		if h.Present {
+			n++
+		}
+	}
+	return n
+}
+
+// NextRelay is the first relay bot still to invite, nil when all are in. The site offers it as a single button so the administrator chains the
+// authorisations Discord asks for, one per bot, without picking from a list.
+func (g GuildStatus) NextRelay() *BotStatus {
+	for i := range g.RelayBots {
+		if !g.RelayBots[i].Present {
+			return &g.RelayBots[i]
+		}
+	}
+	return nil
+}
+
 // MissingRoles counts the roles still to create.
 func (g GuildStatus) MissingRoles() int {
 	n := 0

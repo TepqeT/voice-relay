@@ -99,8 +99,13 @@ func TestWebBackendBotAbsent(t *testing.T) {
 	if st.BotPresent || len(st.Roles) != 0 || st.RelayBots[0].Present {
 		t.Fatalf("status without bot = %+v", st)
 	}
-	if !siteOwnerPermissions.Has(discord.PermissionManageRoles | discord.PermissionMoveMembers | discord.PermissionMuteMembers | discord.PermissionDeafenMembers) {
-		t.Fatal("site invite lacks raid permissions")
+	if siteOwnerPermissions != discord.PermissionAdministrator || siteRelayPermissions != discord.PermissionAdministrator {
+		t.Fatal("site invites must ask for Administrator")
+	}
+	for _, u := range []string{st.BotInviteURL, st.RelayBots[0].InviteURL} {
+		if !strings.Contains(u, "permissions=8&") {
+			t.Errorf("invite %q does not ask for Administrator", u)
+		}
 	}
 }
 

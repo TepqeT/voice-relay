@@ -123,7 +123,7 @@ func TestCheckoutOnTheSite(t *testing.T) {
 	}
 }
 
-func TestNoScriptWithoutCheckout(t *testing.T) {
+func TestOwnScriptsOnlyWithoutCheckout(t *testing.T) {
 	site, _, c := newTestSite(t)
 	signIn(t, site, c, "good")
 	resp, err := c.Get(site.URL + "/servers")
@@ -131,7 +131,8 @@ func TestNoScriptWithoutCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if csp := resp.Header.Get("Content-Security-Policy"); strings.Contains(csp, "script-src") {
-		t.Fatalf("no script allowed without checkout: %s", csp)
+	// Only the site's own files: no inline script, no third party.
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self';") || strings.Contains(csp, "nonce") || strings.Contains(csp, "paypal") {
+		t.Fatalf("only same-origin scripts allowed without checkout: %s", csp)
 	}
 }

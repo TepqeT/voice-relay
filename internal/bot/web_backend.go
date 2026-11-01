@@ -25,11 +25,15 @@ type siteManager interface {
 	Uninstall(ctx context.Context, guildID snowflake.ID) (manager.UninstallReport, error)
 }
 
-// siteOwnerPermissions is what the site's invite asks for: the speaker set,
-// Deafen Members, channel creation, and the moderation the raids use.
-const siteOwnerPermissions = ownerPermissions | channelPermissions |
-	discord.PermissionMuteMembers | discord.PermissionMoveMembers |
-	discord.PermissionEmbedLinks | discord.PermissionReadMessageHistory
+// siteOwnerPermissions is what the site's invite asks for the main bot:
+// Administrator, so a server never has permissions to tick by hand. Channel
+// overwrites, moves, mutes, deafens and the panel all follow from it.
+const siteOwnerPermissions = discord.PermissionAdministrator
+
+// siteRelayPermissions is what the site's invite asks for each relay bot:
+// Administrator too, so a relay bot joins any channel, even a restricted one,
+// whatever the server's overwrites.
+const siteRelayPermissions = discord.PermissionAdministrator
 
 // webBackend adapts the manager to the site.
 type webBackend struct {
@@ -80,7 +84,7 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 		if name == "" {
 			name = fmt.Sprintf("Voice Relay %d", i+1)
 		}
-		st.RelayBots = append(st.RelayBots, web.BotStatus{Name: name, Present: present, InviteURL: lockedInvite(id, guildID, botPermissions)})
+		st.RelayBots = append(st.RelayBots, web.BotStatus{Name: name, Present: present, InviteURL: lockedInvite(id, guildID, siteRelayPermissions)})
 	}
 	if b.panel != nil {
 		st.PanelChannel = b.panel.ChannelName()
