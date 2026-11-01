@@ -295,3 +295,32 @@ func TestPagesRespectCSPAndShowScenes(t *testing.T) {
 		}
 	}
 }
+
+// Animations must stay inside the scenes: a rule on a site class (".card"
+// once) made every panel of the site fade out in a loop.
+func TestAnimationsScopedToScenes(t *testing.T) {
+	css, err := assets.ReadFile("static/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(string(css), "\n") {
+		if !strings.Contains(line, "animation") {
+			continue
+		}
+		for _, rule := range strings.Split(line, "}") {
+			sel, _, ok := strings.Cut(rule, "{")
+			if !ok || !strings.Contains(rule, "animation") {
+				continue
+			}
+			sel = strings.TrimSpace(sel)
+			if strings.HasPrefix(sel, "@") {
+				continue
+			}
+			for _, s := range strings.Split(sel, ",") {
+				if !strings.HasPrefix(strings.TrimSpace(s), ".scene") {
+					t.Errorf("style.css:%d animates %q outside .scene", i+1, strings.TrimSpace(s))
+				}
+			}
+		}
+	}
+}
