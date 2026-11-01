@@ -1,12 +1,16 @@
 package bot
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/TepqeT/voice-relay/internal/guild"
 	"github.com/TepqeT/voice-relay/internal/i18n"
+	"github.com/TepqeT/voice-relay/internal/manager"
 )
 
 // Control panel: a message with buttons, so raid leads start and stop the
@@ -16,7 +20,24 @@ const (
 	panelStartID  = "/panel/start"
 	panelStopID   = "/panel/stop"
 	panelStatusID = "/panel/status"
+	panelAccessID = "/panel/access"
 )
+
+// panelStatusSource is implemented by the manager: the live raid state the
+// panel shows. Asserted so RvRService test doubles stay valid.
+type panelStatusSource interface {
+	PanelStatus(guildID snowflake.ID) manager.PanelStatus
+}
+
+// OnPanelChange registers fn, called when a raid started or stopped so the
+// panel on display is refreshed at once.
+func (h *CommandHandlers) OnPanelChange(fn func(guildID snowflake.ID)) { h.panelChanged = fn }
+
+func (h *CommandHandlers) notifyPanel(guildID snowflake.ID) {
+	if h.panelChanged != nil {
+		h.panelChanged(guildID)
+	}
+}
 
 // registerPanel attaches the panel command and button routes.
 func (h *CommandHandlers) registerPanel(r handler.Router) {
@@ -24,6 +45,8 @@ func (h *CommandHandlers) registerPanel(r handler.Router) {
 	r.ButtonComponent(panelStartID, h.withManagerButton(h.handlePanelStart))
 	r.ButtonComponent(panelStopID, h.withManagerButton(h.handlePanelStop))
 	r.ButtonComponent(panelStatusID, h.withGuildButton(h.handlePanelStatus))
+	r.ButtonComponent(panelAccessID, h.withGuildButton(h.handleAccessRequest))
+	r.ButtonComponent(accessReqID+"/{decision}/{userID}", h.withGuildButton(h.handleAccessDecision))
 }
 
 // withManagerButton requires Manage Server permission or the manager role,
@@ -43,31 +66,80 @@ func (h *CommandHandlers) handlePanel(guildID snowflake.ID, loc *i18n.Localizer,
 }
 
 func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) discord.MessageCreate {
-	buttons := []discord.InteractiveComponent{
-		discord.NewSuccessButton(loc.T("panel.btn.start"), panelStartID),
-		discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID),
-		discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID),
+	var live *manager.PanelStatus
+	if src, ok := h.rvr.(panelStatusSource); ok {
+		st := src.PanelStatus(guildID)
+		live = &st
 	}
+	running := live != nil && live.Running
+
+	// One Start or Stop button depending on the raid state; both when the
+	// state is unknown (no live status).
+	var buttons []discord.InteractiveComponent
+	if live == nil || !running {
+		buttons = append(buttons, discord.NewSuccessButton(loc.T("panel.btn.start"), panelStartID))
+	}
+	if live == nil || running {
+		buttons = append(buttons, discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID))
+	}
+	buttons = append(buttons, discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID))
 	sorter, sortOn := h.classSort()
 	if sortOn {
 		buttons = append(buttons, discord.NewPrimaryButton(loc.T("panel.btn.sort"), panelSortID))
 	}
+	if _, ok := h.access(); ok {
+		buttons = append(buttons, discord.NewSecondaryButton(loc.T("panel.btn.request"), panelAccessID))
+	}
 	rows := []discord.LayoutComponent{discord.NewActionRow(buttons...)}
-	content := loc.T("panel.content")
+
+	var b strings.Builder
+	if live != nil {
+		b.WriteString(panelLiveLines(loc, *live))
+		b.WriteString("\n\n")
+	}
+	b.WriteString(loc.T("panel.content"))
 	if h.dynamicChannels() {
-		content += "\n" + loc.T("panel.content_channels", "Category", h.rvr.ChannelCategory())
+		b.WriteString("\n" + loc.T("panel.content_channels", "Category", h.rvr.ChannelCategory()))
 	}
 	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
-		content += "\n" + loc.T("panel.content_squads")
+		b.WriteString("\n" + loc.T("panel.content_squads"))
 	}
 	if sortOn {
-		content += "\n" + loc.T("panel.content_sort", "Waiting", sorter.ClassSortWaiting())
+		b.WriteString("\n" + loc.T("panel.content_sort", "Waiting", sorter.ClassSortWaiting()))
 	}
 	return discord.MessageCreate{
-		Content:         content,
+		Content:         b.String(),
 		Components:      rows,
 		AllowedMentions: &discord.AllowedMentions{},
 	}
+}
+
+// panelLiveLines is the state block at the top of the panel: running or not,
+// since when (Discord renders the timestamp in each viewer's language and
+// time zone), and how many people sit in each raid channel.
+func panelLiveLines(loc *i18n.Localizer, st manager.PanelStatus) string {
+	if !st.Running {
+		return loc.T("panel.live.idle")
+	}
+	line := loc.T("panel.live.running")
+	if !st.Since.IsZero() {
+		line += " " + loc.T("panel.live.since", "Since", fmt.Sprintf("<t:%d:R>", st.Since.Unix()))
+	}
+	var counts []string
+	add := func(c manager.ChannelCount) {
+		if c.ChannelID != 0 {
+			counts = append(counts, fmt.Sprintf("<#%s> **%d**", c.ChannelID, c.Members))
+		}
+	}
+	add(st.RaidLead)
+	for _, c := range st.Squads {
+		add(c)
+	}
+	add(st.Waiting)
+	if len(counts) > 0 {
+		line += "\n" + strings.Join(counts, " · ")
+	}
+	return line
 }
 
 func (h *CommandHandlers) handlePanelStart(guildID snowflake.ID, loc *i18n.Localizer, _ discord.ButtonInteractionData, e *handler.ComponentEvent) error {

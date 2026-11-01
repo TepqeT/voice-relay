@@ -92,6 +92,10 @@ type CommandHandlers struct {
 	siteURL  string
 	// raidStarted is told of every raid that started (subscription usage).
 	raidStarted func(guildID snowflake.ID)
+	// panelChanged refreshes the panel on display after a start or stop.
+	panelChanged func(guildID snowflake.ID)
+	// accessReqs remembers pending access requests (one per member).
+	accessReqs accessRequests
 }
 
 // OnRaidStarted registers fn, called after each successful raid start.

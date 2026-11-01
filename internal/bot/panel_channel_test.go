@@ -106,22 +106,39 @@ func TestPanelChannelCreatedAndKeptUpToDate(t *testing.T) {
 		t.Fatalf("after restart: created %v posted %v updated %v", fr2.created, fr2.posted, fr2.updated)
 	}
 
-	// Someone deleted the message: a new one is posted.
-	fr2.lostUpdate = true
+	// Nothing changed: no Discord call at all.
 	k2.Ensure(ctx, panelGuild)
+	if len(fr2.updated) != 1 || len(fr2.posted) != 0 {
+		t.Fatalf("unchanged panel edited again: updated %v posted %v", fr2.updated, fr2.posted)
+	}
+
+	// The message vanished while the bot was offline: the periodic forced
+	// edit finds out and reposts.
+	fr2.lostUpdate = true
+	k2.ensure(ctx, panelGuild, true)
 	if len(fr2.posted) != 1 || fr2.posted[0] != chID {
 		t.Fatalf("lost message not reposted: %v", fr2.posted)
+	}
+
+	// Someone deletes the message: reposted at once.
+	k2.mu.Lock()
+	msgID := k2.state[panelGuild].MessageID
+	k2.mu.Unlock()
+	k2.OnMessageDeleted(ctx, panelGuild, 424242) // another message
+	k2.OnMessageDeleted(ctx, panelGuild, msgID)
+	if len(fr2.posted) != 2 {
+		t.Fatalf("deleted panel message not reposted: %v", fr2.posted)
 	}
 
 	// Someone deleted the channel: it comes back.
 	caches2.RemoveChannel(chID)
 	k2.OnChannelDeleted(ctx, panelGuild, chID)
-	if len(fr2.created) != 1 || len(fr2.posted) != 2 {
+	if len(fr2.created) != 1 || len(fr2.posted) != 3 {
 		t.Fatalf("deleted channel not recreated: created %v posted %v", fr2.created, fr2.posted)
 	}
 
 	// Uninstall removes the channel the bot created.
-	newCh := fr2.posted[1]
+	newCh := fr2.posted[2]
 	k2.Remove(ctx, panelGuild)
 	if len(fr2.deleted) != 1 || fr2.deleted[0] != newCh || k2.IsPanelChannel(panelGuild, newCh) {
 		t.Fatalf("uninstall: deleted %v", fr2.deleted)
