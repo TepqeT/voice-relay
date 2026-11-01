@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/disgoorg/disgo/cache"
 	"github.com/disgoorg/disgo/discord"
@@ -47,12 +48,13 @@ type panelKeeper struct {
 
 	mu    sync.Mutex
 	state map[snowflake.ID]panelState
-	busy  map[snowflake.ID]bool // an Ensure is running for the guild
+	busy  map[snowflake.ID]bool   // an Ensure is running for the guild
+	shown map[snowflake.ID]string // last panel sent, to skip identical edits
 }
 
 func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func() snowflake.ID, build func(snowflake.ID) discord.MessageCreate, file string) *panelKeeper {
 	k := &panelKeeper{name: strings.TrimSpace(name), rest: r, caches: caches, selfID: selfID, build: build, file: file,
-		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}}
+		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}, shown: map[snowflake.ID]string{}}
 	if file != "" {
 		if b, err := os.ReadFile(file); err == nil {
 			if err := json.Unmarshal(b, &k.state); err != nil {
@@ -68,8 +70,15 @@ func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func()
 func (k *panelKeeper) ChannelName() string { return k.name }
 
 // Ensure makes sure guildID has the panel channel and an up-to-date panel
-// message. Concurrent calls for the same guild collapse into one.
+// message. Concurrent calls for the same guild collapse into one. An
+// unchanged panel costs no Discord call.
 func (k *panelKeeper) Ensure(ctx context.Context, guildID snowflake.ID) {
+	k.ensure(ctx, guildID, false)
+}
+
+// ensure with force set edits the message even when nothing changed, which
+// also notices a message deleted while the bot was not looking.
+func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bool) {
 	k.mu.Lock()
 	if k.busy[guildID] {
 		k.mu.Unlock()
@@ -101,6 +110,13 @@ func (k *panelKeeper) Ensure(ctx context.Context, guildID snowflake.ID) {
 	}
 
 	msg := k.build(guildID)
+	sig := panelSignature(msg)
+	k.mu.Lock()
+	same := !force && st.MessageID != 0 && channelID == st.ChannelID && k.shown[guildID] == sig
+	k.mu.Unlock()
+	if same {
+		return // nothing changed since the last edit
+	}
 	if st.MessageID != 0 {
 		_, err := k.rest.UpdateMessage(channelID, st.MessageID, discord.MessageUpdate{
 			Content:         &msg.Content,
@@ -109,6 +125,7 @@ func (k *panelKeeper) Ensure(ctx context.Context, guildID snowflake.ID) {
 		}, rest.WithCtx(ctx))
 		if err == nil {
 			k.save(guildID, st)
+			k.remember(guildID, sig)
 			return
 		}
 		if !isUnknownMessage(err) {
@@ -123,7 +140,64 @@ func (k *panelKeeper) Ensure(ctx context.Context, guildID snowflake.ID) {
 	}
 	st.MessageID = m.ID
 	k.save(guildID, st)
+	k.remember(guildID, sig)
 	slog.Info("panel channel: panel posted", slog.String("guildID", guildID.String()), slog.String("channelID", channelID.String()))
+}
+
+// Watch refreshes every known panel every interval until ctx ends, so the
+// live counts follow people joining and leaving; unchanged panels cost no
+// Discord call.
+func (k *panelKeeper) Watch(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	// Every forceEvery ticks the edit is forced, in case the message vanished
+	// without an event (bot offline at the time).
+	const forceEvery = 40
+	for tick := 1; ; tick++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			k.mu.Lock()
+			guilds := make([]snowflake.ID, 0, len(k.state))
+			for g := range k.state {
+				guilds = append(guilds, g)
+			}
+			k.mu.Unlock()
+			for _, g := range guilds {
+				k.ensure(ctx, g, tick%forceEvery == 0)
+			}
+		}
+	}
+}
+
+func (k *panelKeeper) remember(guildID snowflake.ID, sig string) {
+	k.mu.Lock()
+	k.shown[guildID] = sig
+	k.mu.Unlock()
+}
+
+// panelSignature identifies what a panel message shows.
+func panelSignature(m discord.MessageCreate) string {
+	b, _ := json.Marshal(struct {
+		C string
+		K []discord.LayoutComponent
+	}{m.Content, m.Components})
+	return string(b)
+}
+
+// OnMessageDeleted reposts the panel when its message was deleted.
+func (k *panelKeeper) OnMessageDeleted(ctx context.Context, guildID, messageID snowflake.ID) {
+	k.mu.Lock()
+	st, ok := k.state[guildID]
+	k.mu.Unlock()
+	if !ok || st.MessageID != messageID {
+		return
+	}
+	st.MessageID = 0
+	k.save(guildID, st)
+	k.remember(guildID, "")
+	k.Ensure(ctx, guildID)
 }
 
 // OnChannelDeleted recreates the panel when its channel was deleted.
@@ -135,6 +209,7 @@ func (k *panelKeeper) OnChannelDeleted(ctx context.Context, guildID, channelID s
 		return
 	}
 	k.save(guildID, panelState{})
+	k.remember(guildID, "")
 	k.Ensure(ctx, guildID)
 }
 

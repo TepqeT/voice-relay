@@ -111,6 +111,7 @@ type ManagerService interface {
 
 // Bot wraps the disgo client and all application services.
 type Bot struct {
+	panel         *panelKeeper // nil when PANEL_CHANNEL is off
 	client        *bot.Client
 	manager       ManagerService
 	store         store.Store
@@ -158,6 +159,11 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	if ch := cfg.RvR.Channels; ch.AccessChannel != "" && ch.AccessRole != "" && ch.BoardRole != "" {
 		intents = append(intents, gateway.IntentGuildMessages, gateway.IntentMessageContent)
 		slog.Info("access channel enabled: Message Content intent requested", slog.String("channel", ch.AccessChannel))
+	}
+	// The panel channel watches for its message being deleted. Guild Messages
+	// alone is not privileged (no message content).
+	if cfg.RvR.PanelChannel != "" && !slices.Contains(intents, gateway.IntentGuildMessages) {
+		intents = append(intents, gateway.IntentGuildMessages)
 	}
 	client, err := NewOwnerClient(cfg.OwnerBotToken, daveStats, daveStalls,
 		bot.WithGatewayConfigOpts(gateway.WithIntents(intents...)),
@@ -294,7 +300,11 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			bot.NewListenerFunc(func(e *events.GuildChannelDelete) {
 				go panel.OnChannelDeleted(context.Background(), e.GuildID, e.ChannelID)
 			}),
+			bot.NewListenerFunc(func(e *events.GuildMessageDelete) {
+				go panel.OnMessageDeleted(context.Background(), e.GuildID, e.MessageID)
+			}),
 		)
+		cmdHandlers.OnPanelChange(func(guildID snowflake.ID) { go panel.Ensure(context.Background(), guildID) })
 		slog.Info("panel channel enabled", slog.String("channel", name))
 	}
 
@@ -330,6 +340,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		bundle:        bundle,
 
 		dynamicChannels: cfg.RvR.Channels.Enabled,
+		panel:           panel,
 		extraCommands:   append(cmdHandlers.AccessCommands(), cmdHandlers.SquadLeadCommands()...),
 	}
 
@@ -388,6 +399,9 @@ func (b *Bot) Run(ctx context.Context) error {
 		return err
 	}
 	b.poolSvc.StartWatchdog(ctx, 30*time.Second)
+	if b.panel != nil {
+		go b.panel.Watch(ctx, 15*time.Second)
+	}
 	b.poolSvc.StartMetrics()
 	b.daveStats.StartMetrics(b.daveMetrics)
 	b.manager.StartMetrics()

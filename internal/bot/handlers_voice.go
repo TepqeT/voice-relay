@@ -115,6 +115,7 @@ func (h *CommandHandlers) startHostRaid(cmdCtx context.Context, guildID snowflak
 	}
 	ctx, cancelFunc := context.WithCancel(trace.ContextWithSpan(context.Background(), trace.SpanFromContext(cmdCtx)))
 	go func() {
+		defer h.notifyPanel(guildID)
 		h.manager.EnsureGuildReady(guildID)
 		// Dynamic channels are created by the start itself, with the bots'
 		// permissions set on them: the bindings checked here are the previous
@@ -202,6 +203,7 @@ func (h *CommandHandlers) handleStopVoiceRaid(guildID snowflake.ID, loc *i18n.Lo
 // must have deferred its interaction response.
 func (h *CommandHandlers) stopRaid(cmdCtx context.Context, guildID snowflake.ID, loc *i18n.Localizer, reply func(string)) {
 	go func() {
+		defer h.notifyPanel(guildID)
 		// End-of-raid sound first, so the squads hear it before the bots leave.
 		if h.rvr != nil && h.manager.HasActiveSession(guildID) {
 			h.rvr.PlayOutro(guildID)
