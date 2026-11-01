@@ -120,6 +120,7 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 	if st.MessageID != 0 {
 		_, err := k.rest.UpdateMessage(channelID, st.MessageID, discord.MessageUpdate{
 			Content:         &msg.Content,
+			Embeds:          &msg.Embeds,
 			Components:      &msg.Components,
 			AllowedMentions: msg.AllowedMentions,
 		}, rest.WithCtx(ctx))
@@ -181,8 +182,9 @@ func (k *panelKeeper) remember(guildID snowflake.ID, sig string) {
 func panelSignature(m discord.MessageCreate) string {
 	b, _ := json.Marshal(struct {
 		C string
+		E []discord.Embed
 		K []discord.LayoutComponent
-	}{m.Content, m.Components})
+	}{m.Content, m.Embeds, m.Components})
 	return string(b)
 }
 

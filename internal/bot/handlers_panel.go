@@ -17,10 +17,12 @@ import (
 // relay without typing commands or choosing a mode. Custom IDs carry no
 // state, so the buttons keep working after a bot restart.
 const (
-	panelStartID  = "/panel/start"
-	panelStopID   = "/panel/stop"
-	panelStatusID = "/panel/status"
-	panelAccessID = "/panel/access"
+	panelStartID    = "/panel/start"
+	panelStopID     = "/panel/stop"
+	panelStatusID   = "/panel/status"
+	panelAccessID   = "/panel/access"
+	panelOpenID     = "/panel/open"
+	panelRestrictID = "/panel/restrict"
 )
 
 // panelStatusSource is implemented by the manager: the live raid state the
@@ -46,6 +48,8 @@ func (h *CommandHandlers) registerPanel(r handler.Router) {
 	r.ButtonComponent(panelStopID, h.withManagerButton(h.handlePanelStop))
 	r.ButtonComponent(panelStatusID, h.withGuildButton(h.handlePanelStatus))
 	r.ButtonComponent(panelAccessID, h.withGuildButton(h.handleAccessRequest))
+	r.ButtonComponent(panelOpenID, h.withGuildButton(h.handleAccessMode(true)))
+	r.ButtonComponent(panelRestrictID, h.withGuildButton(h.handleAccessMode(false)))
 	r.ButtonComponent(accessReqID+"/{decision}/{userID}", h.withGuildButton(h.handleAccessDecision))
 }
 
@@ -65,6 +69,14 @@ func (h *CommandHandlers) handlePanel(guildID snowflake.ID, loc *i18n.Localizer,
 	return e.CreateMessage(h.buildPanel(guildID, loc))
 }
 
+// Panel colours: Discord blurple when idle, green while a raid runs.
+const (
+	panelColorIdle    = 0x5865F2
+	panelColorRunning = 0x2ECC71
+)
+
+// buildPanel lays the panel out as one embed (state, channels, access, how it
+// works) and two rows of buttons: the raid itself, then the players.
 func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) discord.MessageCreate {
 	var live *manager.PanelStatus
 	if src, ok := h.rvr.(panelStatusSource); ok {
@@ -72,63 +84,98 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 		live = &st
 	}
 	running := live != nil && live.Running
+	_, accessOn := h.access()
+	mode, modeOn := h.accessMode()
+	open := modeOn && accessOn && mode.AccessOpen(guildID)
+	sorter, sortOn := h.classSort()
 
-	// One Start or Stop button depending on the raid state; both when the
-	// state is unknown (no live status).
-	var buttons []discord.InteractiveComponent
+	// Row 1: the raid. One Start or Stop button following the state; both
+	// when the state is unknown.
+	var raid []discord.InteractiveComponent
 	if live == nil || !running {
-		buttons = append(buttons, discord.NewSuccessButton(loc.T("panel.btn.start"), panelStartID))
+		raid = append(raid, discord.NewSuccessButton(loc.T("panel.btn.start"), panelStartID))
 	}
 	if live == nil || running {
-		buttons = append(buttons, discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID))
+		raid = append(raid, discord.NewDangerButton(loc.T("panel.btn.stop"), panelStopID))
 	}
-	buttons = append(buttons, discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID))
-	sorter, sortOn := h.classSort()
-	if sortOn {
-		buttons = append(buttons, discord.NewPrimaryButton(loc.T("panel.btn.sort"), panelSortID))
-	}
-	if _, ok := h.access(); ok {
-		buttons = append(buttons, discord.NewSecondaryButton(loc.T("panel.btn.request"), panelAccessID))
-	}
-	rows := []discord.LayoutComponent{discord.NewActionRow(buttons...)}
+	raid = append(raid, discord.NewSecondaryButton(loc.T("panel.btn.status"), panelStatusID))
+	rows := []discord.LayoutComponent{discord.NewActionRow(raid...)}
 
-	var b strings.Builder
-	if live != nil {
-		b.WriteString(panelLiveLines(loc, *live))
-		b.WriteString("\n\n")
+	// Row 2: the players.
+	var players []discord.InteractiveComponent
+	if accessOn && !open {
+		players = append(players, discord.NewPrimaryButton(loc.T("panel.btn.request"), panelAccessID))
 	}
-	b.WriteString(loc.T("panel.content"))
-	if h.dynamicChannels() {
-		b.WriteString("\n" + loc.T("panel.content_channels", "Category", h.rvr.ChannelCategory()))
-	}
-	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
-		b.WriteString("\n" + loc.T("panel.content_squads"))
+	if accessOn && modeOn {
+		if open {
+			players = append(players, discord.NewSecondaryButton(loc.T("panel.btn.restrict"), panelRestrictID))
+		} else {
+			players = append(players, discord.NewSecondaryButton(loc.T("panel.btn.open"), panelOpenID))
+		}
 	}
 	if sortOn {
-		b.WriteString("\n" + loc.T("panel.content_sort", "Waiting", sorter.ClassSortWaiting()))
+		players = append(players, discord.NewSecondaryButton(loc.T("panel.btn.sort"), panelSortID))
 	}
+	if len(players) > 0 {
+		rows = append(rows, discord.NewActionRow(players...))
+	}
+
+	embed := discord.Embed{Title: loc.T("panel.title"), Color: panelColorIdle}
+	if running {
+		embed.Color = panelColorRunning
+	}
+	if live != nil {
+		embed.Description = panelStateLine(loc, *live)
+		if ch := panelChannelLines(*live); ch != "" {
+			embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.channels"), Value: ch})
+		}
+	}
+	if accessOn {
+		value := loc.T("panel.access.open")
+		if !open {
+			value = loc.T("panel.access.restricted", "Role", h.accessRoleMention(guildID))
+		}
+		embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.access"), Value: value})
+	}
+	help := []string{loc.T("panel.help.start"), loc.T("panel.help.stop")}
+	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
+		help = append(help, loc.T("panel.help.squads"))
+	}
+	if sortOn {
+		help = append(help, loc.T("panel.help.sort", "Waiting", sorter.ClassSortWaiting()))
+	}
+	if h.dynamicChannels() {
+		help = append(help, loc.T("panel.help.channels", "Category", h.rvr.ChannelCategory()))
+	}
+	embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.help"), Value: strings.Join(help, "\n")})
+
 	return discord.MessageCreate{
-		Content:         b.String(),
+		Embeds:          []discord.Embed{embed},
 		Components:      rows,
 		AllowedMentions: &discord.AllowedMentions{},
 	}
 }
 
-// panelLiveLines is the state block at the top of the panel: running or not,
-// since when (Discord renders the timestamp in each viewer's language and
-// time zone), and how many people sit in each raid channel.
-func panelLiveLines(loc *i18n.Localizer, st manager.PanelStatus) string {
+// panelStateLine says whether a raid runs and since when (Discord renders
+// the timestamp in each viewer's language and time zone).
+func panelStateLine(loc *i18n.Localizer, st manager.PanelStatus) string {
 	if !st.Running {
 		return loc.T("panel.live.idle")
 	}
 	line := loc.T("panel.live.running")
 	if !st.Since.IsZero() {
-		line += " " + loc.T("panel.live.since", "Since", fmt.Sprintf("<t:%d:R>", st.Since.Unix()))
+		line += ", " + loc.T("panel.live.since", "Since", fmt.Sprintf("<t:%d:R>", st.Since.Unix()))
 	}
-	var counts []string
+	return line
+}
+
+// panelChannelLines lists the raid channels with the people in each, one per
+// line, "" when the raid has no channels.
+func panelChannelLines(st manager.PanelStatus) string {
+	var lines []string
 	add := func(c manager.ChannelCount) {
 		if c.ChannelID != 0 {
-			counts = append(counts, fmt.Sprintf("<#%s> **%d**", c.ChannelID, c.Members))
+			lines = append(lines, fmt.Sprintf("<#%s>  **%d**", c.ChannelID, c.Members))
 		}
 	}
 	add(st.RaidLead)
@@ -136,10 +183,7 @@ func panelLiveLines(loc *i18n.Localizer, st manager.PanelStatus) string {
 		add(c)
 	}
 	add(st.Waiting)
-	if len(counts) > 0 {
-		line += "\n" + strings.Join(counts, " · ")
-	}
-	return line
+	return strings.Join(lines, "\n")
 }
 
 func (h *CommandHandlers) handlePanelStart(guildID snowflake.ID, loc *i18n.Localizer, _ discord.ButtonInteractionData, e *handler.ComponentEvent) error {

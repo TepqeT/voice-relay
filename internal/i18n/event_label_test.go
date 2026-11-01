@@ -58,7 +58,7 @@ func TestCustomEventLabel(t *testing.T) {
 	}
 	b.SetEventLabel(" GvG ")
 	got := b.For("fr", "").T("raid.already_active")
-	if got != "⚠️ Un raid GvG est déjà actif sur ce serveur." {
+	if got != "Un raid GvG est déjà actif sur ce serveur." {
 		t.Fatalf("got %q", got)
 	}
 	b.SetEventLabel("")

@@ -43,8 +43,8 @@ func TestBuildPanel(t *testing.T) {
 	if start.CustomID != panelStartID || start.Label != "Lancer le raid" {
 		t.Fatalf("start button %+v", start)
 	}
-	if !strings.Contains(msg.Content, "Chefs d'escouade") {
-		t.Fatalf("content %q", msg.Content)
+	if !strings.Contains(panelText(msg), "Chefs d'escouade") {
+		t.Fatalf("content %q", panelText(msg))
 	}
 }
 
@@ -56,8 +56,8 @@ func TestBuildPanelDynamicChannels(t *testing.T) {
 	h := &CommandHandlers{bundle: bundle}
 	h.SetRvR(fakeRvR{dynamic: true})
 	loc := bundle.For("fr", "")
-	if msg := h.buildPanel(1, loc); !strings.Contains(msg.Content, "RvR Asmodiens") {
-		t.Fatalf("panel must name the category: %q", msg.Content)
+	if msg := h.buildPanel(1, loc); !strings.Contains(panelText(msg), "RvR Asmodiens") {
+		t.Fatalf("panel must name the category: %q", panelText(msg))
 	}
 	line := h.raidChannelsLine(1, loc)
 	if !strings.Contains(line, "<#7>") || !strings.Contains(line, "2 ") {
@@ -72,8 +72,8 @@ func TestBuildPanelWithoutSquadLeads(t *testing.T) {
 	}
 	h := &CommandHandlers{bundle: bundle}
 	msg := h.buildPanel(1, bundle.For("en", ""))
-	if len(msg.Components) != 1 || strings.Contains(msg.Content, "Squad leads") {
-		t.Fatalf("panel without squad leads: %d rows, %q", len(msg.Components), msg.Content)
+	if len(msg.Components) != 1 || strings.Contains(panelText(msg), "Squad leads") {
+		t.Fatalf("panel without squad leads: %d rows, %q", len(msg.Components), panelText(msg))
 	}
 }
 

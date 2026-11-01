@@ -61,10 +61,12 @@ services:
       <<: *rvr-env
       # Pas de faction : la categorie s'appelle "RvR" et les commandes
       # "RvR: ..." (en francais pour les clients Discord en francais). Le role
-      # d'acces est cree par le bot depuis le site (etape Roles) et accorde
-      # par le Board : clic droit > Applications. Noms en anglais par defaut.
+      # d'acces est cree par le bot depuis le site (etape Roles). Les Raid
+      # Leads et Squad Leads valident les demandes depuis le panneau et
+      # peuvent ouvrir le raid a tout le monde. BOARD_ROLE (facultatif) ajoute
+      # un role de plus qui valide les acces.
       ACCESS_ROLE: "Raid Access"
-      BOARD_ROLE: "Raid Board"
+      # BOARD_ROLE: "Raid Board"
       # Site d'administration (v29), joint par caddy sur le reseau interne
       # uniquement. DISCORD_CLIENT_SECRET vient de .env.
       WEB_ADDR: ":8080"

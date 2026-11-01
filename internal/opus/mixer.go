@@ -134,9 +134,15 @@ type notifier interface{ SetNotify(func()) }
 // is running behind the live edge (network burst, scheduler hiccup); one
 // frame is dropped to catch up. Opus concealment hides a single 20 ms gap far
 // better than listeners tolerate a permanent extra 20 to 40 ms of delay.
+//
+// Grace: when the grid tick comes while one of the current speakers has not
+// delivered yet but another has, the tick waits up to graceWait for the late
+// packet, so two raid leads keep being mixed instead of alternating solo
+// frames on network jitter.
 const (
 	minTickGap     = 15 * time.Millisecond
 	trimAfterTicks = 5
+	graceWait      = 6 * time.Millisecond
 )
 
 // Mixer receives Opus frames from multiple named input channels, mixes their PCM,
@@ -283,6 +289,23 @@ func (m *Mixer) readyEarly() bool {
 	return some && !waiting
 }
 
+// waitingForSpeaker reports whether a speaker of the last tick has not
+// delivered yet while another input already has a frame.
+func (m *Mixer) waitingForSpeaker() bool {
+	if m.paused.Load() {
+		return false
+	}
+	some, waiting := false, false
+	for _, e := range m.readInputsSnapshot() {
+		has := e.src.Len() > 0
+		some = some || has
+		if e.active && !has {
+			waiting = true
+		}
+	}
+	return some && waiting
+}
+
 // rebuildSnapLocked rebuilds the immutable inputs snapshot read by tick. Must
 // be called with m.mu held. Allocates a fresh slice (cheap relative to the
 // rarity of input changes vs. the 50 Hz tick rate).
@@ -369,6 +392,7 @@ func (m *Mixer) Run(ctx context.Context) {
 
 	deadline := time.Now()
 	var last time.Time
+	graced := false // the current grid tick already waited for a late speaker
 	fire := func() {
 		start := time.Now()
 		if err := m.tick(); err != nil {
@@ -396,8 +420,14 @@ func (m *Mixer) Run(ctx context.Context) {
 			fire()
 			deadline = time.Now()
 		case <-timer.C:
+			if !graced && m.waitingForSpeaker() {
+				graced = true
+				timer.Reset(graceWait)
+				continue
+			}
 			fire()
 		}
+		graced = false
 
 		deadline = deadline.Add(mixerFrameDur)
 		next := time.Until(deadline)
