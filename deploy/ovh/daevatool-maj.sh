@@ -3,7 +3,8 @@
 # - dossier /srv/daevatool-maj/<chemin aleatoire> (rien d'autre dans /srv/daevatool-maj), servi par Caddy sous https://<SITE_DOMAIN>/maj/<chemin>/
 # - compte daevatool-maj : sftp seulement, par une cle reservee a GitHub Actions
 # - cle de signature ECDSA P-256 : la partie privee va dans les secrets GitHub, puis est effacee de la VM
-# Affiche les valeurs a recopier dans GitHub (rien n'est envoye nulle part).
+# Ecrit les valeurs a recopier dans GitHub dans SECRETS_FILE (root seulement, jamais affichees :
+# un agent qui lance le script ne voit pas les cles privees). L'admin l'affiche lui-meme, puis l'efface.
 # Phase 1 : APPLY=false (defaut) verifie et affiche. Phase 2 : sudo APPLY=true ./daevatool-maj.sh
 # Relance : garde le chemin et les cles ; NOUVELLES_CLES=true pour les refaire.
 set -euo pipefail
@@ -15,6 +16,7 @@ BASE="/srv/daevatool-maj"
 MAJ_USER="daevatool-maj"
 MAJ_HOME="/home/daevatool-maj"          # hors du dossier servi : la cle publique et le shell n'y sont pas exposes
 CHEMIN_FILE="/etc/daevatool-maj.chemin"
+SECRETS_FILE="/root/daevatool-secrets.txt"
 VR_DIR="/opt/voice-relay"
 VR_USER="voicerelay"
 # ---------------------------------------------------------------------------
@@ -78,7 +80,8 @@ openssl ecparam -name prime256v1 -genkey -noout -out "$TMP/sign.pem" 2>/dev/null
 PUB="$(openssl ec -in "$TMP/sign.pem" -pubout -outform DER 2>/dev/null | base64 -w0)"
 KH="$(for k in /etc/ssh/ssh_host_*_key.pub; do echo "$DOMAIN $(cut -d' ' -f1,2 "$k")"; done)"
 
-cat <<FIN
+umask 077
+cat > "$SECRETS_FILE" <<FIN
 
 ================================================================
 A recopier dans GitHub : depot TepqeT/DaevaTool > Settings
@@ -109,7 +112,13 @@ Onglet Variables, "New repository variable" (pas secret) :
 UPDATE_PUBKEY
 $PUB
 ================================================================
-Les cles privees ci-dessus sont effacees de la VM a la fin du script.
+Effacer ce fichier apres usage : sudo shred -u $SECRETS_FILE
 Premier telechargement de l'outil (apres la 1re publication) :
 https://$DOMAIN/maj/$CHEMIN/DaevaTool.exe
 FIN
+chmod 600 "$SECRETS_FILE"
+echo "Valeurs ecrites dans $SECRETS_FILE (root seulement). A afficher par l'admin lui-meme :"
+echo "  sudo cat $SECRETS_FILE"
+echo "puis, une fois recopiees dans GitHub :"
+echo "  sudo shred -u $SECRETS_FILE"
+echo "Adresse publique (sans secret) : https://$DOMAIN/maj/<chemin>/ ; variable UPDATE_PUBKEY : $PUB"
