@@ -34,7 +34,7 @@ FROM builder AS test
 
 ENV LD_LIBRARY_PATH="/root/.local/lib"
 WORKDIR /src
-RUN go vet ./... && go test -count=1 ./...
+RUN test -z "$(gofmt -l .)" && go vet ./... && go test -race -count=1 ./...
 
 FROM builder AS sec
 

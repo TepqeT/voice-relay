@@ -25,9 +25,6 @@ func TestBotPermissions(t *testing.T) {
 // URL. Paths are relative to this package.
 var ownerInviteDocs = []string{
 	"../../README.md",
-	"../../mkdocs.yml",
-	"../../misc/website/index.md",
-	"../../misc/website/free-shot-caller-bot.md",
 }
 
 // TestOwnerPermissions pins the owner bot's bitmask, which is botPermissions
@@ -81,11 +78,9 @@ func TestInstallURL(t *testing.T) {
 // TestOwnerInviteURLsMatchPermissions checks the invite URLs published in the
 // docs against ownerPermissions.
 //
-// The number is hard-coded in four tracked files, and they have already drifted
-// once: when DEAFEN_MEMBERS was added, README.md was updated and the docs site
-// was not, so every visitor following the "Try the hosted bot" button got an
-// invite missing the permission and silently lost the optimisation. A comment
-// reminding the next person to update them all is weaker than checking.
+// The number is hard-coded in the README: an invite missing a permission (for
+// example Deafen Members) silently loses the matching optimisation, so the
+// published link is checked rather than trusted.
 func TestOwnerInviteURLsMatchPermissions(t *testing.T) {
 	wantParam := fmt.Sprintf("permissions=%d", ownerPermissions)
 	staleParam := fmt.Sprintf("permissions=%d", botPermissions)

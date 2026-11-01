@@ -674,7 +674,7 @@ func loadChannelState(path string) map[snowflake.ID]RaidChannels {
 	if path == "" {
 		return byGuild
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- operator-configured state file
 	if err != nil {
 		if !os.IsNotExist(err) {
 			slog.Warn("failed to read raid channel state", slog.String("path", path), slog.Any("err", err))

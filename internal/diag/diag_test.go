@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -313,5 +314,14 @@ func TestSourceStatsResetKeepsMutexUsable(t *testing.T) {
 	s.observe(5, 960, time.Unix(1001, 0))
 	if snap := s.take("u"); snap.Packets != 1 || snap.Lost != 0 {
 		t.Fatalf("after reset: %+v", snap)
+	}
+}
+
+func TestOverlapPeakSaturates(t *testing.T) {
+	var o overlapCounter
+	o.add(3, time.Unix(0, 0))
+	o.add(math.MaxInt32+10, time.Unix(1, 0))
+	if got := o.peak.Load(); got != math.MaxInt32 {
+		t.Fatalf("peak = %d, want MaxInt32", got)
 	}
 }

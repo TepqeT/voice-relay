@@ -226,7 +226,7 @@ func Compute(guildID, mode string, outputs int, before, after Snapshot) Report {
 		r.FramesDropped += d.value
 	}
 	if recv := histDelta(b[metricReceive], a[metricReceive], guild); recv != nil {
-		r.FramesReceived = int64(recv.count)
+		r.FramesReceived = clampInt64(recv.count)
 	}
 	r.VoiceSec = float64(r.FramesReceived) * frameDurationSecs
 	if r.FramesReceived > 0 {
@@ -234,7 +234,7 @@ func Compute(guildID, mode string, outputs int, before, after Snapshot) Report {
 	}
 
 	if lat := histDelta(b[metricPipeline], a[metricPipeline], guild); lat != nil && lat.count > 0 {
-		r.LatencySamples = int64(lat.count)
+		r.LatencySamples = clampInt64(lat.count)
 		r.LatencyP50Ms = lat.quantile(0.50)
 		r.LatencyP95Ms = lat.quantile(0.95)
 		r.LatencyP99Ms = lat.quantile(0.99)
@@ -504,4 +504,13 @@ func gaugeMax(a metricdata.Aggregation) float64 {
 	}
 	sort.Float64s(vals)
 	return vals[len(vals)-1]
+}
+
+// clampInt64 converts a histogram count to int64, saturating instead of
+// wrapping on (theoretical) overflow.
+func clampInt64(u uint64) int64 {
+	if u > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(u) // #nosec G115 -- bounded by the check above
 }

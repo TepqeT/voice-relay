@@ -64,7 +64,7 @@ func (s *SourceStats) observe(seq uint16, ts uint32, at time.Time) {
 		s.lastSeq, s.lastTS, s.lastArrival = seq, ts, at
 		return
 	}
-	delta := int16(seq - s.lastSeq) // wraps correctly over 65535
+	delta := int16(seq - s.lastSeq) // #nosec G115 -- intentional wrap: RTP sequence numbers roll over at 65535
 	switch {
 	case delta == 0:
 		s.dup++
@@ -99,7 +99,7 @@ func (s *SourceStats) observe(seq uint16, ts uint32, at time.Time) {
 			s.maxGapMs = ms
 		}
 		// RFC 3550 section 6.4.1, with the 48 kHz RTP clock.
-		sent := float64(int32(ts-s.lastTS)) / 48.0
+		sent := float64(int32(ts-s.lastTS)) / 48.0 // #nosec G115 -- intentional wrap: RTP timestamps roll over
 		d := math.Abs(ms - sent)
 		s.jitterMs += (d - s.jitterMs) / 16
 		if s.jitterMs > s.maxJitterMs {

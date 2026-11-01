@@ -1,6 +1,7 @@
 package diag
 
 import (
+	"math"
 	"sync/atomic"
 	"time"
 )
@@ -31,9 +32,13 @@ func (o *overlapCounter) add(sources int, now time.Time) {
 	if n-last >= int64(15*time.Millisecond) && o.last.CompareAndSwap(last, n) {
 		o.frames.Add(1)
 	}
+	n32 := int32(math.MaxInt32)
+	if sources < math.MaxInt32 {
+		n32 = int32(sources) // #nosec G115 -- bounded by the check above
+	}
 	for {
 		p := o.peak.Load()
-		if int32(sources) <= p || o.peak.CompareAndSwap(p, int32(sources)) {
+		if n32 <= p || o.peak.CompareAndSwap(p, n32) {
 			return
 		}
 	}
