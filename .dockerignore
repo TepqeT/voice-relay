@@ -1,0 +1,9 @@
+# Build context: the Go sources only. Secrets and runtime data never enter
+# the image (deploy/ovh holds .env and the bot's data on the VPS).
+.git
+deploy/
+**/.env
+**/.env.*
+data*/
+logs/
+*.log
