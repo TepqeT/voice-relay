@@ -50,6 +50,16 @@ x-rvr-env: &rvr-env
   SQUAD_COUNT: "5"
   # Region vocale Discord commune a tous les salons (vide = automatique)
   VOICE_REGION: ""
+  # Tri automatique par classe (v27). Vide = desactive, rien ne change.
+  # Les joueurs prennent UN role de classe et rejoignent le salon d'attente ;
+  # pendant un raid, le bot les deplace dans les escouades (bouton "Repartir"
+  # du panneau ou automatiquement a leur arrivee). Chefs d'escouade jamais deplaces.
+  # CLASS_ROLES: "Gladiateur, Templier, Assassin, Rodeur, Sorcier, Spiritualiste, Clerc, Aede"
+  # WAITING_CHANNEL: "Attente"
+  # Regle : balanced (equilibre) ; "balanced; max=6" limite chaque escouade ;
+  # quotas : "Clerc=2; Templier=1; *=1" (* = autres classes, absent = non placees),
+  # "Clerc=2/1" = 2 dans l'escouade 1 puis 1 dans les suivantes.
+  # CLASS_RULE: "balanced"
 
 services:
   # Asmodiens : Voix de Pandaemonium + Heraut d'Asmodae 1 a 5 (tokens dans .env)

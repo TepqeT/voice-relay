@@ -2,6 +2,7 @@ package config
 
 import (
 	"log/slog"
+	"reflect"
 	"testing"
 	"time"
 
@@ -80,7 +81,7 @@ func TestStorePath(t *testing.T) {
 
 func TestLoadRvRDefaults(t *testing.T) {
 	for _, k := range []string{"PRIORITY_SPEAKER", "SOUNDS_DIR", "SOUND_ON_START", "SOUND_ON_STOP", "REPORTS_DIR", "REPORT_LANG", "REPORT_TO_DISCORD", "DIAG_DIR", "DIAG_INTERVAL", "SQUAD_LEAD_ROLE", "SQUAD_LEAD_KEY", "RAID_LEAD_ROLE", "SQUAD_LEADS_TO_SQUADS",
-		"DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION", "RVR_CATEGORY_AFTER", "ACCESS_ROLE", "BOARD_ROLE", "ACCESS_CHANNEL"} {
+		"DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION", "RVR_CATEGORY_AFTER", "ACCESS_ROLE", "BOARD_ROLE", "ACCESS_CHANNEL", "CLASS_ROLES", "WAITING_CHANNEL", "CLASS_RULE"} {
 		t.Setenv(k, "")
 	}
 	got := loadRvR("/data/store.yaml")
@@ -103,9 +104,10 @@ func TestLoadRvRDefaults(t *testing.T) {
 			SquadName:    "Escouade",
 			SquadCount:   10,
 			StateFile:    "/data/rvr-channels.json",
+			ClassRule:    "balanced",
 		},
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("loadRvR defaults = %+v, want %+v", got, want)
 	}
 }
@@ -154,5 +156,29 @@ func TestLoadChannels(t *testing.T) {
 	t.Setenv("SQUAD_COUNT", "4")
 	if c = loadChannels("store.yaml"); c.FactionRole != "" || c.SquadCount != 4 {
 		t.Fatalf("overrides = %+v", c)
+	}
+}
+
+func TestLoadClassSort(t *testing.T) {
+	for _, k := range []string{"CLASS_ROLES", "WAITING_CHANNEL", "CLASS_RULE"} {
+		t.Setenv(k, "")
+	}
+	c := loadChannels("store.yaml")
+	if len(c.ClassRoles) != 0 || c.WaitingChannel != "" || c.ClassRule != "balanced" {
+		t.Fatalf("defaults = %+v", c)
+	}
+	t.Setenv("CLASS_ROLES", " Templier, Clerc ;;123456789012345678 ,")
+	t.Setenv("WAITING_CHANNEL", "#Attente")
+	t.Setenv("CLASS_RULE", "Clerc=2; *=1")
+	c = loadChannels("store.yaml")
+	if got, want := c.ClassRoles, []string{"Templier", "Clerc", "123456789012345678"}; len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("ClassRoles = %q, want %q", got, want)
+	}
+	if c.WaitingChannel != "Attente" || c.ClassRule != "Clerc=2; *=1" {
+		t.Fatalf("overrides = %+v", c)
+	}
+	t.Setenv("CLASS_ROLES", "none")
+	if c = loadChannels("store.yaml"); len(c.ClassRoles) != 0 {
+		t.Fatalf("none = %q", c.ClassRoles)
 	}
 }

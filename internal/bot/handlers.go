@@ -157,7 +157,16 @@ func onVoiceJoin(m ManagerService) func(*events.GuildVoiceJoin) {
 		// (cascade ∧ listener check folded together — Plan §3.6 final).
 		if e.VoiceState.ChannelID != nil {
 			m.AutoRoute(guildID, *e.VoiceState.ChannelID)
+			notifyClassSort(m, guildID, *e.VoiceState.ChannelID)
 		}
+	}
+}
+
+// notifyClassSort lets the manager sort a member who entered the waiting
+// channel. Asserted so the ManagerService test doubles stay valid.
+func notifyClassSort(m ManagerService, guildID, channelID snowflake.ID) {
+	if s, ok := m.(classSortTrigger); ok {
+		s.OnVoiceChannelJoin(guildID, channelID)
 	}
 }
 
@@ -211,6 +220,7 @@ func onVoiceMove(m ManagerService) func(*events.GuildVoiceMove) {
 		}
 		if e.VoiceState.ChannelID != nil {
 			m.AutoRoute(guildID, *e.VoiceState.ChannelID)
+			notifyClassSort(m, guildID, *e.VoiceState.ChannelID)
 		}
 	}
 }

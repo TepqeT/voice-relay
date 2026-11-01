@@ -10,6 +10,7 @@ import (
 
 	"github.com/TepqeT/voice-relay/internal/ally"
 	"github.com/TepqeT/voice-relay/internal/announce"
+	"github.com/TepqeT/voice-relay/internal/classsort"
 	"github.com/TepqeT/voice-relay/internal/config"
 	"github.com/TepqeT/voice-relay/internal/dave"
 	"github.com/TepqeT/voice-relay/internal/diag"
@@ -228,6 +229,16 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		BoardRole:     ch.BoardRole,
 		AccessChannel: ch.AccessChannel,
 	})
+	if rule, err := classsort.ParseRule(ch.ClassRule); err != nil {
+		slog.Warn("invalid CLASS_RULE, class sorting disabled", slog.String("value", ch.ClassRule), slog.Any("err", err))
+	} else {
+		managerSvc.ConfigureClassSort(manager.ClassSortOptions{
+			ClassRoles: ch.ClassRoles,
+			Waiting:    ch.WaitingChannel,
+			Rule:       rule,
+			RuleText:   ch.ClassRule,
+		})
+	}
 	slog.Info("rvr settings",
 		slog.Bool("prioritySpeaker", cfg.RvR.PrioritySpeaker),
 		slog.Int("sounds", sounds.Len()),
