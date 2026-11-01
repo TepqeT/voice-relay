@@ -59,12 +59,13 @@ type panelKeeper struct {
 	state map[snowflake.ID]panelState
 	busy  map[snowflake.ID]bool   // an Ensure is running for the guild
 	shown map[snowflake.ID]string // last panel sent, to skip identical edits
+	fixed map[snowflake.ID]bool   // overwrites of a created channel refreshed this run
 	retry *ratelimit.Limiter      // spaces the attempts on servers without a panel
 }
 
 func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func() snowflake.ID, build func(snowflake.ID) discord.MessageCreate, file string) *panelKeeper {
 	k := &panelKeeper{name: strings.TrimSpace(name), rest: r, caches: caches, selfID: selfID, build: build, file: file,
-		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}, shown: map[snowflake.ID]string{},
+		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}, shown: map[snowflake.ID]string{}, fixed: map[snowflake.ID]bool{},
 		retry: ratelimit.New(5*time.Minute, 1)}
 	if file != "" {
 		if b, err := os.ReadFile(file); err == nil {
@@ -131,6 +132,7 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 		st = panelState{ChannelID: channelID} // an existing channel the server made
 	}
 
+	k.refreshOverwrites(ctx, guildID, channelID, st.Created)
 	if k.onboard != nil {
 		k.onboard(ctx, guildID, parent, channelID)
 	}
@@ -315,12 +317,34 @@ func (k *panelKeeper) findChannel(guildID, remembered snowflake.ID) snowflake.ID
 // the panel and click its buttons) and writable for the bot.
 func (k *panelKeeper) overwrites(guildID snowflake.ID) []discord.PermissionOverwrite {
 	ow := []discord.PermissionOverwrite{
-		discord.RolePermissionOverwrite{RoleID: guildID, Deny: discord.PermissionSendMessages | discord.PermissionCreatePublicThreads | discord.PermissionCreatePrivateThreads | discord.PermissionAddReactions},
+		// View is allowed explicitly: on servers where @everyone cannot see
+		// channels by default, the panel would stay hidden, and Discord
+		// refuses an onboarding default channel @everyone cannot see.
+		discord.RolePermissionOverwrite{RoleID: guildID,
+			Allow: discord.PermissionViewChannel | discord.PermissionReadMessageHistory,
+			Deny:  discord.PermissionSendMessages | discord.PermissionCreatePublicThreads | discord.PermissionCreatePrivateThreads | discord.PermissionAddReactions},
 	}
 	if self := k.selfID(); self != 0 {
 		ow = append(ow, discord.MemberPermissionOverwrite{UserID: self, Allow: discord.PermissionViewChannel | discord.PermissionSendMessages | discord.PermissionEmbedLinks})
 	}
 	return maskPanelOverwrites(ow, k.grantable(guildID))
+}
+
+// refreshOverwrites sets, once per run, the current overwrites on a panel
+// channel the bot created, so channels made by an older version get the
+// rules of this one. A channel the server made is left as it is.
+func (k *panelKeeper) refreshOverwrites(ctx context.Context, guildID, channelID snowflake.ID, created bool) {
+	k.mu.Lock()
+	done := k.fixed[guildID]
+	k.fixed[guildID] = true
+	k.mu.Unlock()
+	if done || !created || channelID == 0 {
+		return
+	}
+	ow := k.overwrites(guildID)
+	if _, err := k.rest.UpdateChannel(channelID, discord.GuildTextChannelUpdate{PermissionOverwrites: &ow}, rest.WithCtx(ctx), rest.WithReason("Voice Relay control panel")); err != nil {
+		slog.Warn("panel channel: overwrites not refreshed", slog.String("guildID", guildID.String()), slog.Any("err", err))
+	}
 }
 
 // grantable is what the bot may put in an overwrite: Discord refuses

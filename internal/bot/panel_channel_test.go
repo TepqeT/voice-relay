@@ -37,6 +37,7 @@ type fakePanelRest struct {
 	updated    []snowflake.ID // message updated
 	lostUpdate bool           // the next update answers Unknown Message
 	moved      []snowflake.ID
+	reperm     []snowflake.ID // channels whose overwrites were replaced
 }
 
 func (f *fakePanelRest) CreateGuildChannel(guildID snowflake.ID, c discord.GuildChannelCreate, _ ...rest.RequestOpt) (discord.GuildChannel, error) {
@@ -48,6 +49,10 @@ func (f *fakePanelRest) CreateGuildChannel(guildID snowflake.ID, c discord.Guild
 	return ch, nil
 }
 func (f *fakePanelRest) UpdateChannel(id snowflake.ID, c discord.ChannelUpdate, _ ...rest.RequestOpt) (discord.Channel, error) {
+	if u, ok := c.(discord.GuildTextChannelUpdate); ok && u.PermissionOverwrites != nil {
+		f.reperm = append(f.reperm, id)
+		return nil, nil
+	}
 	f.moved = append(f.moved, id)
 	return nil, nil
 }
@@ -207,5 +212,30 @@ func TestPanelChannelOverwritesWithinBotPermissions(t *testing.T) {
 		if p.Has(discord.PermissionEmbedLinks) || p.Has(discord.PermissionCreatePublicThreads) {
 			t.Fatalf("overwrite %+v carries a permission the bot does not hold", ow)
 		}
+	}
+}
+
+// The panel is visible to @everyone explicitly, and a channel the bot made
+// before gets the current overwrites once after a restart.
+func TestPanelChannelVisibleToEveryone(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "panel.json")
+	k, fr, _ := newTestKeeper(t, file)
+	k.Ensure(context.Background(), panelGuild)
+	visible := false
+	for _, ow := range fr.created[0].PermissionOverwrites {
+		if r, ok := ow.(discord.RolePermissionOverwrite); ok && r.RoleID == panelGuild && r.Allow.Has(discord.PermissionViewChannel) {
+			visible = true
+		}
+	}
+	if !visible {
+		t.Fatal("@everyone must be allowed to view the panel channel")
+	}
+	chID := fr.posted[0]
+	k2, fr2, caches2 := newTestKeeper(t, file)
+	caches2.AddChannel(textChannel(t, chID, "raid-panel"))
+	k2.Ensure(context.Background(), panelGuild)
+	k2.Ensure(context.Background(), panelGuild)
+	if len(fr2.reperm) != 1 || fr2.reperm[0] != chID {
+		t.Fatalf("overwrites refreshed on %v, want once on %d", fr2.reperm, chID)
 	}
 }
