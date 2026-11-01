@@ -21,6 +21,24 @@ type Backend interface {
 	CanManage(guildID, userID snowflake.ID) (allowed, known bool)
 	// SetupRoles creates the missing roles of guildID.
 	SetupRoles(ctx context.Context, guildID snowflake.ID) (SetupReport, error)
+	// BotGuilds lists the servers the owner bot is in, for the admin page.
+	BotGuilds() []GuildRef
+	// ServerFacts describes guildID as seen from userID, to spot lending.
+	ServerFacts(guildID, userID snowflake.ID) ServerFacts
+}
+
+// ServerFacts is what the bot knows of a server and a subscriber in it.
+type ServerFacts struct {
+	BotPresent  bool
+	MemberCount int
+	Member      bool // the subscriber is a member of the server
+	Manages     bool // the subscriber has Manage Server there
+}
+
+// GuildRef names a server.
+type GuildRef struct {
+	ID   snowflake.ID
+	Name string
 }
 
 // GuildStatus is the installation state of one server.
@@ -28,7 +46,7 @@ type GuildStatus struct {
 	BotPresent         bool
 	BotInviteURL       string // locked to the server
 	Heralds            []BotStatus
-	MissingPermissions []string
+	MissingPermissions []string // keys translated by the site: perm.<key>
 	Roles              []RoleStatus
 }
 

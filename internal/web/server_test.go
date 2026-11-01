@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/subscription"
 )
 
 const (
@@ -21,11 +23,24 @@ const (
 )
 
 type fakeBackend struct {
-	canManage map[snowflake.ID]bool // absent = unknown
+	facts     map[snowflake.ID]ServerFacts // by guild; default: bot present, holder manages
+	canManage map[snowflake.ID]bool        // absent = unknown
 	setups    []snowflake.ID
+	srv       *Server
+	subs      *subscription.Store
+}
+
+func (f *fakeBackend) BotGuilds() []GuildRef {
+	return []GuildRef{{ID: managedGuild, Name: "Zeta"}, {ID: 444, Name: "Test Server"}}
 }
 
 func (f *fakeBackend) BotName() string { return "Voix de Test" }
+func (f *fakeBackend) ServerFacts(g, _ snowflake.ID) ServerFacts {
+	if sf, ok := f.facts[g]; ok {
+		return sf
+	}
+	return ServerFacts{BotPresent: true, MemberCount: 50, Member: true, Manages: true}
+}
 func (f *fakeBackend) GuildStatus(id snowflake.ID) GuildStatus {
 	return GuildStatus{
 		BotPresent:   id == managedGuild,
@@ -81,12 +96,14 @@ func fakeDiscord(t *testing.T) *httptest.Server {
 func newTestSite(t *testing.T) (*httptest.Server, *fakeBackend, *http.Client) {
 	t.Helper()
 	discord := fakeDiscord(t)
-	be := &fakeBackend{canManage: map[snowflake.ID]bool{}}
+	be := &fakeBackend{canManage: map[snowflake.ID]bool{}, facts: map[snowflake.ID]ServerFacts{}}
 	var site *httptest.Server
-	s, err := New(Config{Addr: ":0", BaseURL: "http://placeholder", ClientID: 42, ClientSecret: "secret"}, be)
+	subs, _ := subscription.Open("")
+	s, err := New(Config{Addr: ":0", BaseURL: "http://placeholder", ClientID: 42, ClientSecret: "secret"}, be, subs)
 	if err != nil {
 		t.Fatal(err)
 	}
+	be.srv, be.subs = s, subs
 	site = httptest.NewServer(s.Handler())
 	t.Cleanup(site.Close)
 	s.oauth.apiBase = discord.URL
@@ -267,7 +284,8 @@ func TestGuildStatusReady(t *testing.T) {
 }
 
 func TestNewRejectsRelativeBaseURL(t *testing.T) {
-	if _, err := New(Config{BaseURL: "relais.example"}, &fakeBackend{}); err == nil {
+	subs, _ := subscription.Open("")
+	if _, err := New(Config{BaseURL: "relais.example"}, &fakeBackend{}, subs); err == nil {
 		t.Fatal("relative base URL accepted")
 	}
 }
@@ -296,6 +314,284 @@ func TestPagesRespectCSPAndShowScenes(t *testing.T) {
 	}
 }
 
+func TestAdminReservedToAdmins(t *testing.T) {
+	site, _, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	if code, _ := get(t, c, site.URL+"/admin"); code != http.StatusForbidden {
+		t.Fatalf("/admin for a non-admin = %d", code)
+	}
+	if code, body := get(t, c, site.URL+"/servers"); code != http.StatusOK || strings.Contains(body, "Administration") {
+		t.Fatal("admin link shown to a non-admin")
+	}
+}
+
+func TestAdminGrantsAccountSubscription(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.srv.AddAdmins(7) // the signed-in user of fakeDiscord
+	signIn(t, site, c, "good")
+	code, page := get(t, c, site.URL+"/admin")
+	if code != http.StatusOK {
+		t.Fatalf("/admin = %d", code)
+	}
+	csrf := csrfRe.FindStringSubmatch(page)[1]
+
+	resp, err := c.PostForm(site.URL+"/admin/grant", url.Values{"csrf": {csrf}, "user_id": {"7"}, "user_name": {"Alice"}, "plan": {"lifetime"}, "note": {"partenaire"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Header.Get("Location") != "/admin?ok=granted" {
+		t.Fatalf("grant redirect = %q", resp.Header.Get("Location"))
+	}
+	sub, ok := be.subs.Get(7)
+	if !ok || sub.Plan != subscription.PlanLifetime || !sub.Gift || sub.GrantedBy != 7 || sub.Note != "partenaire" || sub.MaxGuilds != 0 {
+		t.Fatalf("subscription = %+v", sub)
+	}
+
+	resp, _ = c.PostForm(site.URL+"/admin/grant", url.Values{"csrf": {csrf}, "user_id": {"8"}, "plan": {"until"}, "until": {"2099-12-31"}, "max_guilds": {"2"}})
+	if resp.Header.Get("Location") != "/admin?ok=granted" {
+		t.Fatalf("until grant redirect = %q", resp.Header.Get("Location"))
+	}
+	if sub, _ := be.subs.Get(8); sub.Plan != subscription.PlanUntil || sub.MaxGuilds != 2 || sub.LastDay().Format("2006-01-02") != "2099-12-31" {
+		t.Fatalf("until = %+v", sub)
+	}
+	if _, body := get(t, c, site.URL+"/admin"); !strings.Contains(body, "Jusqu&#39;au 31/12/2099 (offert)") || !strings.Contains(body, "À vie (offert)") {
+		t.Fatalf("admin list:\n%s", body)
+	}
+
+	for _, bad := range []url.Values{
+		{"csrf": {csrf}, "user_id": {"abc"}, "plan": {"lifetime"}},
+		{"csrf": {csrf}, "user_id": {"9"}, "plan": {"until"}, "until": {"2001-01-01"}},
+		{"csrf": {csrf}, "user_id": {"9"}},
+		{"csrf": {csrf}, "user_id": {"9"}, "plan": {"lifetime"}, "max_guilds": {"-1"}},
+	} {
+		resp, _ := c.PostForm(site.URL+"/admin/grant", bad)
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" {
+			t.Errorf("bad grant %v accepted", bad)
+		}
+	}
+	if _, ok := be.subs.Get(9); ok {
+		t.Fatal("invalid grant stored")
+	}
+
+	resp, _ = c.PostForm(site.URL+"/admin/revoke", url.Values{"csrf": {csrf}, "user_id": {"8"}})
+	if resp.Header.Get("Location") != "/admin?ok=revoked" {
+		t.Fatal("revoke failed")
+	}
+	resp, _ = c.PostForm(site.URL+"/admin/revoke", url.Values{"csrf": {"forged"}, "user_id": {"7"}})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatal("revoke without CSRF token")
+	}
+}
+
+// A subscriber activates their subscription on several servers they manage.
+func TestSubscriberActivatesOnSeveralServers(t *testing.T) {
+	site, be, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/servers")
+	if !strings.Contains(page, "Vous n&#39;avez pas d&#39;abonnement.") || strings.Contains(page, "Activer mon abonnement ici") {
+		t.Fatalf("no subscription expected:\n%s", page)
+	}
+	csrf := csrfRe.FindStringSubmatch(page)[1]
+	resp, _ := c.PostForm(site.URL+"/servers/111/activate", url.Values{"csrf": {csrf}})
+	if resp.Header.Get("Location") != "/servers?err=nosub" {
+		t.Fatalf("activation without subscription = %q", resp.Header.Get("Location"))
+	}
+
+	_ = be.subs.Grant(subscription.Subscription{UserID: 7, Plan: subscription.PlanLifetime, Gift: true})
+	_, page = get(t, c, site.URL+"/servers")
+	if strings.Count(page, "Activer mon abonnement ici") != 2 {
+		t.Fatalf("both managed servers should offer activation:\n%s", page)
+	}
+	for _, id := range []string{"111", "333"} {
+		resp, _ := c.PostForm(site.URL+"/servers/"+id+"/activate", url.Values{"csrf": {csrf}})
+		if resp.Header.Get("Location") != "/servers?ok=activated" {
+			t.Fatalf("activate %s = %q", id, resp.Header.Get("Location"))
+		}
+	}
+	if !be.subs.Active(111) || !be.subs.Active(333) {
+		t.Fatal("servers not covered")
+	}
+	if _, page = get(t, c, site.URL+"/servers"); strings.Count(page, "Abonnement activé") != 2 || !strings.Contains(page, "Activé sur 2 serveur(s)") {
+		t.Fatalf("servers page:\n%s", page)
+	}
+	// Not a server they manage.
+	resp, _ = c.PostForm(site.URL+"/servers/222/activate", url.Values{"csrf": {csrf}})
+	if resp.StatusCode != http.StatusForbidden || be.subs.Active(222) {
+		t.Fatal("activation on an unmanaged server")
+	}
+	// From the server page, back to it.
+	resp, _ = c.PostForm(site.URL+"/servers/333/deactivate", url.Values{"csrf": {csrf}, "from": {"guild"}})
+	if resp.Header.Get("Location") != "/servers/333?ok=deactivated" || be.subs.Active(333) {
+		t.Fatalf("deactivate = %q", resp.Header.Get("Location"))
+	}
+}
+
+func TestServerCoveredByAnotherAccount(t *testing.T) {
+	site, be, c := newTestSite(t)
+	_ = be.subs.Grant(subscription.Subscription{UserID: 99, Plan: subscription.PlanLifetime})
+	_ = be.subs.Activate(99, 111, "Zeta")
+	_ = be.subs.Grant(subscription.Subscription{UserID: 7, Plan: subscription.PlanLifetime})
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/servers/111")
+	if !strings.Contains(page, "Couvert par un autre compte") || strings.Contains(page, "/servers/111/activate") {
+		t.Fatalf("server page:\n%s", page)
+	}
+	csrf := csrfRe.FindStringSubmatch(page)[1]
+	resp, _ := c.PostForm(site.URL+"/servers/111/activate", url.Values{"csrf": {csrf}, "from": {"guild"}})
+	if resp.Header.Get("Location") != "/servers/111?err=taken" {
+		t.Fatalf("taking = %q", resp.Header.Get("Location"))
+	}
+}
+
+func TestEnglishSite(t *testing.T) {
+	site, _, c := newTestSite(t)
+	req, _ := http.NewRequest(http.MethodGet, site.URL+"/", nil)
+	req.Header.Set("Accept-Language", "en-GB,en;q=0.9,fr;q=0.5")
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := make([]byte, 1<<16)
+	n, _ := resp.Body.Read(b)
+	body := string(b[:n])
+	if !strings.Contains(body, `lang="en"`) || !strings.Contains(body, "Sign in with Discord") || resp.Header.Get("Content-Language") != "en" {
+		t.Fatalf("Accept-Language en ignored:\n%s", body)
+	}
+
+	// The switch remembers French over the browser language.
+	req, _ = http.NewRequest(http.MethodGet, site.URL+"/lang/fr", nil)
+	req.Header.Set("Referer", site.URL+"/servers")
+	resp, _ = c.Do(req)
+	if resp.Header.Get("Location") != "/servers" {
+		t.Fatalf("lang redirect = %q", resp.Header.Get("Location"))
+	}
+	req, _ = http.NewRequest(http.MethodGet, site.URL+"/", nil)
+	req.Header.Set("Accept-Language", "en")
+	resp, _ = c.Do(req)
+	n, _ = resp.Body.Read(b)
+	if !strings.Contains(string(b[:n]), "Se connecter avec Discord") {
+		t.Fatal("lang cookie ignored")
+	}
+	// Foreign referer: back home, never an open redirect.
+	req, _ = http.NewRequest(http.MethodGet, site.URL+"/lang/en", nil)
+	req.Header.Set("Referer", "https://evil.example/x")
+	resp, _ = c.Do(req)
+	if resp.Header.Get("Location") != "/" {
+		t.Fatalf("open redirect: %q", resp.Header.Get("Location"))
+	}
+	for ref, want := range map[string]string{
+		site.URL + "/servers/111":   "/servers/111",
+		site.URL + "/admin":         "/admin",
+		site.URL + "//evil.example": "/",
+		site.URL + "/servers/../x":  "/",
+	} {
+		req, _ = http.NewRequest(http.MethodGet, site.URL+"/lang/en", nil)
+		req.Header.Set("Referer", ref)
+		resp, _ = c.Do(req)
+		if got := resp.Header.Get("Location"); got != want {
+			t.Errorf("referer %s -> %q, want %q", ref, got, want)
+		}
+	}
+	if code, _ := get(t, c, site.URL+"/lang/de"); code != http.StatusNotFound {
+		t.Fatal("unknown language accepted")
+	}
+}
+
+// Both languages carry the same keys, so no page falls back silently.
+func TestMessagesParity(t *testing.T) {
+	for k := range messages["fr"] {
+		if _, ok := messages["en"][k]; !ok {
+			t.Errorf("en misses %q", k)
+		}
+	}
+	for k := range messages["en"] {
+		if _, ok := messages["fr"][k]; !ok {
+			t.Errorf("fr misses %q", k)
+		}
+	}
+}
+
+// Every key used by the templates exists.
+func TestTemplateKeysExist(t *testing.T) {
+	re := regexp.MustCompile(`\{\{t "([a-z0-9_.]+)"`)
+	entries, _ := assets.ReadDir("templates")
+	for _, e := range entries {
+		b, _ := assets.ReadFile("templates/" + e.Name())
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			if _, ok := messages["fr"][m[1]]; !ok {
+				t.Errorf("%s uses unknown key %q", e.Name(), m[1])
+			}
+		}
+	}
+}
+
+// The admin page shows how many servers each account covers and flags the
+// servers its holder does not run, then lets the admin bridle the account.
+func TestAdminSpotsAndBridlesLending(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.srv.AddAdmins(7)
+	_ = be.subs.Grant(subscription.Subscription{UserID: 50, UserName: "Honnête", Plan: subscription.PlanLifetime})
+	_ = be.subs.Activate(50, 1001, "Sa guilde")
+	_ = be.subs.Grant(subscription.Subscription{UserID: 60, UserName: "Prêteur", Plan: subscription.PlanLifetime})
+	for i, name := range []string{"Guilde A", "Guilde B", "Guilde C"} {
+		_ = be.subs.Activate(60, snowflake.ID(2001+i), name)
+	}
+	_ = be.subs.RecordRaid(2001)
+	be.facts[2002] = ServerFacts{BotPresent: true, MemberCount: 300, Member: false}
+	be.facts[2003] = ServerFacts{BotPresent: true, MemberCount: 120, Member: true, Manages: false}
+
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/admin")
+	for _, want := range []string{
+		"2 compte(s) abonné(s), 4 serveur(s) couvert(s), 2 serveur(s) suspect(s).",
+		"titulaire absent du serveur", "titulaire sans « Gérer le serveur »",
+		"300 membres", "1 raid(s)", "aucun raid",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("admin page misses %q", want)
+		}
+	}
+	if strings.Index(page, "Prêteur") > strings.Index(page, "Honnête") {
+		t.Error("the flagged account must come first")
+	}
+	csrf := csrfRe.FindStringSubmatch(page)[1]
+
+	resp, _ := c.PostForm(site.URL+"/admin/limit", url.Values{"csrf": {csrf}, "user_id": {"60"}, "max_guilds": {"1"}})
+	if resp.Header.Get("Location") != "/admin?ok=limited" {
+		t.Fatalf("limit = %q", resp.Header.Get("Location"))
+	}
+	if sub, _ := be.subs.Get(60); sub.MaxGuilds != 1 {
+		t.Fatalf("max = %d", sub.MaxGuilds)
+	}
+	if _, page = get(t, c, site.URL+"/admin"); !strings.Contains(page, "Plus de serveurs que la limite") {
+		t.Error("over-limit warning missing")
+	}
+	for _, g := range []string{"2002", "2003"} {
+		resp, _ = c.PostForm(site.URL+"/admin/unlink", url.Values{"csrf": {csrf}, "guild_id": {g}})
+		if resp.Header.Get("Location") != "/admin?ok=unlinked" {
+			t.Fatalf("unlink %s = %q", g, resp.Header.Get("Location"))
+		}
+	}
+	if be.subs.Active(2002) || be.subs.Active(2003) || !be.subs.Active(2001) {
+		t.Fatal("unlink result")
+	}
+	for _, bad := range []url.Values{
+		{"csrf": {csrf}, "user_id": {"60"}, "max_guilds": {"-2"}},
+		{"csrf": {csrf}, "user_id": {"999"}, "max_guilds": {"1"}},
+	} {
+		resp, _ = c.PostForm(site.URL+"/admin/limit", bad)
+		if resp.Header.Get("Location") != "" {
+			t.Errorf("bad limit %v accepted", bad)
+		}
+	}
+	// Non-admins cannot bridle.
+	be.srv.admins.Store(&map[snowflake.ID]bool{})
+	resp, _ = c.PostForm(site.URL+"/admin/unlink", url.Values{"csrf": {csrf}, "guild_id": {"2001"}})
+	if resp.StatusCode != http.StatusForbidden || !be.subs.Active(2001) {
+		t.Fatal("non-admin unlinked a server")
+	}
+}
+
 // Animations must stay inside the scenes: a rule on a site class (".card"
 // once) made every panel of the site fade out in a loop.
 func TestAnimationsScopedToScenes(t *testing.T) {
@@ -320,6 +616,26 @@ func TestAnimationsScopedToScenes(t *testing.T) {
 				if !strings.HasPrefix(strings.TrimSpace(s), ".scene") {
 					t.Errorf("style.css:%d animates %q outside .scene", i+1, strings.TrimSpace(s))
 				}
+			}
+		}
+	}
+}
+
+// Every sub-template a page calls is defined in an embedded file (a file once
+// ignored by git, coverage.html, existed only locally).
+func TestCalledTemplatesExist(t *testing.T) {
+	subs, _ := subscription.Open("")
+	s, err := New(Config{BaseURL: "https://relais.example"}, &fakeBackend{}, subs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`\{\{template "([a-z0-9-]+)"`)
+	entries, _ := assets.ReadDir("templates")
+	for _, e := range entries {
+		b, _ := assets.ReadFile("templates/" + e.Name())
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			if s.tmpls["fr"].Lookup(m[1]) == nil {
+				t.Errorf("%s calls undefined template %q", e.Name(), m[1])
 			}
 		}
 	}

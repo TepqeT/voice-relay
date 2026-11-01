@@ -1,20 +1,24 @@
 {{define "head"}}<!doctype html>
-<html lang="fr">
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice Relay</title>
+<title>{{t "title"}}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="/">Voice Relay</a>
-  {{if .User}}<form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><span class="muted">{{.User}}</span> <button class="link">Se déconnecter</button></form>{{end}}
+  <a class="brand" href="/">{{t "title"}}</a>
+  <div class="top-right">
+    {{if .User}}<nav class="inline">{{if .Admin}}<a href="/admin">{{t "nav.admin"}}</a> · {{end}}<a href="/servers">{{t "nav.servers"}}</a></nav>
+    <form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><span class="muted">{{.User}}</span> <button class="link">{{t "nav.logout"}}</button></form>{{end}}
+    <a class="lang" href="/lang/{{.Other}}" hreflang="{{.Other}}">{{t "lang.switch"}}</a>
+  </div>
 </header>
 <main>
 {{end}}
 {{define "foot"}}</main>
-<footer class="muted">Voice Relay, relais vocal pour les raids Discord.</footer>
+<footer class="muted">{{t "footer"}}</footer>
 </body>
 </html>
 {{end}}

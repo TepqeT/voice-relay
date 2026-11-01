@@ -109,6 +109,10 @@ func (h *CommandHandlers) handleStartVoiceRaid(guildID snowflake.ID, loc *i18n.L
 // through reply. Shared by /start and the control panel buttons; the caller
 // must have deferred its interaction response.
 func (h *CommandHandlers) startHostRaid(cmdCtx context.Context, guildID snowflake.ID, loc *i18n.Localizer, mode guild.RaidMode, reply func(string)) {
+	if msg := h.subscriptionRefusal(guildID, loc); msg != "" {
+		reply(msg)
+		return
+	}
 	ctx, cancelFunc := context.WithCancel(trace.ContextWithSpan(context.Background(), trace.SpanFromContext(cmdCtx)))
 	go func() {
 		h.manager.EnsureGuildReady(guildID)
@@ -171,6 +175,9 @@ func (h *CommandHandlers) startHostRaid(cmdCtx context.Context, guildID snowflak
 		msg += h.raidChannelsLine(guildID, loc)
 		msg += skipped
 		slog.InfoContext(cmdCtx, "voice raid started", slog.String("relayCode", relayCode))
+		if h.raidStarted != nil {
+			h.raidStarted(guildID)
+		}
 		reply(msg)
 	}()
 }

@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
@@ -21,6 +20,8 @@ type siteManager interface {
 	MissingOwnerPermissions(guildID snowflake.ID) discord.Permissions
 	RoleSetupStatus(guildID snowflake.ID) []manager.RoleSetup
 	CreateMissingRoles(ctx context.Context, guildID snowflake.ID) (manager.RoleSetupReport, error)
+	OwnerGuilds() []manager.GuildRef
+	GuildFacts(guildID, userID snowflake.ID) manager.GuildFacts
 }
 
 // siteOwnerPermissions is what the site's invite asks for: the speaker set,
@@ -82,7 +83,7 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 		return st
 	}
 	if missing := b.m.MissingOwnerPermissions(guildID); missing != 0 {
-		st.MissingPermissions = permissionNames(missing)
+		st.MissingPermissions = permissionKeys(missing)
 	}
 	for _, r := range b.m.RoleSetupStatus(guildID) {
 		st.Roles = append(st.Roles, web.RoleStatus{Purpose: r.Purpose, Name: r.Name, Exists: r.ID != 0, AboveBot: r.AboveBot})
@@ -95,32 +96,62 @@ func (b *webBackend) SetupRoles(ctx context.Context, guildID snowflake.ID) (web.
 	return web.SetupReport{Created: rep.Created, Existing: rep.Existing, Failed: rep.Failed, PermissionDenied: rep.PermissionDenied}, err
 }
 
-// permissionNames lists the French names of perms shown in Discord's settings.
-func permissionNames(perms discord.Permissions) []string {
-	names := []struct {
-		p    discord.Permissions
-		name string
+func (b *webBackend) BotGuilds() []web.GuildRef {
+	gs := b.m.OwnerGuilds()
+	out := make([]web.GuildRef, len(gs))
+	for i, g := range gs {
+		out[i] = web.GuildRef{ID: g.ID, Name: g.Name}
+	}
+	return out
+}
+
+func (b *webBackend) ServerFacts(guildID, userID snowflake.ID) web.ServerFacts {
+	f := b.m.GuildFacts(guildID, userID)
+	return web.ServerFacts{BotPresent: f.BotPresent, MemberCount: f.MemberCount, Member: f.Member, Manages: f.Manages}
+}
+
+// permissionKeys lists perms as keys the site translates (perm.<key>).
+func permissionKeys(perms discord.Permissions) []string {
+	keys := []struct {
+		p   discord.Permissions
+		key string
 	}{
-		{discord.PermissionViewChannel, "Voir les salons"},
-		{discord.PermissionManageChannels, "Gérer les salons"},
-		{discord.PermissionManageRoles, "Gérer les rôles"},
-		{discord.PermissionConnect, "Se connecter"},
-		{discord.PermissionSpeak, "Parler"},
-		{discord.PermissionUseVAD, "Utiliser la détection de la voix"},
-		{discord.PermissionPrioritySpeaker, "Voix prioritaire"},
-		{discord.PermissionMuteMembers, "Rendre les membres muets"},
-		{discord.PermissionDeafenMembers, "Mettre en sourdine des membres"},
-		{discord.PermissionMoveMembers, "Déplacer des membres"},
+		{discord.PermissionViewChannel, "view"},
+		{discord.PermissionManageChannels, "manage_channels"},
+		{discord.PermissionManageRoles, "manage_roles"},
+		{discord.PermissionConnect, "connect"},
+		{discord.PermissionSpeak, "speak"},
+		{discord.PermissionUseVAD, "vad"},
+		{discord.PermissionPrioritySpeaker, "priority"},
+		{discord.PermissionMuteMembers, "mute"},
+		{discord.PermissionDeafenMembers, "deafen"},
+		{discord.PermissionMoveMembers, "move"},
 	}
 	var out []string
-	for _, n := range names {
-		if perms.Has(n.p) {
-			out = append(out, n.name)
-			perms &^= n.p
+	for _, k := range keys {
+		if perms.Has(k.p) {
+			out = append(out, k.key)
+			perms &^= k.p
 		}
 	}
 	if perms != 0 {
-		out = append(out, strings.TrimSpace(perms.String()))
+		out = append(out, "other")
+	}
+	return out
+}
+
+// applicationAdmins are the people who own the bot application: its owner,
+// or the owner of the team that holds it.
+func applicationAdmins(app *discord.Application) []snowflake.ID {
+	var out []snowflake.ID
+	if app == nil {
+		return out
+	}
+	if app.Owner != nil && app.Owner.ID != 0 {
+		out = append(out, app.Owner.ID)
+	}
+	if app.Team != nil && app.Team.OwnerID != 0 {
+		out = append(out, app.Team.OwnerID)
 	}
 	return out
 }

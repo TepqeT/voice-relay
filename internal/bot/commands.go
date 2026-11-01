@@ -2,6 +2,7 @@ package bot
 
 import (
 	"github.com/TepqeT/voice-relay/internal/i18n"
+	"github.com/TepqeT/voice-relay/internal/subscription"
 	"github.com/TepqeT/voice-relay/internal/telemetry"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -85,6 +86,48 @@ type CommandHandlers struct {
 	bundle  *i18n.Bundle
 	rvr     RvRService     // nil disables the end-of-raid sound and squad lead calls
 	reports reportChannels // where each guild's quality report is posted
+	// coverage, when set, refuses raids in guilds without an active
+	// subscription (SUBSCRIPTION_REQUIRED); siteURL points to the site.
+	coverage func(guildID snowflake.ID) subscription.Coverage
+	siteURL  string
+	// raidStarted is told of every raid that started (subscription usage).
+	raidStarted func(guildID snowflake.ID)
+}
+
+// OnRaidStarted registers fn, called after each successful raid start.
+func (h *CommandHandlers) OnRaidStarted(fn func(guildID snowflake.ID)) { h.raidStarted = fn }
+
+// RequireSubscription refuses raid starts in guilds not covered by an active
+// subscription, and says whether there never was one or it ended.
+func (h *CommandHandlers) RequireSubscription(coverage func(guildID snowflake.ID) subscription.Coverage, siteURL string) {
+	h.coverage, h.siteURL = coverage, siteURL
+}
+
+// subscriptionRefusal is the message for a guild that may not start a raid,
+// "" when it may.
+func (h *CommandHandlers) subscriptionRefusal(guildID snowflake.ID, loc *i18n.Localizer) string {
+	if h.coverage == nil {
+		return ""
+	}
+	c := h.coverage(guildID)
+	if c.State == subscription.StateActive {
+		return ""
+	}
+	suffix := ""
+	if h.siteURL != "" {
+		suffix = "_site"
+	}
+	if c.State == subscription.StateExpired && c.Sub.Plan == subscription.PlanUntil {
+		day := c.Sub.LastDay().Format("2006-01-02")
+		if loc.Locale() == "fr" {
+			day = c.Sub.LastDay().Format("02/01/2006")
+		}
+		return loc.T("sub.expired"+suffix, "Date", day, "URL", h.siteURL)
+	}
+	if c.State == subscription.StateExpired {
+		return loc.T("sub.ended"+suffix, "URL", h.siteURL)
+	}
+	return loc.T("sub.required"+suffix, "URL", h.siteURL)
 }
 
 // NewCommandHandlers creates a new CommandHandlers.

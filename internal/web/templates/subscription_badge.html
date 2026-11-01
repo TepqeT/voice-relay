@@ -1,0 +1,8 @@
+{{define "coverage"}}
+{{if eq .Cov.Kind "mine"}}<span class="tag sub">{{t "cov.mine"}}</span>
+  <form method="post" action="/servers/{{.ID}}/deactivate" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="from" value="{{.From}}"><button class="link muted">{{t "cov.deactivate"}}</button></form>
+{{else if eq .Cov.Kind "other"}}<span class="tag sub">{{t "cov.other"}}</span>
+{{else}}<span class="tag{{if eq .Cov.Kind "expired"}} bad{{end}}">{{if eq .Cov.Kind "expired"}}{{t "cov.expired"}}{{else}}{{t "cov.none"}}{{end}}</span>
+  {{if .Cov.CanActivate}}<form method="post" action="/servers/{{.ID}}/activate" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="from" value="{{.From}}"><button class="button small">{{t "cov.activate"}}</button></form>{{end}}
+{{end}}
+{{end}}

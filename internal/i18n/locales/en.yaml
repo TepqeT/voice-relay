@@ -171,3 +171,11 @@ sort.reason.no_class: "no class role"
 sort.reason.multiple_classes: "several class roles"
 sort.reason.no_room: "no room left for this class"
 sort.reason.squad_lead: "squad lead, never moved"
+
+# ── Subscriptions ─────────────────────────────────────────────────────────────
+sub.required: "❌ This server has no active subscription: the raid cannot start."
+sub.required_site: "❌ This server has no active subscription: the raid cannot start. See {{.URL}}"
+sub.expired: "❌ This server's subscription expired on {{.Date}}: the raid cannot start. Its owner can renew it."
+sub.expired_site: "❌ This server's subscription expired on {{.Date}}: the raid cannot start. Its owner can renew it on {{.URL}}"
+sub.ended: "❌ The subscription that covered this server has ended: the raid cannot start."
+sub.ended_site: "❌ The subscription that covered this server has ended: the raid cannot start. See {{.URL}}"

@@ -202,20 +202,31 @@ func TestEventLabel(t *testing.T) {
 }
 
 func TestLoadWeb(t *testing.T) {
+	t.Setenv("SITE_ADMINS", "")
+	t.Setenv("SUBSCRIPTION_REQUIRED", "")
+	t.Setenv("SUBSCRIPTIONS_FILE", "")
 	t.Setenv("WEB_ADDR", "")
 	t.Setenv("WEB_BASE_URL", "")
 	t.Setenv("DISCORD_CLIENT_SECRET", "")
-	if loadWeb().Enabled() {
+	if loadWeb("/data/store.yaml").Enabled() {
 		t.Fatal("site on by default")
 	}
 	t.Setenv("WEB_ADDR", ":8080")
-	if loadWeb().Enabled() {
+	if loadWeb("/data/store.yaml").Enabled() {
 		t.Fatal("site on without base URL and secret")
 	}
 	t.Setenv("WEB_BASE_URL", "https://relais.example.fr/ ")
 	t.Setenv("DISCORD_CLIENT_SECRET", "s3cret")
-	w := loadWeb()
+	w := loadWeb("/data/store.yaml")
 	if !w.Enabled() || w.BaseURL != "https://relais.example.fr" {
 		t.Fatalf("web = %+v", w)
+	}
+	if w.SubscriptionsFile != "/data/subscriptions.json" || w.SubscriptionRequired || len(w.Admins) != 0 {
+		t.Fatalf("subscription defaults = %+v", w)
+	}
+	t.Setenv("SITE_ADMINS", "111111111111111111, 222222222222222222")
+	t.Setenv("SUBSCRIPTION_REQUIRED", "true")
+	if w = loadWeb("/data/store.yaml"); len(w.Admins) != 2 || !w.SubscriptionRequired {
+		t.Fatalf("subscription settings = %+v", w)
 	}
 }

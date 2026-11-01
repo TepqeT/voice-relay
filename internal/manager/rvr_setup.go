@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/disgoorg/disgo/discord"
@@ -172,4 +173,45 @@ func (m *Service) MissingOwnerPermissions(guildID snowflake.ID) discord.Permissi
 	}
 	need := raidBotNeeds | discord.PermissionManageRoles | discord.PermissionDeafenMembers
 	return need &^ m.grantablePermissions(guildID)
+}
+
+// GuildRef names a guild the owner bot is in.
+type GuildRef struct {
+	ID   snowflake.ID
+	Name string
+}
+
+// OwnerGuilds lists the guilds the owner bot is in, by name.
+func (m *Service) OwnerGuilds() []GuildRef {
+	var out []GuildRef
+	for g := range m.ownerClient.Caches.Guilds() {
+		out = append(out, GuildRef{ID: g.ID, Name: g.Name})
+	}
+	slices.SortFunc(out, func(a, b GuildRef) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) })
+	return out
+}
+
+// GuildFacts is what the owner bot knows of a guild and one of its members,
+// to spot a subscription lent to servers its holder does not run.
+type GuildFacts struct {
+	BotPresent  bool
+	Name        string
+	MemberCount int
+	Member      bool // the user is in the guild (as far as the cache knows)
+	Manages     bool // the user has Manage Server or Administrator there
+}
+
+// GuildFacts describes guildID as seen from userID.
+func (m *Service) GuildFacts(guildID, userID snowflake.ID) GuildFacts {
+	g, ok := m.ownerClient.Caches.Guild(guildID)
+	if !ok {
+		return GuildFacts{}
+	}
+	f := GuildFacts{BotPresent: true, Name: g.Name, MemberCount: g.MemberCount}
+	if mem, ok := m.ownerClient.Caches.Member(guildID, userID); ok {
+		f.Member = true
+		p := m.ownerClient.Caches.MemberPermissions(mem)
+		f.Manages = p.Has(discord.PermissionAdministrator) || p.Has(discord.PermissionManageGuild)
+	}
+	return f
 }

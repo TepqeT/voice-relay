@@ -180,3 +180,11 @@ sort.reason.no_class: "brak roli klasy"
 sort.reason.multiple_classes: "kilka ról klasy"
 sort.reason.no_room: "brak miejsca dla tej klasy"
 sort.reason.squad_lead: "dowódca oddziału, nigdy nie jest przenoszony"
+
+# ── Subscriptions ─────────────────────────────────────────────────────────────
+sub.required: "❌ Ten serwer nie ma aktywnej subskrypcji: rajd nie może się rozpocząć."
+sub.required_site: "❌ Ten serwer nie ma aktywnej subskrypcji: rajd nie może się rozpocząć. Zobacz {{.URL}}"
+sub.expired: "❌ Subskrypcja tego serwera wygasła {{.Date}}: rajd nie może się rozpocząć. Właściciel może ją odnowić."
+sub.expired_site: "❌ Subskrypcja tego serwera wygasła {{.Date}}: rajd nie może się rozpocząć. Właściciel może ją odnowić na {{.URL}}"
+sub.ended: "❌ Subskrypcja obejmująca ten serwer zakończyła się: rajd nie może się rozpocząć."
+sub.ended_site: "❌ Subskrypcja obejmująca ten serwer zakończyła się: rajd nie może się rozpocząć. Zobacz {{.URL}}"

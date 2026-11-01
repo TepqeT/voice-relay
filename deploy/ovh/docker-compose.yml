@@ -20,6 +20,8 @@ x-relay: &relay
       max-file: "5"
 
 x-rvr-env: &rvr-env
+  # Dates des abonnements et des journaux a l'heure francaise
+  TZ: Europe/Paris
   STORE_PATH: /data/store.yaml
   LOG_LEVEL: info
   SESSION_IDLE_TIMEOUT: 30m
@@ -62,6 +64,12 @@ services:
       # uniquement. DISCORD_CLIENT_SECRET vient de .env.
       WEB_ADDR: ":8080"
       WEB_BASE_URL: "https://${SITE_DOMAIN:?SITE_DOMAIN manquant dans .env}"
+      # Abonnements (v30), dans data/subscriptions.json. Le proprietaire de
+      # l'application Discord administre le site ; autres administrateurs :
+      # SITE_ADMINS: "123456789012345678"
+      # true : un serveur sans abonnement actif ne peut plus lancer de raid.
+      # Avant d'activer : s'offrir un abonnement a vie et l'activer sur Aion 2 France.
+      # SUBSCRIPTION_REQUIRED: "true"
     expose:
       - "8080"
     volumes:

@@ -20,6 +20,7 @@ import (
 	"github.com/TepqeT/voice-relay/internal/pool"
 	"github.com/TepqeT/voice-relay/internal/quality"
 	"github.com/TepqeT/voice-relay/internal/store"
+	"github.com/TepqeT/voice-relay/internal/subscription"
 	"github.com/TepqeT/voice-relay/internal/telemetry"
 	"github.com/TepqeT/voice-relay/internal/web"
 	"github.com/disgoorg/disgo"
@@ -306,6 +307,23 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		extraCommands:   append(cmdHandlers.AccessCommands(), cmdHandlers.SquadLeadCommands()...),
 	}
 
+	var subs *subscription.Store
+	if cfg.Web.Enabled() || cfg.Web.SubscriptionRequired {
+		if subs, err = subscription.Open(cfg.Web.SubscriptionsFile); err != nil {
+			return nil, fmt.Errorf("subscriptions: %w", err)
+		}
+	}
+	if subs != nil {
+		cmdHandlers.OnRaidStarted(func(guildID snowflake.ID) {
+			if err := subs.RecordRaid(guildID); err != nil {
+				slog.Warn("failed to record raid for the subscription", slog.String("guildID", guildID.String()), slog.Any("err", err))
+			}
+		})
+	}
+	if cfg.Web.SubscriptionRequired {
+		cmdHandlers.RequireSubscription(subs.Coverage, cfg.Web.BaseURL)
+		slog.Info("subscriptions required to start a raid", slog.String("file", cfg.Web.SubscriptionsFile))
+	}
 	if cfg.Web.Enabled() {
 		backend := newWebBackend(managerSvc, ownerBotID, func() string {
 			if u, ok := client.Caches.SelfUser(); ok {
@@ -313,7 +331,15 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			}
 			return ""
 		}, cfg.SpeakerTokens)
-		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret}, backend)
+		var admins []snowflake.ID
+		for _, a := range cfg.Web.Admins {
+			if id, err := snowflake.Parse(a); err == nil {
+				admins = append(admins, id)
+			} else {
+				slog.Warn("SITE_ADMINS: not a Discord user ID, ignored", slog.String("value", a))
+			}
+		}
+		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins}, backend, subs)
 		if err != nil {
 			return nil, fmt.Errorf("web site: %w", err)
 		}
@@ -371,6 +397,12 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 
 	if b.site != nil {
+		// The owner of the bot application administers the site.
+		if app, err := b.client.Rest.GetCurrentApplication(); err != nil {
+			slog.WarnContext(ctx, "cannot read the application owner: only SITE_ADMINS administer the site", slog.Any("err", err))
+		} else {
+			b.site.AddAdmins(applicationAdmins(app)...)
+		}
 		go func() {
 			if err := b.site.Run(ctx); err != nil {
 				slog.ErrorContext(ctx, "web site stopped", slog.Any("err", err))
