@@ -21,6 +21,7 @@ import (
 	"github.com/TepqeT/voice-relay/internal/quality"
 	"github.com/TepqeT/voice-relay/internal/store"
 	"github.com/TepqeT/voice-relay/internal/telemetry"
+	"github.com/TepqeT/voice-relay/internal/web"
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/cache"
@@ -122,6 +123,8 @@ type Bot struct {
 	// extraCommands are registered with the slash commands (RvR access user
 	// commands when configured).
 	extraCommands []discord.ApplicationCommandCreate
+	// site is the administration site, nil when WEB_ADDR is not configured.
+	site *web.Server
 }
 
 // New creates and configures a new Bot instance. It performs no network I/O —
@@ -303,6 +306,20 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		extraCommands:   append(cmdHandlers.AccessCommands(), cmdHandlers.SquadLeadCommands()...),
 	}
 
+	if cfg.Web.Enabled() {
+		backend := newWebBackend(managerSvc, ownerBotID, func() string {
+			if u, ok := client.Caches.SelfUser(); ok {
+				return u.Username
+			}
+			return ""
+		}, cfg.SpeakerTokens)
+		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret}, backend)
+		if err != nil {
+			return nil, fmt.Errorf("web site: %w", err)
+		}
+		b.site = site
+	}
+
 	// Built before the listeners are attached so onGuildJoin can call back into
 	// b.syncGuildCommands. No network I/O happens here — the gateway opens in Run.
 	client.AddEventListeners(EventListeners(managerSvc, b.syncGuildCommands)...)
@@ -351,6 +368,14 @@ func (b *Bot) Run(ctx context.Context) error {
 		}
 		slog.InfoContext(ctx, "owner bot invite URL", slog.String("url", url))
 		b.poolSvc.RegisterBot(selfUser.ID, selfUser.Username, b.client)
+	}
+
+	if b.site != nil {
+		go func() {
+			if err := b.site.Run(ctx); err != nil {
+				slog.ErrorContext(ctx, "web site stopped", slog.Any("err", err))
+			}
+		}()
 	}
 
 	slog.InfoContext(ctx, "bot is running. Press Ctrl+C to stop.")

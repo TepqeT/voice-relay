@@ -46,7 +46,25 @@ type Config struct {
 	Test TestConfig
 	// RvR holds the announcement, priority speaker and report settings.
 	RvR RvRConfig
+	// Web configures the administration site; empty Addr disables it.
+	Web WebConfig
 }
+
+// WebConfig configures the administration site (sign in with Discord, invite
+// the bots, create the roles).
+type WebConfig struct {
+	// Addr is the listen address, e.g. ":8080". WEB_ADDR, default none: off.
+	Addr string
+	// BaseURL is the public URL, e.g. "https://relais.example.fr"; the OAuth2
+	// redirect is BaseURL + "/callback". WEB_BASE_URL.
+	BaseURL string
+	// ClientSecret is the OAuth2 client secret of the owner bot application.
+	// DISCORD_CLIENT_SECRET. Never logged.
+	ClientSecret string
+}
+
+// Enabled reports whether the site is fully configured.
+func (w WebConfig) Enabled() bool { return w.Addr != "" && w.BaseURL != "" && w.ClientSecret != "" }
 
 // RvRConfig holds the settings added for RvR raids.
 type RvRConfig struct {
@@ -198,7 +216,20 @@ func Load() (*Config, error) {
 			AllowBots: os.Getenv("TEST_ALLOW_BOTS") == "true",
 		},
 		RvR: loadRvR(storePath()),
+		Web: loadWeb(),
 	}, nil
+}
+
+func loadWeb() WebConfig {
+	w := WebConfig{
+		Addr:         strings.TrimSpace(os.Getenv("WEB_ADDR")),
+		BaseURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("WEB_BASE_URL")), "/"),
+		ClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
+	}
+	if w.Addr != "" && !w.Enabled() {
+		slog.Warn("WEB_ADDR is set but WEB_BASE_URL or DISCORD_CLIENT_SECRET is missing: the site stays off")
+	}
+	return w
 }
 
 func loadRvR(store string) RvRConfig {

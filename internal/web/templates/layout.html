@@ -1,0 +1,20 @@
+{{define "head"}}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Relay</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">Voice Relay</a>
+  {{if .User}}<form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><span class="muted">{{.User}}</span> <button class="link">Se déconnecter</button></form>{{end}}
+</header>
+<main>
+{{end}}
+{{define "foot"}}</main>
+<footer class="muted">Voice Relay, relais vocal pour les raids Discord.</footer>
+</body>
+</html>
+{{end}}

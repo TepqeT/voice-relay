@@ -1,0 +1,113 @@
+# Voice Relay sur la VM OVH : bots + site d'administration + HTTPS automatique.
+# A lancer depuis ce dossier (deploy/ovh du depot clone sur la VM).
+#   Premier lancement / mise a jour : ./mettre-a-jour.sh   (APPLY=false puis true)
+#   Asmodiens + site              : docker compose up -d --build
+#   Avec les Elyseens             : docker compose --profile elyos up -d --build
+#   Logs                          : docker compose logs -f asmos   (ou elyos, caddy)
+#   Arret                         : docker compose --profile elyos down
+# Les reglages RvR reprennent ceux de deploy/docker-compose.yml (a garder alignes).
+# Secrets : .env et .env.elyos dans ce dossier, jamais versionnes (voir .env.example).
+
+name: voice-relay
+
+x-relay: &relay
+  image: voice-relay:local
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-rvr-env: &rvr-env
+  STORE_PATH: /data/store.yaml
+  LOG_LEVEL: info
+  SESSION_IDLE_TIMEOUT: 30m
+  PRIORITY_SPEAKER: "true"
+  SOUNDS_DIR: /sounds
+  SOUND_ON_START: debut
+  SOUND_ON_STOP: fin
+  REPORT_TO_DISCORD: "true"
+  REPORT_LANG: fr
+  REPORTS_DIR: /data/reports
+  DIAG_DIR: /data/diagnostics
+  DIAG_INTERVAL: 10s
+  SQUAD_LEAD_ROLE: "Chef d'escouade"
+  SQUAD_LEAD_KEY: always
+  SQUAD_LEADS_TO_SQUADS: "true"
+  RAID_LEAD_ROLE: "Raid Lead"
+  # EVENT_LABEL: "RvR"
+  DYNAMIC_CHANNELS: "true"
+  RAID_LEAD_CHANNEL: "Raid Lead"
+  SQUAD_CHANNEL: "Escouade"
+  SQUAD_COUNT: "5"
+  VOICE_REGION: ""
+  # CLASS_ROLES: "Gladiateur, Templier, Assassin, Rodeur, Sorcier, Spiritualiste, Clerc, Aede"
+  # WAITING_CHANNEL: "Attente"
+  # CLASS_RULE: "balanced"
+
+services:
+  # Asmodiens : Voix de Pandaemonium + Heraut d'Asmodae 1 a 5. Sert aussi le site.
+  asmos:
+    <<: *relay
+    build: ../..
+    container_name: voice-relay-asmos
+    env_file: .env
+    environment:
+      <<: *rvr-env
+      FACTION_NAME: Asmodiens
+      FACTION_ROLE: Asmodiens
+      RVR_CATEGORY_AFTER: "Aion 2 faction Asmodienne"
+      # Site d'administration (v29), joint par caddy sur le reseau interne
+      # uniquement. DISCORD_CLIENT_SECRET vient de .env.
+      WEB_ADDR: ":8080"
+      WEB_BASE_URL: "https://${SITE_DOMAIN:?SITE_DOMAIN manquant dans .env}"
+    expose:
+      - "8080"
+    volumes:
+      - ./data:/data
+      # Sons personnalises : copier le dossier sounds ici puis decommenter.
+      # - ./sounds:/sounds:ro
+
+  # Elyseens : Voix de Sanctum + Heraut d'Elysea 1 a 5 (tokens dans .env.elyos)
+  elyos:
+    <<: *relay
+    container_name: voice-relay-elyos
+    profiles: ["elyos"]
+    pull_policy: never
+    env_file:
+      - path: .env.elyos
+        required: false
+    environment:
+      <<: *rvr-env
+      FACTION_NAME: "Élyséens"
+      FACTION_ROLE: "Élyséens"
+      RVR_CATEGORY_AFTER: "Aion 2 faction Elyséenne"
+      ACCESS_ROLE: "Elyséens Confirmés"
+      BOARD_ROLE: "Board RvR"
+      # ACCESS_CHANNEL: "accès-rvr"
+    volumes:
+      - ./data-elyos:/data
+      # - ./sounds:/sounds:ro
+
+  # HTTPS : certificat Let's Encrypt obtenu et renouvele automatiquement.
+  caddy:
+    image: caddy:2.10.0-alpine
+    container_name: voice-relay-caddy
+    restart: unless-stopped
+    depends_on: [asmos]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?SITE_DOMAIN manquant dans .env}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL manquant dans .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

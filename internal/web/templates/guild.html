@@ -1,0 +1,71 @@
+{{template "head" .}}
+<p><a href="/servers">Vos serveurs</a></p>
+<h1>{{.Guild.Name}}</h1>
+{{if .Error}}<p class="card bad">{{.Error}}</p>{{end}}
+{{with .Report}}
+<div class="card">
+  <h2>Résultat</h2>
+  {{if .Created}}<p class="ok">Rôles créés : {{range $i, $n := .Created}}{{if $i}}, {{end}}{{$n}}{{end}}</p>{{end}}
+  {{if .Failed}}<p class="bad">Non créés : {{range $i, $n := .Failed}}{{if $i}}, {{end}}{{$n}}{{end}}</p>{{end}}
+  {{if .PermissionDenied}}<p class="bad">Le bot n'a pas la permission « Gérer les rôles ». Réinvitez-le avec le bouton de l'étape 1.</p>{{end}}
+  {{if and (not .Created) (not .Failed)}}<p>Tous les rôles existaient déjà.</p>{{end}}
+</div>
+{{end}}
+
+<section class="card">
+  <h2>1. Bot principal ({{.Bot}})</h2>
+  {{if .Status.BotPresent}}<p class="ok">Présent sur le serveur.</p>
+  <p class="muted">Pour mettre à jour ses permissions, réouvrez l'invitation : <a href="{{.Status.BotInviteURL}}" rel="noopener">réinviter</a>.</p>
+  {{else}}<p>Le bot n'est pas encore sur ce serveur.</p>
+  <p><a class="button" href="{{.Status.BotInviteURL}}" rel="noopener">Inviter {{.Bot}}</a></p>
+  <p class="muted">Revenez ensuite sur cette page et rechargez-la.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>2. Hérauts</h2>
+  <p class="muted">Un Héraut par escouade. Discord demande une autorisation par bot : un clic chacun.</p>
+  <ul class="list">
+  {{range .Status.Heralds}}
+    <li class="row"><span class="name">{{.Name}}</span>
+    {{if .Present}}<span class="tag ok">Présent</span>{{else}}<a class="button small" href="{{.InviteURL}}" rel="noopener">Inviter</a>{{end}}</li>
+  {{else}}<li class="muted">Aucun Héraut configuré sur cette instance.</li>
+  {{end}}
+  </ul>
+</section>
+
+{{if .Status.BotPresent}}
+<section class="card">
+  <h2>3. Permissions du bot</h2>
+  {{if .Status.MissingPermissions}}<p class="bad">Il manque : {{range $i, $p := .Status.MissingPermissions}}{{if $i}}, {{end}}{{$p}}{{end}}.</p>
+  <p class="muted">Réinvitez le bot (étape 1) ou cochez ces permissions sur son rôle dans les paramètres du serveur.</p>
+  {{else}}<p class="ok">Toutes les permissions nécessaires sont accordées.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>4. Rôles</h2>
+  <table>
+    <thead><tr><th>Usage</th><th>Rôle</th><th>État</th></tr></thead>
+    <tbody>
+    {{range .Status.Roles}}
+      <tr><td>{{purpose .Purpose}}</td><td>{{.Name}}</td>
+      <td>{{if not .Exists}}<span class="tag warn">À créer</span>{{else if .AboveBot}}<span class="tag bad">Au-dessus du bot</span>{{else}}<span class="tag ok">OK</span>{{end}}</td></tr>
+    {{else}}<tr><td colspan="3" class="muted">Aucun rôle configuré.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{if .Status.MissingRoles}}
+  <form method="post" action="/servers/{{.Guild.ID}}/setup">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button class="button">Créer les rôles manquants</button>
+  </form>
+  {{end}}
+  <p class="muted">Un rôle « Au-dessus du bot » ne peut pas être géré par lui : dans Paramètres du serveur, Rôles, glissez le rôle du bot au-dessus.</p>
+</section>
+
+<section class="card">
+  <h2>5. Dernière étape</h2>
+  {{if .Status.Ready}}<p class="ok">Installation terminée.</p>{{end}}
+  <p>Donnez les rôles à vos joueurs, puis tapez <code>/panneau</code> dans le salon où les Raid Leads lanceront les raids.</p>
+</section>
+{{end}}
+{{template "foot" .}}
