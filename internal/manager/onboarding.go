@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 
@@ -34,12 +33,18 @@ func (m *Service) EnsureOnboardingDefaults(ctx context.Context, guildID snowflak
 	if _, done := m.onboarded.LoadOrStore(key, true); done {
 		return
 	}
-	ob, err := m.ownerClient.Rest.GetGuildOnboarding(guildID, rest.WithCtx(ctx))
-	if err != nil {
-		slog.Debug("onboarding: not readable", slog.String("guildID", guildID.String()), slog.Any("err", err))
+	g := guildID.String()
+	// Raw request with only the fields used: the full onboarding object
+	// (prompts, emojis) is neither decoded nor sent back, so nothing the
+	// server configured can be lost or rejected on the way.
+	var ob onboardingDefaults
+	if err := m.ownerClient.Rest.Do(rest.GetGuildOnboarding.Compile(nil, guildID), nil, &ob, rest.WithCtx(ctx)); err != nil {
+		journal.Record(journal.Event{GuildID: guildID, Level: journal.Warning, Kind: "onboarding_refused",
+			Detail: "could not read the onboarding settings: " + err.Error()})
 		return
 	}
-	if ob == nil || !ob.Enabled {
+	if !ob.Enabled {
+		slog.Info("onboarding: off on this server, nothing to do", slog.String("guildID", g))
 		return
 	}
 	defaults := slices.Clone(ob.DefaultChannelIDs)
@@ -51,11 +56,13 @@ func (m *Service) EnsureOnboardingDefaults(ctx context.Context, guildID snowflak
 		}
 	}
 	if len(added) == 0 {
+		slog.Info("onboarding: channels already in the default channels", slog.String("guildID", g), slog.Int("channels", len(ids)))
 		return
 	}
 	// Only the default channels are sent: prompts, mode and the switch stay
 	// as the server set them.
-	if _, err := m.ownerClient.Rest.UpdateGuildOnboarding(guildID, discord.GuildOnboardingUpdate{DefaultChannelIDs: &defaults},
+	body := onboardingDefaults{DefaultChannelIDs: defaults}
+	if err := m.ownerClient.Rest.Do(rest.UpdateGuildOnboarding.Compile(nil, guildID), body, nil,
 		rest.WithCtx(ctx), rest.WithReason("Voice Relay: show its channels to members")); err != nil {
 		journal.Record(journal.Event{GuildID: guildID, Level: journal.Warning, Kind: "onboarding_refused",
 			Detail: "could not add the Voice Relay channels to the onboarding default channels: " + err.Error()})
@@ -63,4 +70,11 @@ func (m *Service) EnsureOnboardingDefaults(ctx context.Context, guildID snowflak
 	}
 	journal.Record(journal.Event{GuildID: guildID, Level: journal.Info, Kind: "onboarding_defaults",
 		Detail: fmt.Sprintf("%d channel(s) added to the onboarding default channels", len(added))})
+}
+
+// onboardingDefaults is the part of GET and PUT /guilds/{id}/onboarding the
+// bot reads and writes.
+type onboardingDefaults struct {
+	Enabled           bool           `json:"enabled,omitempty"`
+	DefaultChannelIDs []snowflake.ID `json:"default_channel_ids"`
 }
