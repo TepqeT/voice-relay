@@ -59,7 +59,7 @@ run install -d -m 700 -o "$MAJ_USER" -g "$MAJ_USER" "$MAJ_HOME/.ssh"
 [ "$APPLY" = "true" ] && echo "$CHEMIN" > "$CHEMIN_FILE" && chmod 600 "$CHEMIN_FILE"
 
 echo "== Caddy : route /maj/ (redemarre seulement le conteneur caddy)"
-run docker compose up -d caddy
+run docker compose up -d --no-deps caddy          # --no-deps : les bots ne sont ni recrees ni redemarres
 
 if [ "$APPLY" != "true" ]; then
 	echo "Simulation terminee : relancer avec sudo APPLY=true ./daevatool-maj.sh"
