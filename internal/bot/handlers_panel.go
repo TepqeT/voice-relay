@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/disgoorg/disgo/discord"
@@ -24,7 +25,19 @@ const (
 	panelOpenID     = "/panel/open"
 	panelRestrictID = "/panel/restrict"
 	panelHelpID     = "/panel/help"
+	panelSquadsID   = "/panel/squads"
 )
+
+// squadChooser is implemented by the manager: how many squads the next raid
+// creates, chosen on the panel within the relay bots available.
+type squadChooser interface {
+	SquadCapacity(guildID snowflake.ID) int
+	SquadTarget(guildID snowflake.ID) int
+	SetSquadTarget(guildID snowflake.ID, n int)
+}
+
+// maxSelectOptions is Discord's limit of options in one select menu.
+const maxSelectOptions = 25
 
 // panelStatusSource is implemented by the manager: the live raid state the
 // panel shows. Asserted so RvRService test doubles stay valid.
@@ -53,6 +66,7 @@ func (h *CommandHandlers) registerPanel(r handler.Router) {
 	r.ButtonComponent(panelStopID, h.withManagerButton(h.handlePanelStop))
 	r.ButtonComponent(panelStatusID, h.withGuildButton(h.handlePanelStatus))
 	r.ButtonComponent(panelHelpID, h.withGuildButton(h.handlePanelHelp))
+	r.SelectMenuComponent(panelSquadsID, h.withGuildSelectMenu(h.handlePanelSquads))
 	r.ButtonComponent(panelAccessID, h.withGuildButton(h.handleAccessRequest))
 	r.ButtonComponent(panelOpenID, h.withGuildButton(h.handleAccessMode(true)))
 	r.ButtonComponent(panelRestrictID, h.withGuildButton(h.handleAccessMode(false)))
@@ -128,6 +142,24 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 		rows = append(rows, discord.NewActionRow(players...))
 	}
 
+	// Row 3: how many squads the next raid creates.
+	squads, squadsOn := h.squadChoice(guildID)
+	if squadsOn {
+		capacity := squads.SquadCapacity(guildID)
+		target := squads.SquadTarget(guildID)
+		var opts []discord.StringSelectMenuOption
+		for n := 1; n <= min(capacity, maxSelectOptions); n++ {
+			label := loc.T("panel.squads.option", "N", n)
+			if n == 1 {
+				label = loc.T("panel.squads.option_one")
+			}
+			opts = append(opts, discord.NewStringSelectMenuOption(label, strconv.Itoa(n)).WithDefault(n == target))
+		}
+		rows = append(rows, discord.NewActionRow(
+			discord.NewStringSelectMenu(panelSquadsID, loc.T("panel.squads.placeholder", "N", target, "Max", capacity), opts...),
+		))
+	}
+
 	embed := discord.Embed{Title: loc.T("panel.title"), Color: panelColorIdle}
 	if running {
 		embed.Color = panelColorRunning
@@ -137,6 +169,10 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 		if ch := panelChannelLines(*live); ch != "" {
 			embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.channels"), Value: ch})
 		}
+	}
+	if squadsOn && !running {
+		embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.squads"),
+			Value: loc.T("panel.squads.value", "N", squads.SquadTarget(guildID), "Max", squads.SquadCapacity(guildID))})
 	}
 	if accessOn {
 		value := loc.T("panel.access.open")
@@ -168,6 +204,40 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 	}
 }
 
+// squadChoice reports whether the panel offers the squad count: raid
+// channels created per raid and at least two relay bots to choose from.
+func (h *CommandHandlers) squadChoice(guildID snowflake.ID) (squadChooser, bool) {
+	c, ok := h.rvr.(squadChooser)
+	if !ok || !h.dynamicChannels() || c.SquadCapacity(guildID) < 2 {
+		return nil, false
+	}
+	return c, true
+}
+
+// handlePanelSquads saves the squad count picked on the panel. Reserved to
+// those who start raids.
+func (h *CommandHandlers) handlePanelSquads(guildID snowflake.ID, loc *i18n.Localizer, data discord.SelectMenuInteractionData, e *handler.ComponentEvent) error {
+	c, ok := h.squadChoice(guildID)
+	sel, ok2 := data.(discord.StringSelectMenuInteractionData)
+	if !ok || !ok2 || len(sel.Values) == 0 {
+		return e.CreateMessage(ephemeral(loc.T("err.unexpected_data_type")))
+	}
+	if !h.isManagerAuthorized(guildID, e.Member()) {
+		return e.CreateMessage(ephemeral(loc.T("err.need_manager")))
+	}
+	n, err := strconv.Atoi(sel.Values[0])
+	if err != nil || n < 1 || n > c.SquadCapacity(guildID) {
+		return e.CreateMessage(ephemeral(loc.T("err.unexpected_data_type")))
+	}
+	c.SetSquadTarget(guildID, n)
+	h.notifyPanel(guildID)
+	msg := loc.T("panel.squads.set", "N", n)
+	if h.manager.HasActiveSession(guildID) {
+		msg = loc.T("panel.squads.set_running", "N", n)
+	}
+	return e.CreateMessage(ephemeral(msg))
+}
+
 // handlePanelHelp answers the Help button with a guide to every button of
 // this panel, visible only to the person who asked (Discord lets them
 // dismiss it), so the channel stays clean.
@@ -191,6 +261,9 @@ func (h *CommandHandlers) buildPanelHelp(guildID snowflake.ID, loc *i18n.Localiz
 	}
 	if sortOn {
 		fields = append(fields, discord.EmbedField{Name: loc.T("panel.btn.sort"), Value: loc.T("panel.faq.sort")})
+	}
+	if _, ok := h.squadChoice(guildID); ok {
+		fields = append(fields, discord.EmbedField{Name: loc.T("panel.field.squads"), Value: loc.T("panel.faq.squad_count")})
 	}
 	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
 		fields = append(fields, discord.EmbedField{Name: loc.T("panel.faq.squads_title"), Value: loc.T("panel.faq.squads")})
