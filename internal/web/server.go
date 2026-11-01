@@ -45,6 +45,8 @@ type Config struct {
 	// PriceLabel the price shown next to it.
 	PayPalURL  string
 	PriceLabel string
+	// Checkout takes payments on the site (PayPal Checkout); nil = off.
+	Checkout *Checkout
 }
 
 // Server is the administration site.
@@ -126,6 +128,8 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 	s.mux.HandleFunc("POST /servers/{id}/activate", s.withSession(s.handleActivate))
 	s.mux.HandleFunc("POST /servers/{id}/deactivate", s.withSession(s.handleDeactivate))
 	s.mux.HandleFunc("POST /servers/{id}/uninstall", s.withSession(s.handleUninstall))
+	s.mux.HandleFunc("POST /pay/order", s.withSession(s.handlePayOrder))
+	s.mux.HandleFunc("POST /pay/capture", s.withSession(s.handlePayCapture))
 	s.mux.HandleFunc("GET /admin", s.withAdmin(s.handleAdmin))
 	s.mux.HandleFunc("POST /admin/grant", s.withAdmin(s.handleGrant))
 	s.mux.HandleFunc("POST /admin/revoke", s.withAdmin(s.handleRevoke))
@@ -196,9 +200,16 @@ func (s *Server) withAdmin(fn sessionHandler) http.HandlerFunc {
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self' https://cdn.discordapp.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'")
+		nonce := newNonce()
+		h.Set("Content-Security-Policy", s.csp(nonce))
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "same-origin")
+		if s.checkoutOn() {
+			// PayPal checks the site's origin in the referrer.
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		} else {
+			h.Set("Referrer-Policy", "same-origin")
+		}
+		r = r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce))
 		h.Set("X-Frame-Options", "DENY")
 		if s.secure {
 			h.Set("Strict-Transport-Security", "max-age=31536000")
@@ -403,7 +414,7 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request, sess *ses
 // okKey and errKey read the flash message of a redirect, known keys only.
 func okKey(r *http.Request) string {
 	switch k := r.URL.Query().Get("ok"); k {
-	case "activated", "deactivated", "uninstalled", "uninstalled_partial":
+	case "activated", "deactivated", "uninstalled", "uninstalled_partial", "paid":
 		return "ok." + k
 	}
 	return ""
@@ -557,6 +568,14 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, dat
 	data["Support"] = s.supportURL()
 	data["PayPal"] = s.cfg.PayPalURL
 	data["Price"] = s.cfg.PriceLabel
+	if s.checkoutOn() {
+		data["Plans"] = s.planViews(lang)
+		data["PayClientID"] = s.cfg.Checkout.Client.ClientID
+		data["PayCurrency"] = s.cfg.Checkout.Currency
+	}
+	if n, ok := r.Context().Value(nonceKey{}).(string); ok {
+		data["Nonce"] = n
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Language", lang)
 	w.Header().Set("Cache-Control", "no-store")

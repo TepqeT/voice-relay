@@ -201,3 +201,25 @@ func TestRaidTrackingLimitAndUnlink(t *testing.T) {
 		t.Fatalf("negative limit = %v", err)
 	}
 }
+
+func TestExtendPaidPeriods(t *testing.T) {
+	s, _ := Open("")
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	sub, err := s.Extend(7, "alice", 30, "PayPal A")
+	if err != nil || sub.Plan != PlanUntil || !sub.Expires.Equal(now.AddDate(0, 0, 30)) {
+		t.Fatalf("first period %+v %v", sub, err)
+	}
+	_ = s.SetMaxGuilds(7, 3)
+	sub, _ = s.Extend(7, "alice", 30, "PayPal B")
+	if !sub.Expires.Equal(now.AddDate(0, 0, 60)) || sub.MaxGuilds != 3 {
+		t.Fatalf("renewal must add after the current end and keep the limit: %+v", sub)
+	}
+	sub, _ = s.Extend(7, "alice", 0, "PayPal C")
+	if sub.Plan != PlanLifetime {
+		t.Fatalf("lifetime %+v", sub)
+	}
+	if sub, _ = s.Extend(7, "alice", 30, "PayPal D"); sub.Plan != PlanLifetime {
+		t.Fatal("a lifetime subscription stays lifetime")
+	}
+}

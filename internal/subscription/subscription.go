@@ -230,6 +230,41 @@ func (s *Store) Grant(sub Subscription) error {
 	return s.mutate(func() { s.subs[sub.UserID] = sub })
 }
 
+// Extend credits a paid period to userID: days added after the current end
+// date when the subscription is still running, after today otherwise;
+// days == 0 makes it lifetime. The server limit is kept. A lifetime
+// subscription stays as it is.
+func (s *Store) Extend(userID snowflake.ID, userName string, days int, note string) (Subscription, error) {
+	if userID == 0 {
+		return Subscription{}, fmt.Errorf("%w: missing account ID", ErrInvalid)
+	}
+	var out Subscription
+	err := s.mutate(func() {
+		now := s.now()
+		cur, ok := s.subs[userID]
+		if ok && cur.Plan == PlanLifetime && cur.Active(now) {
+			out = cur
+			return
+		}
+		next := Subscription{UserID: userID, UserName: userName, Note: note, GrantedAt: now.UTC()}
+		if ok {
+			next.MaxGuilds = cur.MaxGuilds
+		}
+		if days == 0 {
+			next.Plan = PlanLifetime
+		} else {
+			start := now
+			if ok && cur.Plan == PlanUntil && cur.Expires.After(now) {
+				start = cur.Expires
+			}
+			next.Plan, next.Expires = PlanUntil, start.AddDate(0, 0, days)
+		}
+		s.subs[userID] = next
+		out = next
+	})
+	return out, err
+}
+
 // Revoke removes userID's subscription. Its servers stay linked and report
 // StateExpired, so their members are told why raids stopped.
 func (s *Store) Revoke(userID snowflake.ID) error {

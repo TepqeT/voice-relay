@@ -27,7 +27,18 @@
 </body>
 </html>
 {{end}}
-{{define "pay"}}{{if .PayPal}}<div class="pay">
+{{define "pay"}}{{if .Plans}}<div class="pay checkout" id="checkout" data-csrf="{{.CSRF}}" data-error="{{t "pay.err.generic"}}">
+  <p class="pay-title">{{t "pay.choose"}}</p>
+  <div class="plans">{{range $i, $p := .Plans}}
+    <label class="plan"><input type="radio" name="plan" value="{{$p.ID}}"{{if eq $i 0}} checked{{end}}><span class="plan-name">{{$p.Label}}</span><span class="plan-price">{{$p.Price}}</span></label>{{end}}
+  </div>
+  <div id="paypal-buttons" class="paypal-buttons"></div>
+  <p class="pay-msg bad" id="pay-msg" role="status"></p>
+  <p class="muted">{{t "pay.secure"}}</p>
+</div>
+<script nonce="{{.Nonce}}" data-csp-nonce="{{.Nonce}}" src="https://www.paypal.com/sdk/js?client-id={{.PayClientID}}&currency={{.PayCurrency}}&intent=capture&components=buttons"></script>
+<script nonce="{{.Nonce}}" src="/static/pay.js" defer></script>
+{{else if .PayPal}}<div class="pay">
   {{if .Price}}<p class="price">{{.Price}}</p>{{end}}
   <p><a class="button paypal" href="{{.PayPal}}" rel="noopener" target="_blank"><img src="/static/paypal.svg" alt="" class="icon" width="18" height="18">{{t "pay.button"}}</a></p>
   <p class="muted">{{t "pay.note"}} <code>{{.UserID}}</code></p>

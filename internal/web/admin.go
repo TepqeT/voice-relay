@@ -3,6 +3,7 @@ package web
 import (
 	"cmp"
 	"errors"
+	"github.com/TepqeT/voice-relay/internal/payment"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -86,6 +87,7 @@ func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, sess *sessi
 		"Rows": rows, "OK": ok, "Error": errKey,
 		"Accounts": len(rows), "Servers": servers, "Flagged": flagged,
 		"Tomorrow": time.Now().AddDate(0, 0, 1).Format("2006-01-02"),
+		"Payments": s.recentPayments(),
 	})
 }
 
@@ -180,4 +182,12 @@ func (s *Server) handleUnlink(w http.ResponseWriter, r *http.Request, sess *sess
 	}
 	slog.Info("web: server unlinked by an administrator", slog.String("guildID", id.String()), slog.String("by", sess.userID.String()))
 	http.Redirect(w, r, "/admin?ok=unlinked", http.StatusSeeOther)
+}
+
+// recentPayments lists the last payments received on the site, newest first.
+func (s *Server) recentPayments() []payment.Entry {
+	if !s.checkoutOn() {
+		return nil
+	}
+	return s.cfg.Checkout.Ledger.Recent(50)
 }
