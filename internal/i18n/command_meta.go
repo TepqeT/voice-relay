@@ -22,6 +22,7 @@ func (b *Bundle) DescriptionLocalizations(key string) map[discord.Locale]string 
 		if val == "" || val == key {
 			continue
 		}
+		val = TruncateRunes(val, 100) // Discord limit; a long EVENT_LABEL must not break the sync
 		for _, d := range DiscordLocalesFor(bl) {
 			out[d] = val
 		}
@@ -36,4 +37,13 @@ func (b *Bundle) DescriptionLocalizations(key string) map[discord.Locale]string 
 func (b *Bundle) NameLocalizations(key string) map[discord.Locale]string {
 	// Same shape as DescriptionLocalizations — Discord's API treats them identically.
 	return b.DescriptionLocalizations(key)
+}
+
+// TruncateRunes cuts s to at most n characters, ending with "…" when cut.
+func TruncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }

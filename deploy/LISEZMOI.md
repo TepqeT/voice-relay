@@ -169,6 +169,7 @@ docker compose logs --since 3h asmos | Select-String -Pattern "rvr quality repor
 | `SQUAD_COUNT` | `5` | Nombre de salons d'escouade |
 | `RAID_LEAD_CHANNEL` / `SQUAD_CHANNEL` | `Raid Lead` / `Escouade` | Noms des salons |
 | `VOICE_REGION` | vide | Région vocale commune à tous les salons, vide = automatique |
+| `EVENT_LABEL` | `RvR` | Nom de l'événement dans la catégorie, les commandes clic droit et les messages |
 | `CLASS_ROLES` | vide | Rôles de classe (noms ou ID, séparés par des virgules), vide = tri désactivé |
 | `WAITING_CHANNEL` | vide | Salon d'attente du tri par classe, vide = tri désactivé |
 | `CLASS_RULE` | `balanced` | Règle de composition des escouades (voir Tri automatique par classe) |

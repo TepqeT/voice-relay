@@ -30,6 +30,7 @@ const DefaultLocale = "en"
 type Bundle struct {
 	b       *i18n.Bundle
 	tags    []language.Tag
+	event   string // {{.Event}} in every message, DefaultEventLabel when empty
 	keysMu  sync.RWMutex
 	allKeys []string // populated lazily for tests
 }
@@ -67,6 +68,22 @@ func NewBundle() (*Bundle, error) {
 	}
 
 	return &Bundle{b: bundle, tags: tags}, nil
+}
+
+// DefaultEventLabel names the event in messages when EVENT_LABEL is unset.
+const DefaultEventLabel = "RvR"
+
+// SetEventLabel sets the event name used by every message ({{.Event}}), for
+// games where "RvR" means nothing. Empty restores the default. Call before
+// the first lookup.
+func (b *Bundle) SetEventLabel(label string) { b.event = strings.TrimSpace(label) }
+
+// EventLabel returns the event name used in messages.
+func (b *Bundle) EventLabel() string {
+	if b.event == "" {
+		return DefaultEventLabel
+	}
+	return b.event
 }
 
 // Tags returns the list of language tags loaded into the bundle.

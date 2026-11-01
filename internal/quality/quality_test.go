@@ -268,3 +268,18 @@ func TestAttachDiagEmptyIsIgnored(t *testing.T) {
 		t.Fatalf("empty summary attached: %+v", rep)
 	}
 }
+
+func TestRenderEventLabel(t *testing.T) {
+	r := Report{GuildID: "1", Mode: "one_caller", DurationSec: 90, Verdict: LevelOK}
+	for _, lang := range []string{"fr", "en"} {
+		if def, lab := Render(r, lang), RenderWithLabel(r, lang, ""); def != lab {
+			t.Fatalf("%s: empty label changed the report:\n%s\n%s", lang, def, lab)
+		}
+		if got := RenderWithLabel(r, lang, "GvG"); strings.Contains(got, "RvR") || !strings.Contains(got, "GvG") {
+			t.Fatalf("%s: %q", lang, got)
+		}
+	}
+	if !strings.HasPrefix(Render(r, "fr"), "**Rapport RvR** :") {
+		t.Fatalf("default title changed: %q", Render(r, "fr"))
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/disgoorg/disgo/handler"
 	"github.com/disgoorg/snowflake/v2"
 
+	"github.com/TepqeT/voice-relay/internal/i18n"
 	"github.com/TepqeT/voice-relay/internal/manager"
 )
 
@@ -34,13 +35,28 @@ func (h *CommandHandlers) access() (AccessService, bool) {
 // accessCommandNames are the two user commands (right click on a member >
 // Apps). The faction is in the name so both factions' bots can offer them in
 // the same server without confusion. Discord caps the name at 32 characters.
-func accessCommandNames(faction string) (grant, revoke string) {
-	grant = fmt.Sprintf("RvR %s : autoriser", faction)
-	revoke = fmt.Sprintf("RvR %s : retirer", faction)
+func accessCommandNames(label, faction string) (grant, revoke string) {
+	grant = fmt.Sprintf("%s %s : autoriser", label, faction)
+	revoke = fmt.Sprintf("%s %s : retirer", label, faction)
 	if len([]rune(grant)) > 32 {
-		grant, revoke = "RvR : autoriser", "RvR : retirer"
+		grant, revoke = shortCommandName(label, "autoriser"), shortCommandName(label, "retirer")
 	}
 	return grant, revoke
+}
+
+// shortCommandName is the fallback "<label> : <action>", the label cut so the
+// name fits Discord's 32 characters.
+func shortCommandName(label, action string) string {
+	suffix := " : " + action
+	return i18n.TruncateRunes(label, 32-len([]rune(suffix))) + suffix
+}
+
+// eventLabel is the event name in command names (EVENT_LABEL, default RvR).
+func (h *CommandHandlers) eventLabel() string {
+	if h.bundle == nil {
+		return i18n.DefaultEventLabel
+	}
+	return h.bundle.EventLabel()
 }
 
 // AccessCommands returns the user commands to register, none when access
@@ -50,7 +66,7 @@ func (h *CommandHandlers) AccessCommands() []discord.ApplicationCommandCreate {
 	if !ok {
 		return nil
 	}
-	grant, revoke := accessCommandNames(a.AccessFaction())
+	grant, revoke := accessCommandNames(h.eventLabel(), a.AccessFaction())
 	return []discord.ApplicationCommandCreate{
 		discord.UserCommandCreate{Name: grant},
 		discord.UserCommandCreate{Name: revoke},
@@ -62,7 +78,7 @@ func (h *CommandHandlers) registerAccess(r handler.Router) {
 	if !ok {
 		return
 	}
-	grant, revoke := accessCommandNames(a.AccessFaction())
+	grant, revoke := accessCommandNames(h.eventLabel(), a.AccessFaction())
 	r.UserCommand("/"+grant, h.handleAccess(a, true))
 	r.UserCommand("/"+revoke, h.handleAccess(a, false))
 	r.ButtonComponent("/access/pick/{mode}/{userID}", h.handleAccessPick(a))

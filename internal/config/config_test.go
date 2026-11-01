@@ -81,7 +81,7 @@ func TestStorePath(t *testing.T) {
 
 func TestLoadRvRDefaults(t *testing.T) {
 	for _, k := range []string{"PRIORITY_SPEAKER", "SOUNDS_DIR", "SOUND_ON_START", "SOUND_ON_STOP", "REPORTS_DIR", "REPORT_LANG", "REPORT_TO_DISCORD", "DIAG_DIR", "DIAG_INTERVAL", "SQUAD_LEAD_ROLE", "SQUAD_LEAD_KEY", "RAID_LEAD_ROLE", "SQUAD_LEADS_TO_SQUADS",
-		"DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION", "RVR_CATEGORY_AFTER", "ACCESS_ROLE", "BOARD_ROLE", "ACCESS_CHANNEL", "CLASS_ROLES", "WAITING_CHANNEL", "CLASS_RULE"} {
+		"DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION", "RVR_CATEGORY_AFTER", "ACCESS_ROLE", "BOARD_ROLE", "ACCESS_CHANNEL", "CLASS_ROLES", "WAITING_CHANNEL", "CLASS_RULE", "EVENT_LABEL"} {
 		t.Setenv(k, "")
 	}
 	got := loadRvR("/data/store.yaml")
@@ -99,6 +99,7 @@ func TestLoadRvRDefaults(t *testing.T) {
 		RaidLeadRole:    "Raid Lead",
 		SquadLeadKey:    "priority",
 		Channels: ChannelsConfig{
+			EventLabel:   "RvR",
 			Category:     "RvR",
 			RaidLeadName: "Raid Lead",
 			SquadName:    "Escouade",
@@ -134,7 +135,7 @@ func TestLoadRvROverrides(t *testing.T) {
 }
 
 func TestLoadChannels(t *testing.T) {
-	for _, k := range []string{"DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION"} {
+	for _, k := range []string{"EVENT_LABEL", "DYNAMIC_CHANNELS", "FACTION_NAME", "FACTION_ROLE", "RVR_CATEGORY", "RAID_LEAD_CHANNEL", "SQUAD_CHANNEL", "SQUAD_COUNT", "VOICE_REGION"} {
 		t.Setenv(k, "")
 	}
 	c := loadChannels("/data/asmos/store.yaml")
@@ -180,5 +181,22 @@ func TestLoadClassSort(t *testing.T) {
 	t.Setenv("CLASS_ROLES", "none")
 	if c = loadChannels("store.yaml"); len(c.ClassRoles) != 0 {
 		t.Fatalf("none = %q", c.ClassRoles)
+	}
+}
+
+func TestEventLabel(t *testing.T) {
+	t.Setenv("RVR_CATEGORY", "")
+	t.Setenv("FACTION_NAME", "Elyséens")
+	t.Setenv("EVENT_LABEL", "")
+	if c := loadChannels("store.yaml"); c.EventLabel != "RvR" || c.Category != "RvR Elyséens" {
+		t.Fatalf("default = %q / %q, want the v27 category", c.EventLabel, c.Category)
+	}
+	t.Setenv("EVENT_LABEL", "GvG")
+	if c := loadChannels("store.yaml"); c.EventLabel != "GvG" || c.Category != "GvG Elyséens" {
+		t.Fatalf("custom = %q / %q", c.EventLabel, c.Category)
+	}
+	t.Setenv("RVR_CATEGORY", "Guerre")
+	if c := loadChannels("store.yaml"); c.Category != "Guerre" {
+		t.Fatalf("RVR_CATEGORY must win, got %q", c.Category)
 	}
 }

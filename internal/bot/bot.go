@@ -257,7 +257,8 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load i18n bundle: %w", err)
 	}
-	slog.Info("i18n bundle loaded", slog.Int("locales", len(bundle.Tags())))
+	bundle.SetEventLabel(cfg.RvR.Channels.EventLabel)
+	slog.Info("i18n bundle loaded", slog.Int("locales", len(bundle.Tags())), slog.String("eventLabel", bundle.EventLabel()))
 
 	// Wire command handlers.
 	cmdHandlers := NewCommandHandlers(managerSvc, &metrics.Bot, bundle)
@@ -279,7 +280,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 				return
 			}
 			if _, err := client.Rest.CreateMessage(channelID, discord.MessageCreate{
-				Content:         quality.Render(rep, lang),
+				Content:         quality.RenderWithLabel(rep, lang, bundle.EventLabel()),
 				AllowedMentions: &discord.AllowedMentions{},
 			}); err != nil {
 				slog.Warn("failed to post quality report", slog.String("channelID", channelID.String()), slog.Any("err", err))

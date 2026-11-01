@@ -13,7 +13,8 @@ import (
 // raw key, which is enough to spot the problem in production.
 type Localizer struct {
 	loc    *i18n.Localizer
-	locale string // resolved bundle locale (e.g. "en", "ru")
+	locale string         // resolved bundle locale (e.g. "en", "ru")
+	vars   map[string]any // variables every message may use ({{.Event}})
 }
 
 // Locale returns the resolved bundle locale code for this localizer.
@@ -42,6 +43,7 @@ func (b *Bundle) For(guildLocale string, interactionLocale discord.Locale) *Loca
 	return &Localizer{
 		loc:    i18n.NewLocalizer(b.b, resolved, DefaultLocale),
 		locale: resolved,
+		vars:   map[string]any{"Event": b.EventLabel()},
 	}
 }
 
@@ -66,9 +68,12 @@ func (b *Bundle) hasLocale(code string) bool {
 //
 // On lookup failure the key itself is returned so callers always get a non-empty string.
 func (l *Localizer) T(key string, args ...any) string {
-	cfg := &i18n.LocalizeConfig{MessageID: key}
+	data := make(map[string]any, len(l.vars)+len(args)/2)
+	for k, v := range l.vars {
+		data[k] = v
+	}
+	cfg := &i18n.LocalizeConfig{MessageID: key, TemplateData: data}
 	if len(args) > 0 {
-		data := make(map[string]any, len(args)/2)
 		var pluralCount any
 		for i := 0; i+1 < len(args); i += 2 {
 			name, ok := args[i].(string)
@@ -81,7 +86,6 @@ func (l *Localizer) T(key string, args ...any) string {
 				pluralCount = args[i+1]
 			}
 		}
-		cfg.TemplateData = data
 		if pluralCount != nil {
 			cfg.PluralCount = pluralCount
 		}

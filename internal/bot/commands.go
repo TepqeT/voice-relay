@@ -21,23 +21,23 @@ func BuildCommands(bundle *i18n.Bundle) []discord.ApplicationCommandCreate {
 	cmds := []discord.ApplicationCommandCreate{
 		discord.SlashCommandCreate{
 			Name:                     "setup",
-			Description:              def.T("cmd.setup.description"),
+			Description:              i18n.TruncateRunes(def.T("cmd.setup.description"), 100),
 			DescriptionLocalizations: bundle.DescriptionLocalizations("cmd.setup.description"),
 		},
 		discord.SlashCommandCreate{
 			Name:                     "start",
-			Description:              def.T("cmd.start.description"),
+			Description:              i18n.TruncateRunes(def.T("cmd.start.description"), 100),
 			DescriptionLocalizations: bundle.DescriptionLocalizations("cmd.start.description"),
 			Options: []discord.ApplicationCommandOption{
 				discord.ApplicationCommandOptionString{
 					Name:                     "code",
-					Description:              def.T("cmd.start.opt.code.description"),
+					Description:              i18n.TruncateRunes(def.T("cmd.start.opt.code.description"), 100),
 					DescriptionLocalizations: bundle.DescriptionLocalizations("cmd.start.opt.code.description"),
 					Required:                 false,
 				},
 				discord.ApplicationCommandOptionString{
 					Name:                     "mode",
-					Description:              def.T("cmd.start.opt.mode.description"),
+					Description:              i18n.TruncateRunes(def.T("cmd.start.opt.mode.description"), 100),
 					DescriptionLocalizations: bundle.DescriptionLocalizations("cmd.start.opt.mode.description"),
 					Required:                 false,
 					Choices: []discord.ApplicationCommandOptionChoiceString{
@@ -50,19 +50,19 @@ func BuildCommands(bundle *i18n.Bundle) []discord.ApplicationCommandCreate {
 		},
 		discord.SlashCommandCreate{
 			Name:                     "stop",
-			Description:              def.T("cmd.stop.description"),
+			Description:              i18n.TruncateRunes(def.T("cmd.stop.description"), 100),
 			DescriptionLocalizations: bundle.DescriptionLocalizations("cmd.stop.description"),
 		},
 		discord.SlashCommandCreate{
 			Name:                     "status",
-			Description:              def.T("cmd.status.description"),
+			Description:              i18n.TruncateRunes(def.T("cmd.status.description"), 100),
 			DescriptionLocalizations: bundle.DescriptionLocalizations("cmd.status.description"),
 		},
 	}
 	cmds = append(cmds, discord.SlashCommandCreate{
 		Name:                     "panel",
 		NameLocalizations:        map[discord.Locale]string{discord.LocaleFrench: "panneau"},
-		Description:              def.T("cmd.panel.description"),
+		Description:              i18n.TruncateRunes(def.T("cmd.panel.description"), 100),
 		DescriptionLocalizations: bundle.DescriptionLocalizations("cmd.panel.description"),
 	})
 	return cmds
