@@ -344,7 +344,9 @@ func (k *panelKeeper) refreshOverwrites(ctx context.Context, guildID, channelID 
 	ow := k.overwrites(guildID)
 	if _, err := k.rest.UpdateChannel(channelID, discord.GuildTextChannelUpdate{PermissionOverwrites: &ow}, rest.WithCtx(ctx), rest.WithReason("Voice Relay control panel")); err != nil {
 		slog.Warn("panel channel: overwrites not refreshed", slog.String("guildID", guildID.String()), slog.Any("err", err))
+		return
 	}
+	slog.Info("panel channel: overwrites refreshed", slog.String("guildID", guildID.String()), slog.String("channelID", channelID.String()))
 }
 
 // grantable is what the bot may put in an overwrite: Discord refuses
