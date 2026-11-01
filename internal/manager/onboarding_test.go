@@ -90,13 +90,18 @@ func TestOnboardingLeavesServersWithoutIt(t *testing.T) {
 type unknownOnce struct {
 	onboardingRest
 	refused bool
+	code    string // Discord error code, UNKNOWN_CHANNEL when empty
 }
 
 func (r *unknownOnce) Do(e *rest.CompiledEndpoint, rq any, rs any, opts ...rest.RequestOpt) error {
 	err := r.onboardingRest.Do(e, rq, rs, opts...)
 	if e.Endpoint.Method == http.MethodPut && !r.refused {
 		r.refused = true
-		return &rest.Error{Code: 50035, Message: "Invalid Form Body", Errors: []byte(`{"default_channel_ids":{"_errors":[{"code":"UNKNOWN_CHANNEL"}]}}`)}
+		code := r.code
+		if code == "" {
+			code = "UNKNOWN_CHANNEL"
+		}
+		return &rest.Error{Code: 50035, Message: "Invalid Form Body", Errors: []byte(`{"default_channel_ids":{"_errors":[{"code":"` + code + `"}]}}`)}
 	}
 	return err
 }
@@ -123,5 +128,28 @@ func TestOnboardingSkipsCategoryAndDeletedChannels(t *testing.T) {
 	}
 	if r.puts[0] != `{"default_channel_ids":["5","7","100"]}` || r.puts[1] != `{"default_channel_ids":["5","100"]}` {
 		t.Fatalf("puts = %v", r.puts)
+	}
+}
+
+// A default channel of the server @everyone can no longer see is dropped on
+// the retry; visible ones stay.
+func TestOnboardingDropsChannelsHiddenFromEveryone(t *testing.T) {
+	r := &unknownOnce{onboardingRest: onboardingRest{get: `{"enabled":true,"default_channel_ids":["5","6"]}`}, code: "DEFAULT_CHANNEL_REQUIRES_EVERYONE_ACCESS"}
+	caches := cache.New(cache.WithCaches(cache.FlagsAll))
+	caches.AddRole(discord.Role{ID: 10, GuildID: 10, Name: "@everyone", Permissions: discord.PermissionViewChannel})
+	for _, raw := range []string{
+		`{"id":"5","guild_id":"10","name":"rules","type":0}`,
+		`{"id":"6","guild_id":"10","name":"staff","type":0,"permission_overwrites":[{"id":"10","type":0,"allow":"0","deny":"1024"}]}`,
+	} {
+		var ch discord.GuildTextChannel
+		if err := json.Unmarshal([]byte(raw), &ch); err != nil {
+			t.Fatal(err)
+		}
+		caches.AddChannel(ch)
+	}
+	m := NewService(store.NewInMemoryStore(), mapPool{}, &bot.Client{Caches: caches, Rest: r}, 1, config.TestConfig{}, nil)
+	m.EnsureOnboardingDefaults(context.Background(), 10, 100)
+	if len(r.puts) != 2 || r.puts[1] != `{"default_channel_ids":["5","100"]}` {
+		t.Fatalf("puts = %v, want the hidden channel 6 dropped on the retry", r.puts)
 	}
 }
