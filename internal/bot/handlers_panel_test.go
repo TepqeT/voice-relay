@@ -36,7 +36,7 @@ func TestBuildPanel(t *testing.T) {
 		t.Fatalf("rows = %d, want 1 (controls only)", len(msg.Components))
 	}
 	controls, ok := msg.Components[0].(discord.ActionRowComponent)
-	if !ok || len(controls.Components) != 3 {
+	if !ok || len(controls.Components) != 4 {
 		t.Fatalf("first row %#v", msg.Components[0])
 	}
 	start := controls.Components[0].(discord.ButtonComponent)

@@ -46,7 +46,7 @@ func TestPanelShowsLiveState(t *testing.T) {
 
 	h.SetRvR(liveRvR{})
 	msg := h.buildPanel(1, loc)
-	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelAccessID+" "+panelOpenID {
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelHelpID+" "+panelAccessID+" "+panelOpenID {
 		t.Fatalf("idle buttons = %s, want Start, Status | Request access, Open", got)
 	}
 	if len(msg.Components) != 2 {
@@ -70,7 +70,7 @@ func TestPanelShowsLiveState(t *testing.T) {
 		Squads:   []manager.ChannelCount{{ChannelID: 8, Members: 5}, {ChannelID: 9, Members: 0}},
 	}})
 	msg = h.buildPanel(1, loc)
-	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStopID+" "+panelStatusID+" "+panelAccessID+" "+panelOpenID {
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStopID+" "+panelStatusID+" "+panelHelpID+" "+panelAccessID+" "+panelOpenID {
 		t.Fatalf("running buttons = %s, want Stop, Status | Request access, Open", got)
 	}
 	text = panelText(msg)
@@ -86,7 +86,7 @@ func TestPanelShowsLiveState(t *testing.T) {
 	// Open to everyone: no request button, the switch offers to restrict.
 	h.SetRvR(liveRvR{open: true})
 	msg = h.buildPanel(1, loc)
-	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelRestrictID {
+	if got := strings.Join(panelButtonIDs(msg), " "); got != panelStartID+" "+panelStatusID+" "+panelHelpID+" "+panelRestrictID {
 		t.Fatalf("open buttons = %s, want Start, Status | Restrict", got)
 	}
 	if !strings.Contains(panelText(msg), "Open: anyone") {
@@ -122,5 +122,26 @@ func TestAccessRequestsOnePerMember(t *testing.T) {
 	r.end(1, 42)
 	if !r.begin(1, 42, now) {
 		t.Fatal("after a decision the member may ask again")
+	}
+}
+
+func TestPanelHelpButton(t *testing.T) {
+	bundle, _ := i18n.NewBundle()
+	h := &CommandHandlers{bundle: bundle}
+	h.SetRvR(liveRvR{})
+	loc := bundle.For("", "")
+	msg := h.buildPanel(1, loc)
+	if !strings.Contains(strings.Join(panelButtonIDs(msg), " "), panelHelpID) {
+		t.Fatal("the panel must offer a Help button")
+	}
+	help := h.buildPanelHelp(1, loc)
+	if help.Flags&discord.MessageFlagEphemeral == 0 {
+		t.Fatal("the help must only be visible to the person who asked")
+	}
+	text := panelText(help)
+	for _, want := range []string{"What each button does", "Start raid / Stop raid", "Request access", "Open to everyone / Restrict access", "Who does what"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("help lacks %q:\n%s", want, text)
+		}
 	}
 }
