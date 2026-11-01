@@ -22,3 +22,87 @@ table { width:100%; border-collapse:collapse; margin:8px 0 12px; }
 th, td { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
 code { background:var(--line); padding:1px 5px; border-radius:4px; }
 footer { text-align:center; padding:24px 16px; }
+
+/* ---- Animated scenes (templates/motion.html) ---- */
+:root { --scene-bg:#eef0f8; --scene-tile:#fff; --scene-line:#c9cee0; --c-red:#e5484d; --c-orange:#f2994a; --c-blue:#3b82f6; --c-purple:#8b5cf6; --c-green:#22a06b; --c-teal:#14b8a6; --c-pink:#ec4899; }
+@media (prefers-color-scheme: dark) { :root { --scene-bg:#232633; --scene-tile:#2b2f3d; --scene-line:#3d4254; } }
+.scene { display:block; width:100%; height:auto; border-radius:12px; background:var(--scene-bg); }
+.scene text { font:600 11px system-ui, sans-serif; fill:var(--text); }
+.scene .small { font-size:9px; }
+.scene g { transform-box:fill-box; transform-origin:center; }
+.frame { fill:var(--scene-tile); stroke:var(--scene-line); }
+.frame-bar { fill:var(--scene-line); }
+.dot-r { fill:var(--c-red); } .dot-y { fill:var(--c-orange); } .dot-g { fill:var(--c-green); }
+.btn { fill:var(--accent); } .scene .btn-text { fill:#fff; }
+.tile { fill:var(--scene-bg); stroke:var(--scene-line); stroke-width:1.5; }
+.ico { fill:var(--c-blue); } .ico.i2 { fill:var(--c-purple); } .ico.i3 { fill:var(--c-teal); }
+.cursor-shape { fill:#111; stroke:#fff; stroke-width:1.2; }
+.server-box { fill:var(--scene-tile); stroke:var(--accent); stroke-width:2; }
+.bot-main { fill:var(--accent); } .bot-h { fill:var(--c-purple); } .scene .bot-text { fill:#fff; font-size:9px; }
+.ok-dot { fill:var(--ok); } .ok-mark { fill:none; stroke:#fff; stroke-width:1.8; stroke-linecap:round; }
+.chip-bg { fill:var(--scene-bg); stroke:var(--scene-line); } .chip-bg.ghost { fill:var(--scene-tile); stroke:var(--accent); }
+.role-dot.d-red { fill:var(--c-red); } .d-orange { fill:var(--c-orange); } .d-blue { fill:var(--c-blue); } .d-purple { fill:var(--c-purple); } .d-green { fill:var(--c-green); } .d-teal { fill:var(--c-teal); } .d-pink { fill:var(--c-pink); }
+.avatar { fill:var(--c-blue); } .avatar.a2 { fill:var(--c-orange); } .avatar.a3 { fill:var(--c-teal); }
+.wire { fill:none; stroke:var(--accent); stroke-width:2; stroke-dasharray:6 10; opacity:.7; }
+.lead { fill:var(--c-red); } .wave { fill:none; stroke:var(--c-red); stroke-width:2; }
+.squad-c { fill:var(--c-purple); } .scene .node-text { fill:#fff; }
+
+/* login: cursor clicks the button, the servers appear, one is picked */
+.cur-login { animation:cur-login 7s ease-in-out infinite; }
+.login-btn { animation:press 7s ease-in-out infinite; animation-delay:-5.1s; }
+.card { animation:pop-in 7s ease-out infinite both; }
+.card.c1 { animation-delay:2.4s; } .card.c2 { animation-delay:2.6s; } .card.c3 { animation-delay:2.8s; }
+.card.c1 .tile { animation:pick 7s ease-in-out infinite; }
+@keyframes cur-login { 0% { transform:translate(70px,90px); } 25%,32% { transform:translate(-40px,25px); } 55%,100% { transform:translate(-125px,86px); } }
+@keyframes press { 0%,100% { transform:none; } 4% { transform:scale(.92); } 8% { transform:none; } }
+@keyframes pick { 0%,58% { stroke:var(--scene-line); } 64%,92% { stroke:var(--accent); stroke-width:3; } 100% { stroke:var(--scene-line); } }
+
+/* shared: pop in, stay, fade out before the loop restarts */
+@keyframes pop-in { 0% { opacity:0; transform:translateY(-16px) scale(.6); } 8% { opacity:1; transform:none; } 86% { opacity:1; transform:none; } 94%,100% { opacity:0; transform:none; } }
+
+/* invite: the bots arrive one by one and get their check mark */
+.bot, .check { animation:pop-in 8s ease-out infinite both; }
+.b0 { animation-delay:.2s; } .k0 { animation-delay:1s; }
+.b1 { animation-delay:1.6s; } .k1 { animation-delay:2.3s; }
+.b2 { animation-delay:2.6s; } .k2 { animation-delay:3.3s; }
+.b3 { animation-delay:3.6s; } .k3 { animation-delay:4.3s; }
+.b4 { animation-delay:4.6s; } .k4 { animation-delay:5.3s; }
+
+/* roles: one click, every role appears */
+.cur-roles { animation:cur-roles 8s ease-in-out infinite; }
+.create-btn { animation:press 8s ease-in-out infinite; animation-delay:-7.1s; }
+.chip { animation:pop-in 8s ease-out infinite both; }
+.r1 { animation-delay:1.2s; } .r2 { animation-delay:1.5s; } .r3 { animation-delay:1.8s; } .r4 { animation-delay:2.1s; }
+.r5 { animation-delay:2.4s; } .r6 { animation-delay:2.7s; } .r7 { animation-delay:3s; }
+@keyframes cur-roles { 0% { transform:translate(110px,90px); } 10%,16% { transform:translate(-45px,3px); } 40%,100% { transform:translate(130px,120px); } }
+
+/* assign: drag the role onto a player */
+.drag { animation:drag 7s ease-in-out infinite; }
+.given { animation:given 7s ease-in-out infinite; }
+.member.m2 { animation:named 7s ease-in-out infinite; }
+@keyframes drag { 0%,12% { opacity:0; transform:none; } 18% { opacity:1; transform:none; } 52% { opacity:1; transform:translate(-94px,38px); } 58%,100% { opacity:0; transform:translate(-94px,38px); } }
+@keyframes given { 0%,54% { opacity:0; transform:scale(.6); } 60%,92% { opacity:1; transform:none; } 100% { opacity:0; } }
+@keyframes named { 0%,54% { fill:var(--text); } 60%,92% { fill:var(--c-red); } 100% { fill:var(--text); } }
+
+/* raid: the raid lead's voice flows to every squad */
+.wave { animation:wave 2.6s ease-out infinite; } .wave.v2 { animation-delay:1.3s; }
+.wire { animation:flow 1.2s linear infinite; }
+.squad { animation:pulse 2.6s ease-in-out infinite; }
+.s1 { animation-delay:.5s; } .s2 { animation-delay:.6s; } .s3 { animation-delay:.7s; } .s4 { animation-delay:.8s; }
+@keyframes wave { 0% { transform:scale(1); opacity:.7; } 100% { transform:scale(2.6); opacity:0; } }
+@keyframes flow { to { stroke-dashoffset:-32; } }
+@keyframes pulse { 0%,100% { transform:none; } 20% { transform:scale(1.18); } 40% { transform:none; } }
+
+/* layout of the guide */
+.steps { display:grid; grid-template-columns:repeat(2, 1fr); gap:16px; margin:12px 0; }
+@media (max-width:640px) { .steps { grid-template-columns:1fr; } }
+.step { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+.step h3 { margin:10px 0 4px; font-size:16px; }
+.step p { margin:0; color:var(--muted); font-size:14px; }
+.step .num { display:inline-block; width:24px; height:24px; line-height:24px; text-align:center; border-radius:50%; background:var(--accent); color:#fff; font-size:13px; margin-right:6px; }
+.hero-grid { display:grid; grid-template-columns:1.1fr 1fr; gap:20px; align-items:center; }
+@media (max-width:720px) { .hero-grid { grid-template-columns:1fr; } }
+.with-scene { display:grid; grid-template-columns:1fr 220px; gap:16px; align-items:start; }
+@media (max-width:640px) { .with-scene { grid-template-columns:1fr; } }
+
+@media (prefers-reduced-motion: reduce) { .scene * { animation:none !important; } }

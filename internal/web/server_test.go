@@ -271,3 +271,27 @@ func TestNewRejectsRelativeBaseURL(t *testing.T) {
 		t.Fatal("relative base URL accepted")
 	}
 }
+
+// The CSP forbids inline styles and scripts: the animated pages must use
+// classes only, and every scene must be present.
+func TestPagesRespectCSPAndShowScenes(t *testing.T) {
+	site, _, c := newTestSite(t)
+	_, index := get(t, c, site.URL+"/")
+	signIn(t, site, c, "good")
+	_, guild := get(t, c, site.URL+"/servers/111")
+	for name, body := range map[string]string{"index": index, "guild": guild} {
+		if strings.Contains(body, "style=") || strings.Contains(body, "<script") {
+			t.Errorf("%s has inline style or script (blocked by the CSP)", name)
+		}
+	}
+	for _, scene := range []string{"scene-raid", "scene-login", "scene-invite", "scene-roles", "scene-assign"} {
+		if !strings.Contains(index, `class="scene `+scene+`"`) {
+			t.Errorf("index misses %s", scene)
+		}
+	}
+	for _, scene := range []string{"scene-invite", "scene-roles", "scene-assign"} {
+		if !strings.Contains(guild, `class="scene `+scene+`"`) {
+			t.Errorf("guild page misses %s", scene)
+		}
+	}
+}

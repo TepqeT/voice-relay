@@ -12,13 +12,16 @@
 </div>
 {{end}}
 
-<section class="card">
+<section class="card with-scene">
+  <div>
   <h2>1. Bot principal ({{.Bot}})</h2>
   {{if .Status.BotPresent}}<p class="ok">Présent sur le serveur.</p>
   <p class="muted">Pour mettre à jour ses permissions, réouvrez l'invitation : <a href="{{.Status.BotInviteURL}}" rel="noopener">réinviter</a>.</p>
   {{else}}<p>Le bot n'est pas encore sur ce serveur.</p>
   <p><a class="button" href="{{.Status.BotInviteURL}}" rel="noopener">Inviter {{.Bot}}</a></p>
   <p class="muted">Revenez ensuite sur cette page et rechargez-la.</p>{{end}}
+  </div>
+  {{template "scene-invite"}}
 </section>
 
 <section class="card">
@@ -41,7 +44,8 @@
   {{else}}<p class="ok">Toutes les permissions nécessaires sont accordées.</p>{{end}}
 </section>
 
-<section class="card">
+<section class="card with-scene">
+  <div>
   <h2>4. Rôles</h2>
   <table>
     <thead><tr><th>Usage</th><th>Rôle</th><th>État</th></tr></thead>
@@ -60,12 +64,17 @@
   </form>
   {{end}}
   <p class="muted">Un rôle « Au-dessus du bot » ne peut pas être géré par lui : dans Paramètres du serveur, Rôles, glissez le rôle du bot au-dessus.</p>
+  </div>
+  {{template "scene-roles"}}
 </section>
 
-<section class="card">
+<section class="card with-scene">
+  <div>
   <h2>5. Dernière étape</h2>
   {{if .Status.Ready}}<p class="ok">Installation terminée.</p>{{end}}
   <p>Donnez les rôles à vos joueurs, puis tapez <code>/panneau</code> dans le salon où les Raid Leads lanceront les raids.</p>
+  </div>
+  {{template "scene-assign"}}
 </section>
 {{end}}
 {{template "foot" .}}
