@@ -31,6 +31,10 @@ type panelStatusSource interface {
 	PanelStatus(guildID snowflake.ID) manager.PanelStatus
 }
 
+// homeCategoryInfo is implemented by the manager when the panel and the raid
+// channels share one permanent category.
+type homeCategoryInfo interface{ HomeCategoryEnabled() bool }
+
 // OnPanelChange registers fn, called when a raid started or stopped so the
 // panel on display is refreshed at once.
 func (h *CommandHandlers) OnPanelChange(fn func(guildID snowflake.ID)) { h.panelChanged = fn }
@@ -145,7 +149,11 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 		help = append(help, loc.T("panel.help.sort", "Waiting", sorter.ClassSortWaiting()))
 	}
 	if h.dynamicChannels() {
-		help = append(help, loc.T("panel.help.channels", "Category", h.rvr.ChannelCategory()))
+		if hc, ok := h.rvr.(homeCategoryInfo); ok && hc.HomeCategoryEnabled() {
+			help = append(help, loc.T("panel.help.channels_home"))
+		} else {
+			help = append(help, loc.T("panel.help.channels", "Category", h.rvr.ChannelCategory()))
+		}
 	}
 	embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.help"), Value: strings.Join(help, "\n")})
 

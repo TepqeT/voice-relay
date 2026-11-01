@@ -36,6 +36,7 @@ type panelRest interface {
 	DeleteChannel(channelID snowflake.ID, opts ...rest.RequestOpt) error
 	CreateMessage(channelID snowflake.ID, m discord.MessageCreate, opts ...rest.RequestOpt) (*discord.Message, error)
 	UpdateMessage(channelID, messageID snowflake.ID, m discord.MessageUpdate, opts ...rest.RequestOpt) (*discord.Message, error)
+	UpdateChannel(channelID snowflake.ID, c discord.ChannelUpdate, opts ...rest.RequestOpt) (discord.Channel, error)
 }
 
 type panelKeeper struct {
@@ -45,6 +46,9 @@ type panelKeeper struct {
 	selfID func() snowflake.ID
 	build  func(guildID snowflake.ID) discord.MessageCreate
 	file   string // JSON state, "" keeps it in memory
+	// home, when set, returns the permanent category the panel channel lives
+	// in (created on demand).
+	home func(ctx context.Context, guildID snowflake.ID) (snowflake.ID, error)
 
 	mu    sync.Mutex
 	state map[snowflake.ID]panelState
@@ -93,10 +97,21 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 		k.mu.Unlock()
 	}()
 
+	var parent snowflake.ID
+	if k.home != nil {
+		var err error
+		if parent, err = k.home(ctx, guildID); err != nil {
+			slog.Warn("panel channel: home category unavailable", slog.String("guildID", guildID.String()), slog.Any("err", err))
+		}
+	}
 	channelID := k.findChannel(guildID, st.ChannelID)
+	if channelID != 0 && channelID == st.ChannelID && st.Created && parent != 0 {
+		k.moveInto(ctx, channelID, parent)
+	}
 	if channelID == 0 {
 		ch, err := k.rest.CreateGuildChannel(guildID, discord.GuildTextChannelCreate{
 			Name:                 k.name,
+			ParentID:             parent,
 			PermissionOverwrites: k.overwrites(guildID),
 		}, rest.WithCtx(ctx), rest.WithReason("Voice Relay control panel"))
 		if err != nil {
@@ -186,6 +201,23 @@ func panelSignature(m discord.MessageCreate) string {
 		K []discord.LayoutComponent
 	}{m.Content, m.Embeds, m.Components})
 	return string(b)
+}
+
+// moveInto puts the bot's panel channel into the home category when it sits
+// elsewhere (a panel made before the category existed).
+func (k *panelKeeper) moveInto(ctx context.Context, channelID, parent snowflake.ID) {
+	ch, ok := k.caches.Channel(channelID)
+	if !ok {
+		return
+	}
+	if gc, ok := ch.(discord.GuildMessageChannel); ok {
+		if p := gc.ParentID(); p != nil && *p == parent {
+			return
+		}
+	}
+	if _, err := k.rest.UpdateChannel(channelID, discord.GuildTextChannelUpdate{ParentID: &parent}, rest.WithCtx(ctx)); err != nil {
+		slog.Warn("panel channel: move into the home category refused", slog.String("channelID", channelID.String()), slog.Any("err", err))
+	}
 }
 
 // OnMessageDeleted reposts the panel when its message was deleted.

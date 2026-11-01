@@ -24,8 +24,8 @@ func (f liveRvR) PanelStatus(snowflake.ID) manager.PanelStatus { return f.st }
 func (f liveRvR) AccessRoleID(snowflake.ID) snowflake.ID       { return 902 }
 func (f liveRvR) ApproverRoleIDs(snowflake.ID) []snowflake.ID  { return []snowflake.ID{900, 901} }
 func (f liveRvR) AccessOpen(snowflake.ID) bool                 { return f.open }
-func (f liveRvR) SetAccessOpen(context.Context, snowflake.ID, bool) error {
-	return nil
+func (f liveRvR) SetAccessOpen(context.Context, snowflake.ID, bool) (int, error) {
+	return 0, nil
 }
 func (f liveRvR) AccessEnabled() bool   { return true }
 func (f liveRvR) AccessFaction() string { return "" }

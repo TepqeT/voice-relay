@@ -64,11 +64,12 @@ func (m *Service) AccessOpen(guildID snowflake.ID) bool {
 func (m *Service) AccessModeAvailable() bool { return m.AccessEnabled() }
 
 // SetAccessOpen opens (open=true) or restricts guildID's raid channels. The
-// channels of a running raid are changed at once; the next raids follow the
-// saved choice.
-func (m *Service) SetAccessOpen(ctx context.Context, guildID snowflake.ID, open bool) error {
+// channels of a running raid are changed at once and, when restricting, the
+// people in them without access are disconnected (they can then ask for it);
+// the next raids follow the saved choice. Returns how many were disconnected.
+func (m *Service) SetAccessOpen(ctx context.Context, guildID snowflake.ID, open bool) (int, error) {
 	if !m.AccessEnabled() {
-		return ErrAccessDisabled
+		return 0, ErrAccessDisabled
 	}
 	m.accessMode.mu.Lock()
 	m.loadAccessModesLocked()
@@ -90,7 +91,59 @@ func (m *Service) SetAccessOpen(ctx context.Context, guildID snowflake.ID, open 
 		}
 	}
 	slog.Info("access mode changed", slog.String("guildID", guildID.String()), slog.Bool("open", open))
-	return m.applyAccessMode(ctx, guildID, open)
+	if err := m.applyAccessMode(ctx, guildID, open); err != nil {
+		return 0, err
+	}
+	if open {
+		return 0, nil
+	}
+	return m.disconnectWithoutAccess(ctx, guildID), nil
+}
+
+// disconnectWithoutAccess moves out of the raid voice channels everyone who
+// lacks the view role, except bots and those who manage access (leaders,
+// server managers).
+func (m *Service) disconnectWithoutAccess(ctx context.Context, guildID snowflake.ID) int {
+	rc, ok := m.RaidChannelsOf(guildID)
+	if !ok {
+		return 0
+	}
+	name := m.viewRoleName(guildID)
+	if name == "" {
+		return 0
+	}
+	view := m.resolveRole(guildID, name)
+	if view == 0 {
+		return 0
+	}
+	voice := slices.Clone(rc.Squads)
+	voice = append(voice, rc.RaidLead, rc.Waiting)
+	caches := m.ownerClient.Caches
+	var targets []snowflake.ID
+	for vs := range caches.VoiceStates(guildID) {
+		if vs.ChannelID == nil || *vs.ChannelID == 0 || !slices.Contains(voice, *vs.ChannelID) {
+			continue
+		}
+		mem, ok := caches.Member(guildID, vs.UserID)
+		if !ok || m.IsBot(mem.User) || slices.Contains(mem.RoleIDs, view) {
+			continue
+		}
+		if m.CanManageAccess(guildID, mem.RoleIDs, caches.MemberPermissions(mem)) {
+			continue
+		}
+		targets = append(targets, vs.UserID)
+	}
+	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason("raid restricted: no access")}
+	n := 0
+	for _, id := range targets {
+		if m.disconnectFromRaid(ctx, guildID, id, opts) {
+			n++
+		}
+	}
+	if n > 0 {
+		slog.Info("raid restricted: members without access disconnected", slog.String("guildID", guildID.String()), slog.Int("count", n))
+	}
+	return n
 }
 
 // viewRoleName is the role that sees the raid channels of guildID: the access
@@ -122,7 +175,10 @@ func (m *Service) applyAccessMode(ctx context.Context, guildID snowflake.ID, ope
 	grant := m.grantablePermissions(guildID)
 	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason(map[bool]string{true: "raid opened to everyone", false: "raid restricted"}[open])}
 
-	kinds := map[snowflake.ID]channelKind{rc.Category: channelCategory, rc.RaidLead: channelRaidLead, rc.Waiting: channelWaiting}
+	kinds := map[snowflake.ID]channelKind{rc.RaidLead: channelRaidLead, rc.Waiting: channelWaiting}
+	if !rc.SharedCategory {
+		kinds[rc.Category] = channelCategory // the home category stays open: it holds the panel
+	}
 	for _, id := range rc.Squads {
 		kinds[id] = channelSquad
 	}

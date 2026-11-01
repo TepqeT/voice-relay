@@ -36,6 +36,7 @@ type fakePanelRest struct {
 	posted     []snowflake.ID // channel of each new message
 	updated    []snowflake.ID // message updated
 	lostUpdate bool           // the next update answers Unknown Message
+	moved      []snowflake.ID
 }
 
 func (f *fakePanelRest) CreateGuildChannel(guildID snowflake.ID, c discord.GuildChannelCreate, _ ...rest.RequestOpt) (discord.GuildChannel, error) {
@@ -45,6 +46,10 @@ func (f *fakePanelRest) CreateGuildChannel(guildID snowflake.ID, c discord.Guild
 	ch := textChannel(f.t, 700+f.next, tc.Name)
 	f.caches.AddChannel(ch)
 	return ch, nil
+}
+func (f *fakePanelRest) UpdateChannel(id snowflake.ID, c discord.ChannelUpdate, _ ...rest.RequestOpt) (discord.Channel, error) {
+	f.moved = append(f.moved, id)
+	return nil, nil
 }
 func (f *fakePanelRest) DeleteChannel(id snowflake.ID, _ ...rest.RequestOpt) error {
 	f.deleted = append(f.deleted, id)
@@ -165,5 +170,15 @@ func TestPanelChannelIgnoresOtherDeletions(t *testing.T) {
 	k.OnChannelDeleted(context.Background(), panelGuild, 12345)
 	if len(fr.created) != 1 {
 		t.Fatalf("another channel's deletion recreated the panel: %v", fr.created)
+	}
+}
+
+// With a home category the panel channel is created inside it.
+func TestPanelChannelInHomeCategory(t *testing.T) {
+	k, fr, _ := newTestKeeper(t, "")
+	k.home = func(context.Context, snowflake.ID) (snowflake.ID, error) { return 444, nil }
+	k.Ensure(context.Background(), panelGuild)
+	if len(fr.created) != 1 || fr.created[0].ParentID != 444 {
+		t.Fatalf("created %+v: the panel channel must sit in the home category", fr.created)
 	}
 }

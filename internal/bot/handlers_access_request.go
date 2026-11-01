@@ -37,7 +37,7 @@ type accessRequester interface {
 // everyone or restricted to the access role, chosen from the panel.
 type accessModeSwitch interface {
 	AccessOpen(guildID snowflake.ID) bool
-	SetAccessOpen(ctx context.Context, guildID snowflake.ID, open bool) error
+	SetAccessOpen(ctx context.Context, guildID snowflake.ID, open bool) (int, error)
 }
 
 func (h *CommandHandlers) accessMode() (accessModeSwitch, bool) {
@@ -72,12 +72,17 @@ func (h *CommandHandlers) handleAccessMode(open bool) guildButtonHandler {
 		if err := e.DeferCreateMessage(true); err != nil {
 			return err
 		}
-		msg := loc.T("access.mode.restricted")
-		if open {
-			msg = loc.T("access.mode.opened")
-		}
-		if err := mode.SetAccessOpen(e.Ctx, guildID, open); err != nil {
+		kicked, err := mode.SetAccessOpen(e.Ctx, guildID, open)
+		var msg string
+		switch {
+		case err != nil:
 			msg = loc.T("access.mode.failed", "Err", err.Error())
+		case open:
+			msg = loc.T("access.mode.opened")
+		case kicked > 0:
+			msg = loc.T("access.mode.restricted_kicked", "Count", kicked)
+		default:
+			msg = loc.T("access.mode.restricted")
 		}
 		h.notifyPanel(guildID)
 		h.componentFollowUp(e, msg)
