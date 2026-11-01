@@ -297,6 +297,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "panel.json"))
 		if managerSvc.HomeCategoryEnabled() {
 			panel.home = managerSvc.EnsureHomeCategory
+			panel.onboard = managerSvc.EnsureOnboardingDefaults
 		}
 		client.AddEventListeners(
 			bot.NewListenerFunc(func(e *events.GuildReady) { go panel.Ensure(context.Background(), e.GuildID) }),
