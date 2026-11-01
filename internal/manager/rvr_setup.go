@@ -132,6 +132,16 @@ func (m *Service) CreateMissingRoles(ctx context.Context, guildID snowflake.ID) 
 		m.ownerClient.Caches.AddRole(*role)
 		rep.Created = append(rep.Created, r.Name)
 	}
+	// Creating a role shifts the positions of the others; the gateway updates
+	// may not be in yet. Reload the roles so the "above the bot" check reads
+	// the real order.
+	if len(rep.Created) > 0 {
+		if roles, err := m.ownerClient.Rest.GetRoles(guildID, rest.WithCtx(ctx)); err == nil {
+			for _, r := range roles {
+				m.ownerClient.Caches.AddRole(r)
+			}
+		}
+	}
 	slog.Info("setup: roles checked", slog.String("guildID", guildID.String()),
 		slog.Int("created", len(rep.Created)), slog.Int("existing", len(rep.Existing)), slog.Int("failed", len(rep.Failed)))
 	return rep, nil
@@ -171,7 +181,8 @@ func (m *Service) MissingOwnerPermissions(guildID snowflake.ID) discord.Permissi
 	if _, ok := m.ownerClient.Caches.SelfMember(guildID); !ok {
 		return 0
 	}
-	need := raidBotNeeds | discord.PermissionManageRoles | discord.PermissionDeafenMembers
+	// Embed Links: the control panel is an embed, refused without it.
+	need := raidBotNeeds | discord.PermissionManageRoles | discord.PermissionDeafenMembers | discord.PermissionEmbedLinks
 	return need &^ m.grantablePermissions(guildID)
 }
 

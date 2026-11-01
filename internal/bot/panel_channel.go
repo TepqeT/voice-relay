@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/TepqeT/voice-relay/internal/journal"
+	"github.com/TepqeT/voice-relay/internal/ratelimit"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -55,11 +56,13 @@ type panelKeeper struct {
 	state map[snowflake.ID]panelState
 	busy  map[snowflake.ID]bool   // an Ensure is running for the guild
 	shown map[snowflake.ID]string // last panel sent, to skip identical edits
+	retry *ratelimit.Limiter      // spaces the attempts on servers without a panel
 }
 
 func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func() snowflake.ID, build func(snowflake.ID) discord.MessageCreate, file string) *panelKeeper {
 	k := &panelKeeper{name: strings.TrimSpace(name), rest: r, caches: caches, selfID: selfID, build: build, file: file,
-		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}, shown: map[snowflake.ID]string{}}
+		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}, shown: map[snowflake.ID]string{},
+		retry: ratelimit.New(5*time.Minute, 1)}
 	if file != "" {
 		if b, err := os.ReadFile(file); err == nil {
 			if err := json.Unmarshal(b, &k.state); err != nil {
@@ -177,12 +180,21 @@ func (k *panelKeeper) Watch(ctx context.Context, every time.Duration) {
 		case <-t.C:
 			k.mu.Lock()
 			guilds := make([]snowflake.ID, 0, len(k.state))
+			known := make(map[snowflake.ID]bool, len(k.state))
 			for g := range k.state {
 				guilds = append(guilds, g)
+				known[g] = true
 			}
 			k.mu.Unlock()
 			for _, g := range guilds {
 				k.ensure(ctx, g, tick%forceEvery == 0)
+			}
+			// Servers still without a panel (refused at join, permission
+			// fixed since): try again, at most every few minutes each.
+			for g := range k.caches.Guilds() {
+				if !known[g.ID] && k.retry.Allow(g.ID.String()) {
+					k.Ensure(ctx, g.ID)
+				}
 			}
 		}
 	}
@@ -301,7 +313,43 @@ func (k *panelKeeper) overwrites(guildID snowflake.ID) []discord.PermissionOverw
 	if self := k.selfID(); self != 0 {
 		ow = append(ow, discord.MemberPermissionOverwrite{UserID: self, Allow: discord.PermissionViewChannel | discord.PermissionSendMessages | discord.PermissionEmbedLinks})
 	}
-	return ow
+	return maskPanelOverwrites(ow, k.grantable(guildID))
+}
+
+// grantable is what the bot may put in an overwrite: Discord refuses
+// (50013) an overwrite carrying a permission the bot does not hold itself.
+// Unknown (not cached yet) means everything.
+func (k *panelKeeper) grantable(guildID snowflake.ID) discord.Permissions {
+	self, ok := k.caches.SelfMember(guildID)
+	if !ok {
+		return discord.PermissionsAll
+	}
+	p := k.caches.MemberPermissions(self)
+	if p.Has(discord.PermissionAdministrator) {
+		return discord.PermissionsAll
+	}
+	return p
+}
+
+// maskPanelOverwrites keeps in each overwrite only what grant allows and
+// drops the overwrites left empty.
+func maskPanelOverwrites(ow []discord.PermissionOverwrite, grant discord.Permissions) []discord.PermissionOverwrite {
+	out := make([]discord.PermissionOverwrite, 0, len(ow))
+	for _, o := range ow {
+		switch v := o.(type) {
+		case discord.RolePermissionOverwrite:
+			v.Allow, v.Deny = v.Allow&grant, v.Deny&grant
+			if v.Allow|v.Deny != 0 {
+				out = append(out, v)
+			}
+		case discord.MemberPermissionOverwrite:
+			v.Allow, v.Deny = v.Allow&grant, v.Deny&grant
+			if v.Allow|v.Deny != 0 {
+				out = append(out, v)
+			}
+		}
+	}
+	return out
 }
 
 func (k *panelKeeper) save(guildID snowflake.ID, st panelState) {
