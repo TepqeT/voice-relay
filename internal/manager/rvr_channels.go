@@ -362,6 +362,9 @@ func (m *Service) createRaidChannels(ctx context.Context, guildID, viewRole, cal
 		}
 		m.rememberChannels(guildID, rc)
 	}
+	// Servers with onboarding hide channels members did not opt into.
+	ids := append([]snowflake.ID{rc.Category, rc.RaidLead, rc.Waiting}, rc.Squads...)
+	m.EnsureOnboardingDefaults(ctx, guildID, ids...)
 	return rc, nil
 }
 
