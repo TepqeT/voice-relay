@@ -51,6 +51,9 @@ type panelKeeper struct {
 	// home, when set, returns the permanent category the panel channel lives
 	// in (created on demand).
 	home func(ctx context.Context, guildID snowflake.ID) (snowflake.ID, error)
+	// onboard, when set, adds the category and the panel channel to the
+	// server's onboarding default channels so members see them.
+	onboard func(ctx context.Context, guildID snowflake.ID, ids ...snowflake.ID)
 
 	mu    sync.Mutex
 	state map[snowflake.ID]panelState
@@ -126,6 +129,10 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 		st = panelState{ChannelID: channelID, Created: true}
 	} else if channelID != st.ChannelID {
 		st = panelState{ChannelID: channelID} // an existing channel the server made
+	}
+
+	if k.onboard != nil {
+		k.onboard(ctx, guildID, parent, channelID)
 	}
 
 	msg := k.build(guildID)
