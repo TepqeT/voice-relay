@@ -2,11 +2,13 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 
+	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 
@@ -47,6 +49,12 @@ func (m *Service) EnsureOnboardingDefaults(ctx context.Context, guildID snowflak
 		slog.Info("onboarding: off on this server, nothing to do", slog.String("guildID", g))
 		return
 	}
+	// A category is not a channel members opt into: Discord answers
+	// UNKNOWN_CHANNEL. Its channels are added one by one instead.
+	ids = slices.DeleteFunc(ids, func(id snowflake.ID) bool {
+		ch, ok := m.ownerClient.Caches.Channel(id)
+		return ok && ch.Type() == discord.ChannelTypeGuildCategory
+	})
 	defaults := slices.Clone(ob.DefaultChannelIDs)
 	var added []snowflake.ID
 	for _, id := range ids {
@@ -59,11 +67,24 @@ func (m *Service) EnsureOnboardingDefaults(ctx context.Context, guildID snowflak
 		slog.Info("onboarding: channels already in the default channels", slog.String("guildID", g), slog.Int("channels", len(ids)))
 		return
 	}
-	// Only the default channels are sent: prompts, mode and the switch stay
-	// as the server set them.
-	body := onboardingDefaults{DefaultChannelIDs: defaults}
-	if err := m.ownerClient.Rest.Do(rest.UpdateGuildOnboarding.Compile(nil, guildID), body, nil,
-		rest.WithCtx(ctx), rest.WithReason("Voice Relay: show its channels to members")); err != nil {
+	err := m.putOnboardingDefaults(ctx, guildID, defaults)
+	if isUnknownChannel(err) {
+		// The server's own list may name a channel deleted since, which
+		// Discord refuses as well: drop the ones the bot no longer sees and
+		// try once more.
+		kept := slices.DeleteFunc(slices.Clone(defaults), func(id snowflake.ID) bool {
+			if slices.Contains(added, id) {
+				return false
+			}
+			ch, ok := m.ownerClient.Caches.Channel(id)
+			return !ok || ch.GuildID() != guildID
+		})
+		if len(kept) < len(defaults) {
+			slog.Info("onboarding: dropping deleted channels from the default channels", slog.String("guildID", g), slog.Int("dropped", len(defaults)-len(kept)))
+			err = m.putOnboardingDefaults(ctx, guildID, kept)
+		}
+	}
+	if err != nil {
 		journal.Record(journal.Event{GuildID: guildID, Level: journal.Warning, Kind: "onboarding_refused",
 			Detail: "could not add the Voice Relay channels to the onboarding default channels: " + err.Error()})
 		return
@@ -77,4 +98,25 @@ func (m *Service) EnsureOnboardingDefaults(ctx context.Context, guildID snowflak
 type onboardingDefaults struct {
 	Enabled           bool           `json:"enabled,omitempty"`
 	DefaultChannelIDs []snowflake.ID `json:"default_channel_ids"`
+}
+
+// putOnboardingDefaults sends only the default channels: prompts, mode and
+// the switch stay as the server set them.
+func (m *Service) putOnboardingDefaults(ctx context.Context, guildID snowflake.ID, ids []snowflake.ID) error {
+	return m.ownerClient.Rest.Do(rest.UpdateGuildOnboarding.Compile(nil, guildID), onboardingDefaults{DefaultChannelIDs: ids}, nil,
+		rest.WithCtx(ctx), rest.WithReason("Voice Relay: show its channels to members"))
+}
+
+// isUnknownChannel reports Discord's form error for a channel it does not
+// know in default_channel_ids.
+func isUnknownChannel(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	var re *rest.Error
+	if errors.As(err, &re) {
+		text += string(re.Errors) + string(re.RsBody)
+	}
+	return strings.Contains(text, "UNKNOWN_CHANNEL")
 }

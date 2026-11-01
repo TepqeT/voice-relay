@@ -10,6 +10,7 @@ import (
 
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/cache"
+	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 
 	"github.com/TepqeT/voice-relay/internal/config"
@@ -81,5 +82,46 @@ func TestOnboardingLeavesServersWithoutIt(t *testing.T) {
 	onboardingService(r3).EnsureOnboardingDefaults(context.Background(), 10, 100)
 	if len(r.puts)+len(r2.puts)+len(r3.puts) != 0 {
 		t.Fatal("no update when onboarding is off, unreadable or already complete")
+	}
+}
+
+// unknownOnce refuses the first PUT the way Discord does for a deleted
+// channel in default_channel_ids.
+type unknownOnce struct {
+	onboardingRest
+	refused bool
+}
+
+func (r *unknownOnce) Do(e *rest.CompiledEndpoint, rq any, rs any, opts ...rest.RequestOpt) error {
+	err := r.onboardingRest.Do(e, rq, rs, opts...)
+	if e.Endpoint.Method == http.MethodPut && !r.refused {
+		r.refused = true
+		return &rest.Error{Code: 50035, Message: "Invalid Form Body", Errors: []byte(`{"default_channel_ids":{"_errors":[{"code":"UNKNOWN_CHANNEL"}]}}`)}
+	}
+	return err
+}
+
+// The category is never sent; a deleted channel in the server's list is
+// dropped on the retry, the channels the bot sees are kept.
+func TestOnboardingSkipsCategoryAndDeletedChannels(t *testing.T) {
+	r := &unknownOnce{onboardingRest: onboardingRest{get: `{"enabled":true,"default_channel_ids":["5","7"]}`}}
+	caches := cache.New(cache.WithCaches(cache.FlagsAll))
+	var text discord.GuildTextChannel
+	var cat discord.GuildCategoryChannel
+	if err := json.Unmarshal([]byte(`{"id":"5","guild_id":"10","name":"general","type":0}`), &text); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(`{"id":"50","guild_id":"10","name":"Voice Relay","type":4}`), &cat); err != nil {
+		t.Fatal(err)
+	}
+	caches.AddChannel(text)
+	caches.AddChannel(cat)
+	m := NewService(store.NewInMemoryStore(), mapPool{}, &bot.Client{Caches: caches, Rest: r}, 1, config.TestConfig{}, nil)
+	m.EnsureOnboardingDefaults(context.Background(), 10, 50, 100)
+	if len(r.puts) != 2 {
+		t.Fatalf("puts = %v, want a refused one then a retry", r.puts)
+	}
+	if r.puts[0] != `{"default_channel_ids":["5","7","100"]}` || r.puts[1] != `{"default_channel_ids":["5","100"]}` {
+		t.Fatalf("puts = %v", r.puts)
 	}
 }

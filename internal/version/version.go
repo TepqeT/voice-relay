@@ -3,4 +3,4 @@ package version
 
 // Fork is the version of Voice Relay. Bump it with every delivery so
 // logs, diagnostics and reports say which code produced them.
-const Fork = "v48"
+const Fork = "v49"
