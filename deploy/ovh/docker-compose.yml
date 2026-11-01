@@ -99,6 +99,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL manquant dans .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/daevatool-maj:/srv/maj:ro          # mises a jour DaevaTool (daevatool-maj.sh)
       - caddy_data:/data
       - caddy_config:/config
 
