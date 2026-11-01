@@ -12,10 +12,10 @@ import (
 	"github.com/disgoorg/snowflake/v2"
 )
 
-// Squad lead appointment: raid leads name and dismiss the squad leads of
-// their faction from Discord (right click on a member > Apps), without any
-// Discord permission of their own. Naming a squad lead also grants the RvR
-// access role, since a squad lead must see the squad channels.
+// Squad lead appointment: speakers name and dismiss the squad leads from
+// Discord (right click on a member > Apps), without any Discord permission of
+// their own. Naming a squad lead also grants the access role, since a squad
+// lead must see the listener channels.
 
 var (
 	// ErrSquadLeadsDisabled: no squad lead role or no raid lead role configured.
@@ -28,7 +28,7 @@ var (
 type SquadLeadResult struct {
 	RoleID       snowflake.ID
 	Changed      bool // false when the member already was in the asked state
-	AccessAdded  bool // naming also granted the RvR access role
+	AccessAdded  bool // naming also granted the access role
 	AccessRoleID snowflake.ID
 }
 
@@ -38,8 +38,7 @@ func (m *Service) SquadLeadsManageable() bool {
 }
 
 // CanManageSquadLeads reports whether a member may name or dismiss squad
-// leads: server managers always, otherwise the raid lead role together with
-// the faction role, so the raid leads of the other faction cannot.
+// leads: server managers always, otherwise the speaker role.
 func (m *Service) CanManageSquadLeads(guildID snowflake.ID, roleIDs []snowflake.ID, perms discord.Permissions) bool {
 	if !m.SquadLeadsManageable() {
 		return false
@@ -48,14 +47,7 @@ func (m *Service) CanManageSquadLeads(guildID snowflake.ID, roleIDs []snowflake.
 		return true
 	}
 	caller, ok := m.callerRole(guildID)
-	if !ok || !slices.Contains(roleIDs, caller) {
-		return false
-	}
-	if f := m.channels.opts.FactionRole; f != "" {
-		faction := m.resolveRole(guildID, f)
-		return faction != 0 && slices.Contains(roleIDs, faction)
-	}
-	return true
+	return ok && slices.Contains(roleIDs, caller)
 }
 
 // SetSquadLead names (grant=true) or dismisses targetID as squad lead. Naming
@@ -73,8 +65,7 @@ func (m *Service) SetSquadLead(ctx context.Context, guildID, actorID, targetID s
 	if targetIsBot {
 		return res, ErrAccessTargetBot
 	}
-	faction := m.channels.opts.Faction
-	reason := fmt.Sprintf("RvR %s: squad lead %s by %s", faction, map[bool]string{true: "named", false: "dismissed"}[grant], actorID)
+	reason := fmt.Sprintf("Voice Relay squad lead %s by %s", map[bool]string{true: "named", false: "dismissed"}[grant], actorID)
 	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason(reason)}
 
 	has := slices.Contains(targetRoles, role)
@@ -105,7 +96,6 @@ func (m *Service) SetSquadLead(ctx context.Context, guildID, actorID, targetID s
 
 	slog.Info("squad lead changed",
 		slog.String("guildID", guildID.String()),
-		slog.String("faction", faction),
 		slog.Bool("named", grant),
 		slog.Bool("changed", res.Changed),
 		slog.Bool("accessAdded", res.AccessAdded),

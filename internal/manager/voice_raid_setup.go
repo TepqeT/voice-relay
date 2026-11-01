@@ -124,6 +124,8 @@ func (m *Service) joinSpeakers(ctx context.Context, guildID snowflake.ID, candid
 	for _, sp := range candidates {
 		go func(sp guild.Speaker) {
 			defer wg.Done()
+			// The return of this listener channel can be cut from the panel.
+			allowUser := m.feedbackAllow(guildID, sp.ID, allowUser)
 			gv, ok := m.speakerVoice(guildID, sp.ID)
 			if !ok {
 				slog.WarnContext(ctx, "speaker not in pool", slog.String("speakerID", sp.ID.String()))

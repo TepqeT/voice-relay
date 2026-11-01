@@ -113,7 +113,7 @@ func (h *CommandHandlers) handleAccessMessage(a AccessChannelService, r rest.Res
 		targets = targets[:manager.MaxAccessTargets]
 	}
 
-	var changed, kicked, already, wrong, notFound, failed []string
+	var changed, kicked, already, notFound, failed []string
 	for _, name := range lookupFailed {
 		failed = append(failed, name+" (recherche)")
 	}
@@ -124,8 +124,6 @@ func (h *CommandHandlers) handleAccessMessage(a AccessChannelService, r rest.Res
 		}
 		res, err := a.SetRvRAccess(ctx, guildID, author.User.ID, t.member.User.ID, t.member.RoleIDs, t.member.User.Bot, !req.Revoke)
 		switch {
-		case errors.Is(err, manager.ErrAccessWrongFaction):
-			wrong = append(wrong, t.label)
 		case err != nil:
 			failed = append(failed, t.label+" ("+shortErr(err)+")")
 		case res.Changed:
@@ -151,7 +149,6 @@ func (h *CommandHandlers) handleAccessMessage(a AccessChannelService, r rest.Res
 		add("access.batch.granted", changed)
 	}
 	add("access.batch.already", already)
-	add("access.batch.wrong_faction", wrong)
 	add("access.batch.not_found", notFound)
 	add("access.batch.failed", failed)
 	if truncated {
@@ -205,7 +202,7 @@ func (h *CommandHandlers) handleAccessMessage(a AccessChannelService, r rest.Res
 
 	_ = r.RemoveOwnReaction(channelID, msg.ID, "⏳")
 	mark := "✅"
-	if len(notFound)+len(wrong)+len(failed)+len(ambiguities) > 0 {
+	if len(notFound)+len(failed)+len(ambiguities) > 0 {
 		mark = "⚠️"
 	}
 	_ = r.AddReaction(channelID, msg.ID, mark)
@@ -215,7 +212,6 @@ func (h *CommandHandlers) handleAccessMessage(a AccessChannelService, r rest.Res
 		slog.Bool("revoke", req.Revoke),
 		slog.Int("changed", len(changed)),
 		slog.Int("already", len(already)),
-		slog.Int("wrongFaction", len(wrong)),
 		slog.Int("notFound", len(notFound)),
 		slog.Int("failed", len(failed)),
 		slog.Int("ambiguous", len(ambiguities)),

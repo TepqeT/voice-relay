@@ -35,7 +35,7 @@ type webBackend struct {
 	m        siteManager
 	ownerID  snowflake.ID
 	botName  func() string  // owner bot display name, known once connected
-	speakers []snowflake.ID // Héraut application IDs, in token order
+	speakers []snowflake.ID // relay bot application IDs, in token order
 	panel    *panelKeeper   // nil when PANEL_CHANNEL is off
 }
 
@@ -79,7 +79,7 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 		if name == "" {
 			name = fmt.Sprintf("Voice Relay %d", i+1)
 		}
-		st.Heralds = append(st.Heralds, web.BotStatus{Name: name, Present: present, InviteURL: lockedInvite(id, guildID, botPermissions)})
+		st.RelayBots = append(st.RelayBots, web.BotStatus{Name: name, Present: present, InviteURL: lockedInvite(id, guildID, botPermissions)})
 	}
 	if b.panel != nil {
 		st.PanelChannel = b.panel.ChannelName()

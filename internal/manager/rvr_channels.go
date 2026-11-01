@@ -26,19 +26,15 @@ import (
 	"github.com/TepqeT/voice-relay/internal/guild"
 )
 
-// Dynamic raid channels: when enabled, starting a raid creates a category with
-// a raid lead channel and one channel per squad, visible only to the faction
-// role, binds the bots to them, and stopping the raid deletes them. One relay
-// instance serves one faction; Asmodians and Elyos each run their own instance
-// with their own bots.
+// Dynamic channels: when enabled, starting a session creates the speaker
+// channel and one listener channel per relay bot (restricted to the access
+// role when one is set and the mode is restricted), binds the bots to them,
+// and stopping the session deletes them.
 
 var (
-	// ErrFactionRoleMissing is returned when FACTION_ROLE names a role the
-	// guild does not have: creating the channels would expose them to everyone.
-	ErrFactionRoleMissing = errors.New("faction role not found")
-	// ErrRaidLeadRoleMissing is returned when no raid lead role is bound and
-	// RAID_LEAD_ROLE matches no role: the raid lead channel would be open to
-	// the whole faction.
+	// ErrRaidLeadRoleMissing is returned when no speaker role is bound and
+	// SPEAKER_ROLE matches no role: the speaker channel would be open to
+	// everyone.
 	ErrRaidLeadRoleMissing = errors.New("raid lead role not found")
 	// ErrChannelPermission is returned when Discord refuses to create the raid
 	// channels, usually because the owner bot lacks Manage Channels.
@@ -48,8 +44,6 @@ var (
 // ChannelOptions configures the dynamic raid channels.
 type ChannelOptions struct {
 	Enabled       bool
-	Faction       string // display name, e.g. "Asmodiens"
-	FactionRole   string // role name or ID allowed to see the channels; "" = everyone
 	Category      string // category name
 	After         string // existing category (name or ID) the raid category goes right below; "" = Discord default (bottom)
 	RaidLeadName  string // raid lead channel name
@@ -57,7 +51,7 @@ type ChannelOptions struct {
 	SquadCount    int    // wanted squads, capped by the enabled speaker bots
 	Region        string // Discord voice region of every channel, "" = automatic
 	StateFile     string // where the created channel IDs are remembered
-	AccessRole    string // role (name or ID) that replaces FactionRole for access; "" = FactionRole
+	AccessRole    string // role (name or ID) that sees and joins the channels when restricted; "" = everyone
 	BoardRole     string // role (name or ID) allowed to grant and revoke AccessRole
 	AccessChannel string // text channel (name or ID) where the board grants access by message
 	// HomeCategory keeps one permanent category (Category) holding the panel
@@ -77,7 +71,7 @@ type RaidChannels struct {
 	// CallerRole is the raid lead role the channels were created for: channels
 	// made for another role (or none) are never reused.
 	CallerRole snowflake.ID `json:"caller_role,omitempty"`
-	// ViewRole is the role that could see the channels (access or faction).
+	// ViewRole is the role that could see the channels (access role, 0 = everyone).
 	ViewRole snowflake.ID `json:"view_role,omitempty"`
 	// SharedCategory: Category is the permanent home category, never
 	// deleted with the raid.
@@ -117,9 +111,7 @@ func (m *Service) ConfigureChannels(opts ChannelOptions) {
 	if !opts.Enabled {
 		return
 	}
-	slog.Info("dynamic raid channels enabled",
-		slog.String("faction", opts.Faction),
-		slog.String("factionRole", opts.FactionRole),
+	slog.Info("dynamic channels enabled",
 		slog.String("accessRole", opts.AccessRole),
 		slog.String("boardRole", opts.BoardRole),
 		slog.String("category", opts.Category),
@@ -127,8 +119,8 @@ func (m *Service) ConfigureChannels(opts ChannelOptions) {
 		slog.String("region", opts.Region),
 		slog.Int("leftovers", len(m.channels.byGuild)),
 	)
-	if opts.FactionRole == "" {
-		slog.Warn("FACTION_ROLE is empty: the raid channels will be visible to everyone")
+	if opts.AccessRole == "" {
+		slog.Info("no ACCESS_ROLE: the channels are open to everyone")
 	}
 }
 
@@ -187,28 +179,28 @@ func (m *Service) prepareRaidChannels(ctx context.Context, guildID snowflake.ID)
 	}
 
 	// The role that sees and joins the channels: the vetted access role when
-	// configured, else the faction role.
+	// configured and the mode is restricted, else everyone.
 	viewName := m.viewRoleName(guildID)
-	var factionRole snowflake.ID
+	var viewRole snowflake.ID
 	if viewName != "" {
-		if factionRole = m.resolveRole(guildID, viewName); factionRole == 0 {
-			return RaidChannels{}, fmt.Errorf("%w: %q", ErrFactionRoleMissing, viewName)
+		if viewRole = m.resolveRole(guildID, viewName); viewRole == 0 {
+			return RaidChannels{}, fmt.Errorf("%w: %q", ErrAccessRoleMissing, viewName)
 		}
 	}
 
 	// Only the raid lead role may join the raid lead channel: without it the
-	// channel would be open to the whole faction, so refuse to start.
+	// channel would be open to everyone, so refuse to start.
 	callerRole, ok := m.callerRole(guildID)
 	if !ok {
 		return RaidChannels{}, fmt.Errorf("%w: %q", ErrRaidLeadRoleMissing, m.rvr.opts.RaidLeadRole)
 	}
 
-	rc, reused := m.reusableChannels(guildID, len(speakers), callerRole, factionRole)
+	rc, reused := m.reusableChannels(guildID, len(speakers), callerRole, viewRole)
 	if !reused {
 		if old, ok := m.RaidChannelsOf(guildID); ok {
 			m.deleteRaidChannels(ctx, guildID, old, "leftover")
 		}
-		rc, err = m.createRaidChannels(ctx, guildID, factionRole, callerRole, speakers)
+		rc, err = m.createRaidChannels(ctx, guildID, viewRole, callerRole, speakers)
 		if err != nil {
 			return RaidChannels{}, err
 		}
@@ -271,7 +263,7 @@ func (m *Service) reusableChannels(guildID snowflake.ID, squads int, callerRole,
 	return rc, true
 }
 
-func (m *Service) createRaidChannels(ctx context.Context, guildID, factionRole, callerRole snowflake.ID, speakers []guild.Speaker) (rc RaidChannels, err error) {
+func (m *Service) createRaidChannels(ctx context.Context, guildID, viewRole, callerRole snowflake.ID, speakers []guild.Speaker) (rc RaidChannels, err error) {
 	c := &m.channels
 	squadRole := m.resolveSquadRole(guildID)
 	var boardRole snowflake.ID
@@ -300,13 +292,13 @@ func (m *Service) createRaidChannels(ctx context.Context, guildID, factionRole, 
 		diag.For(guildID).Event("owner_permissions_missing", map[string]any{"missing": missing.String()})
 	}
 	overwrites := func(caller, squad snowflake.ID, kind channelKind) []discord.PermissionOverwrite {
-		ow := raidOverwrites(guildID, factionRole, caller, squad, bots, kind)
+		ow := raidOverwrites(guildID, viewRole, caller, squad, bots, kind)
 		return maskOverwrites(append(ow, boardOverwrites(boardRole, kind)...), grant)
 	}
 
 	rc.Created = time.Now().UTC()
 	rc.CallerRole = callerRole
-	rc.ViewRole = factionRole
+	rc.ViewRole = viewRole
 	// Remember every channel as soon as it exists, so a failure half-way or a
 	// crash never leaves untracked channels behind.
 	defer func() {
@@ -315,7 +307,7 @@ func (m *Service) createRaidChannels(ctx context.Context, guildID, factionRole, 
 			rc = RaidChannels{}
 		}
 	}()
-	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason("RvR raid start")}
+	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason("Voice Relay session start")}
 
 	if c.opts.HomeCategory {
 		// The permanent category: the voice channels carry their own
@@ -400,7 +392,7 @@ func (m *Service) placeCategory(ctx context.Context, guildID, categoryID snowfla
 		updates = append(updates, discord.GuildChannelPositionUpdate{ID: id, Position: omit.New(&pos)})
 	}
 	if err := m.ownerClient.Rest.UpdateChannelPositions(guildID, updates,
-		rest.WithCtx(ctx), rest.WithReason("RvR raid start")); err != nil {
+		rest.WithCtx(ctx), rest.WithReason("Voice Relay session start")); err != nil {
 		slog.Warn("failed to place the raid category", slog.String("guildID", guildID.String()), slog.Any("err", channelError("move category", err)))
 		return
 	}
@@ -532,17 +524,17 @@ const voiceMember = discord.PermissionViewChannel | discord.PermissionConnect |
 	discord.PermissionSpeak | discord.PermissionUseVAD
 
 // raidOverwrites returns the permission overwrites of one raid channel:
-//   - the faction role sees every channel and joins the squads; @everyone sees
-//     nothing when a faction role is set;
+//   - the view (access) role sees every channel and joins the listener
+//     channels; @everyone sees nothing when a view role is set;
 //   - only the Raid Lead role joins the raid lead channel (Connect without
-//     View, so a role shared by both factions reveals nothing);
+//     View, so the speaker role alone reveals nothing more);
 //   - the squad lead role gets Priority Speaker in the squads, which Discord
 //     requires for the priority push-to-talk key;
 //   - the bots get everything they need explicitly.
-func raidOverwrites(guildID, factionRole, callerRole, squadRole snowflake.ID, bots []snowflake.ID, kind channelKind) []discord.PermissionOverwrite {
+func raidOverwrites(guildID, viewRole, callerRole, squadRole snowflake.ID, bots []snowflake.ID, kind channelKind) []discord.PermissionOverwrite {
 	var ow []discord.PermissionOverwrite
 	everyoneDeny := discord.Permissions(0)
-	if factionRole != 0 {
+	if viewRole != 0 {
 		everyoneDeny |= discord.PermissionViewChannel
 		if kind != channelCategory {
 			everyoneDeny |= discord.PermissionConnect
@@ -554,12 +546,12 @@ func raidOverwrites(guildID, factionRole, callerRole, squadRole snowflake.ID, bo
 	if everyoneDeny != 0 {
 		ow = append(ow, discord.RolePermissionOverwrite{RoleID: guildID, Deny: everyoneDeny})
 	}
-	if factionRole != 0 {
+	if viewRole != 0 {
 		allow := voiceMember
 		if kind == channelRaidLead && callerRole != 0 {
 			allow = discord.PermissionViewChannel
 		}
-		ow = append(ow, discord.RolePermissionOverwrite{RoleID: factionRole, Allow: allow})
+		ow = append(ow, discord.RolePermissionOverwrite{RoleID: viewRole, Allow: allow})
 	}
 	switch kind {
 	case channelRaidLead:
@@ -628,7 +620,7 @@ func (m *Service) deleteRaidChannels(ctx context.Context, guildID snowflake.ID, 
 	left.Category, left.RaidLead, left.Waiting, left.Created = rc.Category, rc.RaidLead, rc.Waiting, rc.Created
 	failed := map[snowflake.ID]bool{}
 	for _, id := range rc.all() {
-		err := m.ownerClient.Rest.DeleteChannel(id, rest.WithCtx(ctx), rest.WithReason("RvR raid end"))
+		err := m.ownerClient.Rest.DeleteChannel(id, rest.WithCtx(ctx), rest.WithReason("Voice Relay session end"))
 		var restErr *rest.Error
 		if err != nil && !(errors.As(err, &restErr) && restErr.Code == rest.JSONErrorCodeUnknownChannel) {
 			failed[id] = true
@@ -763,10 +755,9 @@ func splitNumber(name string) (string, int) {
 	return name[:loc[0]], n
 }
 
-// boardModeration is what the RvR board role gets in every raid voice channel:
-// server mute, disconnect and move members. Seeing and joining still comes
-// from the access (or faction) role, so the board of the other faction, which
-// may share the role, cannot see the channels to act on them.
+// boardModeration is what the board role gets in every voice channel of the
+// session: server mute, disconnect and move members. Seeing and joining still
+// comes from the access role.
 const boardModeration = discord.PermissionMuteMembers | discord.PermissionMoveMembers
 
 func boardOverwrites(boardRole snowflake.ID, kind channelKind) []discord.PermissionOverwrite {

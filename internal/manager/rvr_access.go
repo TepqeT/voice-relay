@@ -12,24 +12,21 @@ import (
 	"github.com/disgoorg/snowflake/v2"
 )
 
-// RvR access: when ACCESS_ROLE is set, only members holding it see and join
-// the raid channels. Members of the RvR board (BOARD_ROLE, together with the
-// faction role) grant and revoke it from Discord with two user commands
-// (right click on a member > Apps), without any Discord permission of their
-// own: the owner bot changes that single role and nothing else.
+// Access: when ACCESS_ROLE is set and the mode is restricted, only members
+// holding it see and join the listener channels. Speakers, squad leads and
+// the optional board role grant and revoke it from the panel or with two
+// user commands (right click on a member > Apps), without any Discord
+// permission of their own: the owner bot changes that single role.
 
 var (
 	// ErrAccessDisabled: ACCESS_ROLE or BOARD_ROLE is not configured.
 	ErrAccessDisabled = errors.New("rvr access management is not configured")
-	// ErrAccessNotBoard: the member using the command is not on the board of
-	// this faction.
-	ErrAccessNotBoard = errors.New("only the RvR board of this faction can do this")
+	// ErrAccessNotBoard: the member using the command may not manage access.
+	ErrAccessNotBoard = errors.New("only speakers, squad leads or the board can do this")
 	// ErrAccessRoleMissing: ACCESS_ROLE or BOARD_ROLE matches no guild role.
 	ErrAccessRoleMissing = errors.New("rvr access role not found")
 	// ErrAccessTargetBot: the target is a bot.
 	ErrAccessTargetBot = errors.New("bots do not need rvr access")
-	// ErrAccessWrongFaction: the target lacks the faction role.
-	ErrAccessWrongFaction = errors.New("the member does not have the faction role")
 	// ErrAccessPermission: Discord refused the role change (role hierarchy or
 	// missing Manage Roles).
 	ErrAccessPermission = errors.New("the owner bot cannot change this role (Manage Roles, or its role is below the access role)")
@@ -50,13 +47,9 @@ func (m *Service) AccessEnabled() bool {
 	return o.Enabled && o.AccessRole != ""
 }
 
-// AccessFaction is the faction name shown in the command names.
-func (m *Service) AccessFaction() string { return m.channels.opts.Faction }
-
 // CanManageAccess reports whether a member with roleIDs and perms may grant
-// or revoke access: server managers always, otherwise the raid lead, squad
-// lead or board role, together with the faction role when one is set (so the
-// leaders of the other faction cannot).
+// or revoke access: server managers always, otherwise the speaker, squad lead
+// or board role.
 func (m *Service) CanManageAccess(guildID snowflake.ID, roleIDs []snowflake.ID, perms discord.Permissions) bool {
 	if !m.AccessEnabled() {
 		return false
@@ -64,21 +57,12 @@ func (m *Service) CanManageAccess(guildID snowflake.ID, roleIDs []snowflake.ID, 
 	if perms.Has(discord.PermissionAdministrator) || perms.Has(discord.PermissionManageGuild) {
 		return true
 	}
-	leader := false
 	for _, id := range m.ApproverRoleIDs(guildID) {
 		if slices.Contains(roleIDs, id) {
-			leader = true
-			break
+			return true
 		}
 	}
-	if !leader {
-		return false
-	}
-	if f := m.channels.opts.FactionRole; f != "" {
-		faction := m.resolveRole(guildID, f)
-		return faction != 0 && slices.Contains(roleIDs, faction)
-	}
-	return true
+	return false
 }
 
 // ApproverRoleIDs are the roles that approve access requests (and are pinged
@@ -120,11 +104,9 @@ func (m *Service) SetRvRAccess(ctx context.Context, guildID, actorID, targetID s
 	if targetIsBot {
 		return res, ErrAccessTargetBot
 	}
-	// The faction role of the target is not checked: the board vets who gets
-	// access, and the access role is the only gate.
 	has := slices.Contains(targetRoles, role)
 
-	reason := fmt.Sprintf("RvR %s: %s by %s", o.Faction, map[bool]string{true: "granted", false: "revoked"}[grant], actorID)
+	reason := fmt.Sprintf("Voice Relay access %s by %s", map[bool]string{true: "granted", false: "revoked"}[grant], actorID)
 	opts := []rest.RequestOpt{rest.WithCtx(ctx), rest.WithReason(reason)}
 	switch {
 	case grant && !has:
@@ -144,7 +126,6 @@ func (m *Service) SetRvRAccess(ctx context.Context, guildID, actorID, targetID s
 
 	slog.Info("rvr access changed",
 		slog.String("guildID", guildID.String()),
-		slog.String("faction", o.Faction),
 		slog.Bool("granted", grant),
 		slog.Bool("changed", res.Changed),
 		slog.Bool("disconnected", res.Disconnected),

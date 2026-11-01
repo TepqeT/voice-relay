@@ -146,10 +146,6 @@ func (h *CommandHandlers) startHostRaid(cmdCtx context.Context, guildID snowflak
 				reply(loc.T("raid.no_owner_channel"))
 				return
 			}
-			if errors.Is(err, manager.ErrFactionRoleMissing) {
-				reply(loc.T("raid.faction_role_missing", "Err", err.Error()))
-				return
-			}
 			if errors.Is(err, manager.ErrRaidLeadRoleMissing) {
 				reply(loc.T("raid.raid_lead_role_missing", "Err", err.Error()))
 				return

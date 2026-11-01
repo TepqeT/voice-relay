@@ -31,16 +31,16 @@ func (f fakeSiteManager) MemberPresent(_ snowflake.ID, id snowflake.ID) (string,
 }
 func (f fakeSiteManager) MissingOwnerPermissions(snowflake.ID) discord.Permissions { return f.missing }
 func (f fakeSiteManager) RoleSetupStatus(snowflake.ID) []manager.RoleSetup {
-	return []manager.RoleSetup{{Purpose: "raid_lead", Name: "Raid Lead", ID: 5}, {Purpose: "class", Name: "Clerc"}}
+	return []manager.RoleSetup{{Purpose: "raid_lead", Name: "Speaker", ID: 5}, {Purpose: "class", Name: "Healer"}}
 }
 func (f fakeSiteManager) OwnerGuilds() []manager.GuildRef {
-	return []manager.GuildRef{{ID: 444, Name: "Test Server"}}
+	return []manager.GuildRef{{ID: 444, Name: "Community"}}
 }
 func (f fakeSiteManager) GuildFacts(snowflake.ID, snowflake.ID) manager.GuildFacts {
 	return manager.GuildFacts{BotPresent: true, MemberCount: 42, Member: true}
 }
 func (f fakeSiteManager) CreateMissingRoles(context.Context, snowflake.ID) (manager.RoleSetupReport, error) {
-	return manager.RoleSetupReport{Created: []string{"Clerc"}}, nil
+	return manager.RoleSetupReport{Created: []string{"Healer"}}, nil
 }
 
 func (f fakeSiteManager) Uninstall(context.Context, snowflake.ID) (manager.UninstallReport, error) {
@@ -61,17 +61,17 @@ func speakerToken(id string) string {
 }
 
 func TestWebBackendGuildStatus(t *testing.T) {
-	m := fakeSiteManager{inGuild: true, members: map[snowflake.ID]string{1001: "Héraut d'Elysea 1"}, missing: discord.PermissionMoveMembers}
+	m := fakeSiteManager{inGuild: true, members: map[snowflake.ID]string{1001: "Voice Relay 1"}, missing: discord.PermissionMoveMembers}
 	b := newWebBackend(m, 42, func() string { return "" }, []string{speakerToken("1001"), speakerToken("1002")})
 	st := b.GuildStatus(777)
 	if !st.BotPresent || !strings.Contains(st.BotInviteURL, "guild_id=777") || !strings.Contains(st.BotInviteURL, "disable_guild_select=true") {
 		t.Fatalf("invite = %q", st.BotInviteURL)
 	}
-	if len(st.Heralds) != 2 || st.Heralds[0].Name != "Héraut d'Elysea 1" || !st.Heralds[0].Present || st.Heralds[1].Name != "Voice Relay 2" || st.Heralds[1].Present {
-		t.Fatalf("heralds = %+v", st.Heralds)
+	if len(st.RelayBots) != 2 || st.RelayBots[0].Name != "Voice Relay 1" || !st.RelayBots[0].Present || st.RelayBots[1].Name != "Voice Relay 2" || st.RelayBots[1].Present {
+		t.Fatalf("relay bots = %+v", st.RelayBots)
 	}
-	if !strings.Contains(st.Heralds[1].InviteURL, "client_id=1002") || !strings.Contains(st.Heralds[1].InviteURL, "guild_id=777") {
-		t.Fatalf("herald invite = %q", st.Heralds[1].InviteURL)
+	if !strings.Contains(st.RelayBots[1].InviteURL, "client_id=1002") || !strings.Contains(st.RelayBots[1].InviteURL, "guild_id=777") {
+		t.Fatalf("relay bot invite = %q", st.RelayBots[1].InviteURL)
 	}
 	if len(st.MissingPermissions) != 1 || st.MissingPermissions[0] != "move" {
 		t.Fatalf("missing = %v", st.MissingPermissions)
@@ -82,7 +82,7 @@ func TestWebBackendGuildStatus(t *testing.T) {
 	if b.BotName() != "Voice Relay" {
 		t.Fatalf("fallback name = %q", b.BotName())
 	}
-	if g := b.BotGuilds(); len(g) != 1 || g[0].ID != 444 || g[0].Name != "Test Server" {
+	if g := b.BotGuilds(); len(g) != 1 || g[0].ID != 444 || g[0].Name != "Community" {
 		t.Fatalf("bot guilds = %+v", g)
 	}
 	if sf := b.ServerFacts(777, 7); !sf.BotPresent || sf.MemberCount != 42 || !sf.Member || sf.Manages {
@@ -96,7 +96,7 @@ func TestWebBackendGuildStatus(t *testing.T) {
 func TestWebBackendBotAbsent(t *testing.T) {
 	b := newWebBackend(fakeSiteManager{}, 42, func() string { return "Voix" }, []string{speakerToken("1001")})
 	st := b.GuildStatus(777)
-	if st.BotPresent || len(st.Roles) != 0 || st.Heralds[0].Present {
+	if st.BotPresent || len(st.Roles) != 0 || st.RelayBots[0].Present {
 		t.Fatalf("status without bot = %+v", st)
 	}
 	if !siteOwnerPermissions.Has(discord.PermissionManageRoles | discord.PermissionMoveMembers | discord.PermissionMuteMembers | discord.PermissionDeafenMembers) {

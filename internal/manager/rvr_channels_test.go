@@ -57,7 +57,7 @@ func overwriteFor(ow []discord.PermissionOverwrite, id snowflake.ID) (allow, den
 func TestRaidOverwrites(t *testing.T) {
 	const (
 		guildID snowflake.ID = 100
-		faction snowflake.ID = 200
+		view    snowflake.ID = 200
 		caller  snowflake.ID = 300
 		squad   snowflake.ID = 400
 		ownerID snowflake.ID = 1
@@ -65,14 +65,14 @@ func TestRaidOverwrites(t *testing.T) {
 	)
 	bots := []snowflake.ID{ownerID, botID}
 
-	// Squad channel: faction joins, everyone else sees nothing, squad leads
+	// Listener channel: the access role joins, everyone else sees nothing, squad leads
 	// get priority speaker, the caller role gets nothing extra.
-	ow := raidOverwrites(guildID, faction, caller, squad, bots, channelSquad)
+	ow := raidOverwrites(guildID, view, caller, squad, bots, channelSquad)
 	if _, deny, _ := overwriteFor(ow, guildID); !deny.Has(discord.PermissionViewChannel | discord.PermissionConnect) {
 		t.Fatalf("@everyone deny = %v", deny)
 	}
-	if allow, _, _ := overwriteFor(ow, faction); !allow.Has(voiceMember) {
-		t.Fatalf("faction allow = %v", allow)
+	if allow, _, _ := overwriteFor(ow, view); !allow.Has(voiceMember) {
+		t.Fatalf("view allow = %v", allow)
 	}
 	if allow, _, _ := overwriteFor(ow, squad); allow != squadLeadAllow || !allow.Has(discord.PermissionPrioritySpeaker|discord.PermissionMuteMembers|discord.PermissionMoveMembers) || allow.Has(discord.PermissionDeafenMembers) {
 		t.Fatalf("squad lead allow = %v", allow)
@@ -84,11 +84,11 @@ func TestRaidOverwrites(t *testing.T) {
 		t.Fatalf("bot allow = %v", allow)
 	}
 
-	// Raid lead channel: the faction only sees it, the caller role joins it
-	// without View, so a role shared by both factions reveals nothing.
-	ow = raidOverwrites(guildID, faction, caller, squad, bots, channelRaidLead)
-	if allow, _, _ := overwriteFor(ow, faction); allow != discord.PermissionViewChannel {
-		t.Fatalf("faction allow on raid lead = %v", allow)
+	// Raid lead channel: the view only sees it, the caller role joins it
+	// without View, so the speaker role alone reveals nothing more.
+	ow = raidOverwrites(guildID, view, caller, squad, bots, channelRaidLead)
+	if allow, _, _ := overwriteFor(ow, view); allow != discord.PermissionViewChannel {
+		t.Fatalf("view allow on raid lead = %v", allow)
 	}
 	allow, _, _ := overwriteFor(ow, caller)
 	if !allow.Has(discord.PermissionConnect|discord.PermissionSpeak) || allow.Has(discord.PermissionViewChannel) {
@@ -98,15 +98,15 @@ func TestRaidOverwrites(t *testing.T) {
 		t.Fatal("squad role must not be set on the raid lead channel")
 	}
 
-	// No faction role: visible to everyone, only the raid lead channel
+	// No access role: visible to everyone, only the raid lead channel
 	// restricts Connect.
 	ow = raidOverwrites(guildID, 0, caller, 0, bots, channelSquad)
 	if _, _, ok := overwriteFor(ow, guildID); ok {
-		t.Fatal("no faction role: squads must stay open")
+		t.Fatal("no access role: squads must stay open")
 	}
 	ow = raidOverwrites(guildID, 0, caller, 0, bots, channelRaidLead)
 	if _, deny, _ := overwriteFor(ow, guildID); deny != discord.PermissionConnect {
-		t.Fatalf("no faction role: raid lead @everyone deny = %v", deny)
+		t.Fatalf("no access role: raid lead @everyone deny = %v", deny)
 	}
 }
 
@@ -156,16 +156,16 @@ func TestOrderCategories(t *testing.T) {
 		return c
 	}
 	all := []discord.GuildChannel{
-		mk(1, "Aion 2 Global", 0),
-		mk(2, "Aion 2 Communauté Fr", 1),
-		mk(3, "Aion 2 faction Asmodienne", 2),
-		mk(4, "Aion 2 faction Elyséenne", 3),
-		mk(9, "RvR Asmodiens", 3), // just created, same position as the next one
+		mk(1, "General", 0),
+		mk(2, "Community", 1),
+		mk(3, "Gaming Area", 2),
+		mk(4, "Événements", 3),
+		mk(9, "Voice Relay", 3), // just created, same position as the next one
 	}
-	if got := findCategory(all, "aion 2 faction asmodienne"); got != 3 {
+	if got := findCategory(all, "gaming area"); got != 3 {
 		t.Fatalf("findCategory exact = %d", got)
 	}
-	if got := findCategory(all, "Elyséenne"); got != 4 {
+	if got := findCategory(all, "Événements"); got != 4 {
 		t.Fatalf("findCategory contains = %d", got)
 	}
 	got := orderCategories(all, 3, 9)

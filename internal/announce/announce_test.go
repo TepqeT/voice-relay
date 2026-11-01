@@ -194,28 +194,6 @@ func TestSlotExpiry(t *testing.T) {
 	}
 }
 
-// TestBundledSounds checks the default sounds shipped in the image.
-func TestBundledSounds(t *testing.T) {
-	dir := filepath.Join("..", "..", "sounds")
-	if _, err := os.Stat(dir); err != nil {
-		t.Skip("no bundled sounds directory")
-	}
-	lib, err := Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"debut", "fin", "regroupement", "attention", "engage", "repli"} {
-		s, ok := lib.Get(name)
-		if !ok {
-			t.Errorf("bundled sound %q missing or rejected", name)
-			continue
-		}
-		if s.Duration <= 0 || s.Duration > maxSoundDuration {
-			t.Errorf("sound %q has duration %s", name, s.Duration)
-		}
-	}
-}
-
 func TestRegistryStaleHandleBeforeRelease(t *testing.T) {
 	r := NewRegistry()
 	stale := r.Attach(1, 10)

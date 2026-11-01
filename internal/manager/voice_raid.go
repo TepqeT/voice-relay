@@ -307,6 +307,7 @@ func (m *Service) StartVoiceRaid(ctx context.Context, guildID snowflake.ID, canc
 	gm := m.metrics.ForGuild(ctx, guildID)
 	m.beginSquad(guildID)
 	allowUser := m.buildAllowUserFilter(guildID)
+	m.resetFeedback(guildID) // every return starts on
 	setup, err := m.setupSpeakers(setupCtx, guildID, mode, m.squadAllow(guildID, allowUser), gm)
 	if err != nil {
 		endSpanErr(span, err)
@@ -337,7 +338,7 @@ func (m *Service) StartVoiceRaid(ctx context.Context, guildID snowflake.ID, canc
 	ownerSetup := NewVoiceConnSetup(m.ownerBotID).
 		WithAnnouncements(m.overlayFor(guildID, m.ownerBotID)).
 		WithDiag(diag.For(guildID)).
-		WithVoiceReceiver(allowUser.Check, gm.Receiver())
+		WithVoiceReceiver(m.speakerChannelAllow(guildID, allowUser.Check), gm.Receiver())
 	// In multi-channel capture modes the owner bot must also play back the
 	// mixed audio from other channels into its own channel (mix-minus).
 	var chOwnerOut chan []byte
@@ -354,7 +355,7 @@ func (m *Service) StartVoiceRaid(ctx context.Context, guildID snowflake.ID, canc
 		endSpanErr(span, err)
 		return "", fmt.Errorf("start raid: setup owner capture: %w", err)
 	}
-	m.storeApplier(guildID, m.ownerBotID, m.buildApplier(guildID, m.ownerBotID, chOwnerOut, ownerHandle, allowUser.Check))
+	m.storeApplier(guildID, m.ownerBotID, m.buildApplier(guildID, m.ownerBotID, chOwnerOut, ownerHandle, m.speakerChannelAllow(guildID, allowUser.Check)))
 	m.watchVoiceReady(guildID, m.ownerBotID, conn)
 	// The host owner bot always captures, so it starts hearing; the controller
 	// deafens it if its channel ever empties of role-bearing callers. Reconcile

@@ -13,14 +13,14 @@ import (
 	"github.com/disgoorg/snowflake/v2"
 )
 
-// Automatic setup: the roles the configuration names (raid lead, squad lead,
-// faction, access, board, classes) are created when the server lacks them, so
+// Automatic setup: the roles the configuration names (speaker, squad lead,
+// access, board, classes) are created when the server lacks them, so
 // an administrator only has to hand them out. Running it again creates only
 // what is still missing.
 
 // RoleSetup is one role the configuration needs in a guild.
 type RoleSetup struct {
-	Purpose  string       // what the role is for: raid_lead, squad_lead, faction, access, board, class
+	Purpose  string       // what the role is for: raid_lead (speaker), squad_lead, access, board, class
 	Name     string       // configured name or ID
 	ID       snowflake.ID // 0 when the guild has no such role
 	AboveBot bool         // the role sits at or above the owner bot's highest role: the bot cannot manage it
@@ -45,7 +45,6 @@ func (m *Service) wantedRoles() []RoleSetup {
 	}
 	add("raid_lead", m.rvr.opts.RaidLeadRole)
 	add("squad_lead", m.rvr.opts.SquadLeadRole)
-	add("faction", m.channels.opts.FactionRole)
 	add("access", m.channels.opts.AccessRole)
 	add("board", m.channels.opts.BoardRole)
 	for _, c := range m.sort.opts.ClassRoles {
@@ -54,7 +53,7 @@ func (m *Service) wantedRoles() []RoleSetup {
 	return dedupeRoles(out)
 }
 
-// dedupeRoles drops repeated names (a faction role reused as access role).
+// dedupeRoles drops repeated names (one role used for two purposes).
 func dedupeRoles(in []RoleSetup) []RoleSetup {
 	seen := make(map[string]bool, len(in))
 	out := in[:0]

@@ -146,14 +146,14 @@ func (m *Service) disconnectWithoutAccess(ctx context.Context, guildID snowflake
 	return n
 }
 
-// viewRoleName is the role that sees the raid channels of guildID: the access
-// role while restricted, else the faction role (often none: everyone).
+// viewRoleName is the role that sees the channels of guildID: the access
+// role while restricted, "" (everyone) when open or without access role.
 func (m *Service) viewRoleName(guildID snowflake.ID) string {
 	o := m.channels.opts
 	if o.AccessRole != "" && !m.AccessOpen(guildID) {
 		return o.AccessRole
 	}
-	return o.FactionRole
+	return ""
 }
 
 // applyAccessMode rewrites the @everyone and access role overwrites of the

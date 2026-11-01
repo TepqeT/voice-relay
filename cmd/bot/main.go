@@ -33,9 +33,8 @@ func main() {
 
 	telemetry.SetVoiceLogLevel(cfg.VoiceLogLevel)
 
-	slog.Info("aion-relay starting",
+	slog.Info("voice relay starting",
 		slog.String("version", version.Fork),
-		slog.String("faction", cfg.RvR.Channels.Faction),
 		slog.Bool("dynamicChannels", cfg.RvR.Channels.Enabled),
 		slog.Int("speakerTokens", len(cfg.SpeakerTokens)),
 	)

@@ -43,16 +43,17 @@ type Service struct {
 	test               config.TestConfig
 	sessions           *ally.Manager
 	metrics            *telemetry.Metrics
-	reconnect          reconnectState // typed reconnect subsystem (applier registry + in-flight guard)
-	starting           startGuard     // one raid start per guild at a time
-	accessMode         accessModes    // raid channels open to everyone or restricted, per guild
-	home               homeCategories // permanent category per guild (HomeCategory)
-	squadChoice        squadChoices   // squads per raid chosen on the panel
-	sessionIdleTimeout time.Duration  // 0 disables; set via SetSessionIdleTimeout
-	rvr                rvrState       // announcements and quality reports (rvr.go)
-	squad              squadState     // squad lead calls to the raid leads (squad.go)
-	channels           channelState   // raid channels created per raid (rvr_channels.go)
-	sort               sortState      // class sorting from the waiting channel (rvr_class_sort.go)
+	reconnect          reconnectState   // typed reconnect subsystem (applier registry + in-flight guard)
+	starting           startGuard       // one raid start per guild at a time
+	accessMode         accessModes      // raid channels open to everyone or restricted, per guild
+	home               homeCategories   // permanent category per guild (HomeCategory)
+	squadChoice        squadChoices     // squads per raid chosen on the panel
+	feedback           listenerFeedback // squad lead returns cut on the panel
+	sessionIdleTimeout time.Duration    // 0 disables; set via SetSessionIdleTimeout
+	rvr                rvrState         // announcements and quality reports (rvr.go)
+	squad              squadState       // squad lead calls to the raid leads (squad.go)
+	channels           channelState     // raid channels created per raid (rvr_channels.go)
+	sort               sortState        // class sorting from the waiting channel (rvr_class_sort.go)
 
 	accessMembersMu sync.Mutex
 	accessMembers   map[snowflake.ID]memberList // name lookups of the access channel (rvr_access_channel.go)

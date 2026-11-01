@@ -253,7 +253,7 @@ func (m *Service) waitSpeakerConnDrained(guildID, botUserID, boundChID snowflake
 }
 
 // OnBotServerMuted lifts a server mute put on one of the relay bots during a
-// raid. Squad leads may server-mute members of their squad; a herald muted by
+// raid. Squad leads may server-mute members of their squad; a relay bot muted by
 // mistake would leave the whole squad without calls.
 func (m *Service) OnBotServerMuted(ctx context.Context, guildID, botUserID snowflake.ID) {
 	if !m.HasActiveSession(guildID) || m.ownerClient == nil {
@@ -264,7 +264,7 @@ func (m *Service) OnBotServerMuted(ctx context.Context, guildID, botUserID snowf
 	}
 	unmute := false
 	if _, err := m.ownerClient.Rest.UpdateMember(guildID, botUserID, discord.MemberUpdate{Mute: &unmute},
-		rest.WithCtx(ctx), rest.WithReason("RvR: a relay bot must not be muted")); err != nil {
+		rest.WithCtx(ctx), rest.WithReason("Voice Relay: a relay bot must not be muted")); err != nil {
 		slog.Warn("relay bot was server-muted and could not be unmuted (Mute Members?)",
 			slog.String("guildID", guildID.String()), slog.String("botUserID", botUserID.String()), slog.Any("err", err))
 		return

@@ -32,7 +32,7 @@ func TestPlanNoPlayers(t *testing.T) {
 }
 
 func TestPlanNoSquads(t *testing.T) {
-	res := Plan(players("clerc", 2, "c"), nil, Rule{})
+	res := Plan(players("healer", 2, "c"), nil, Rule{})
 	if len(res.Moves) != 0 || len(res.Waiting) != 2 || res.Waiting[0].Reason != ReasonNoRoom {
 		t.Fatalf("got %+v, want 2 waiting no_room", res)
 	}
@@ -40,16 +40,16 @@ func TestPlanNoSquads(t *testing.T) {
 
 func TestPlanBalancedSpreadsEachClass(t *testing.T) {
 	var w []Player
-	w = append(w, players("Clerc", 4, "c")...)
-	w = append(w, players("Templier", 2, "t")...)
-	w = append(w, players("Sorcier", 3, "s")...)
+	w = append(w, players("Healer", 4, "c")...)
+	w = append(w, players("Tank", 2, "t")...)
+	w = append(w, players("Mage", 3, "s")...)
 	res := Plan(w, emptySquads(2), Rule{})
 	if len(res.Waiting) != 0 {
 		t.Fatalf("waiting = %+v", res.Waiting)
 	}
 	perSquad := map[string][2]int{}
 	for _, m := range res.Moves {
-		class := map[byte]string{'c': "clerc", 't': "templier", 's': "sorcier"}[m.PlayerID[0]]
+		class := map[byte]string{'c': "healer", 't': "tank", 's': "mage"}[m.PlayerID[0]]
 		v := perSquad[class]
 		v[m.Squad]++
 		perSquad[class] = v
@@ -65,22 +65,22 @@ func TestPlanBalancedSpreadsEachClass(t *testing.T) {
 }
 
 func TestPlanSingleClass(t *testing.T) {
-	res := Plan(players("Gladiateur", 7, "g"), emptySquads(3), Rule{})
+	res := Plan(players("Fighter", 7, "g"), emptySquads(3), Rule{})
 	if got, want := countBySquad(res, 3), []int{3, 2, 2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
 func TestPlanCountsPlayersAlreadyInSquads(t *testing.T) {
-	squads := [][]Player{players("Clerc", 2, "old"), nil}
-	res := Plan(players("Clerc", 2, "c"), squads, Rule{})
+	squads := [][]Player{players("Healer", 2, "old"), nil}
+	res := Plan(players("Healer", 2, "c"), squads, Rule{})
 	if got, want := countBySquad(res, 2), []int{0, 2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
 func TestPlanMorePlayersThanPlaces(t *testing.T) {
-	res := Plan(players("Clerc", 5, "c"), emptySquads(2), Rule{Max: 2})
+	res := Plan(players("Healer", 5, "c"), emptySquads(2), Rule{Max: 2})
 	if len(res.Moves) != 4 {
 		t.Fatalf("moves = %d, want 4", len(res.Moves))
 	}
@@ -90,15 +90,15 @@ func TestPlanMorePlayersThanPlaces(t *testing.T) {
 }
 
 func TestPlanImpossibleQuotas(t *testing.T) {
-	rule, err := ParseRule("Clerc=0; Templier=1")
+	rule, err := ParseRule("Healer=0; Tank=1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := append(players("Clerc", 2, "c"), players("Sorcier", 1, "s")...)
-	w = append(w, players("Templier", 3, "t")...)
+	w := append(players("Healer", 2, "c"), players("Mage", 1, "s")...)
+	w = append(w, players("Tank", 3, "t")...)
 	res := Plan(w, emptySquads(2), rule)
 	if len(res.Moves) != 2 {
-		t.Fatalf("moves = %+v, want the 2 templiers that fit", res.Moves)
+		t.Fatalf("moves = %+v, want the 2 tanks that fit", res.Moves)
 	}
 	for _, m := range res.Moves {
 		if m.PlayerID[0] != 't' {
@@ -116,11 +116,11 @@ func TestPlanImpossibleQuotas(t *testing.T) {
 }
 
 func TestPlanQuotasPerSquad(t *testing.T) {
-	rule, err := ParseRule("clerc=2/1")
+	rule, err := ParseRule("healer=2/1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := Plan(players("CLERC", 6, "c"), emptySquads(4), rule)
+	res := Plan(players("HEALER", 6, "c"), emptySquads(4), rule)
 	if got, want := countBySquad(res, 4), []int{2, 1, 1, 1}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
@@ -130,11 +130,11 @@ func TestPlanQuotasPerSquad(t *testing.T) {
 }
 
 func TestPlanDefaultQuota(t *testing.T) {
-	rule, err := ParseRule("Clerc=1; *=2")
+	rule, err := ParseRule("Healer=1; *=2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := Plan(players("Sorcier", 3, "s"), emptySquads(1), rule)
+	res := Plan(players("Mage", 3, "s"), emptySquads(1), rule)
 	if len(res.Moves) != 2 || len(res.Waiting) != 1 {
 		t.Fatalf("got %+v, want 2 moved 1 waiting", res)
 	}
@@ -143,9 +143,9 @@ func TestPlanDefaultQuota(t *testing.T) {
 func TestPlanNoOrMultipleClassesAndSquadLeads(t *testing.T) {
 	w := []Player{
 		{ID: "none"},
-		{ID: "two", Classes: []string{"Clerc", "Sorcier"}},
-		{ID: "lead", Classes: []string{"Clerc"}, SquadLead: true},
-		{ID: "ok", Classes: []string{"Clerc"}},
+		{ID: "two", Classes: []string{"Healer", "Mage"}},
+		{ID: "lead", Classes: []string{"Healer"}, SquadLead: true},
+		{ID: "ok", Classes: []string{"Healer"}},
 	}
 	res := Plan(w, emptySquads(2), Rule{})
 	want := []Waiting{{"none", ReasonNoClass}, {"two", ReasonMultipleClasses}, {"lead", ReasonSquadLead}}
@@ -168,14 +168,14 @@ func TestParseRule(t *testing.T) {
 	if err != nil || !r.Balanced() || r.Max != 6 {
 		t.Errorf("balanced;max=6 = %+v, %v", r, err)
 	}
-	r, err = ParseRule("Templier=1, Clerc=2/1, *=0")
+	r, err = ParseRule("Tank=1, Healer=2/1, *=0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.Quotas, map[string][]int{"templier": {1}, "clerc": {2, 1}}) || !reflect.DeepEqual(r.Default, []int{0}) {
+	if !reflect.DeepEqual(r.Quotas, map[string][]int{"tank": {1}, "healer": {2, 1}}) || !reflect.DeepEqual(r.Default, []int{0}) {
 		t.Errorf("got %+v", r)
 	}
-	for _, bad := range []string{"Clerc", "Clerc=x", "Clerc=-1", "=2", "max=-3", "Clerc=1//2"} {
+	for _, bad := range []string{"Healer", "Healer=x", "Healer=-1", "=2", "max=-3", "Healer=1//2"} {
 		if _, err := ParseRule(bad); err == nil {
 			t.Errorf("ParseRule(%q) accepted", bad)
 		}

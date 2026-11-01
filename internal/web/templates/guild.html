@@ -42,10 +42,10 @@
   <h2>{{t "guild.s2"}}</h2>
   <p class="muted">{{t "guild.s2hint"}}</p>
   <ul class="list">
-  {{range .Status.Heralds}}
+  {{range .Status.RelayBots}}
     <li class="row"><span class="name">{{.Name}}</span>
     {{if .Present}}<span class="tag ok">{{t "guild.here"}}</span>{{else}}<a class="button small" href="{{.InviteURL}}" rel="noopener">{{t "guild.inv"}}</a>{{end}}</li>
-  {{else}}<li class="muted">{{t "guild.noherald"}}</li>
+  {{else}}<li class="muted">{{t "guild.norelay"}}</li>
   {{end}}
   </ul>
 </section>

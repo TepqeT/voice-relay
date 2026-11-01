@@ -170,7 +170,7 @@ func TestRenderFrench(t *testing.T) {
 		Findings: []Finding{{Code: "reconnects", Level: LevelWatch}},
 	}
 	out := Render(rep, "fr")
-	for _, want := range []string{"**Rapport RvR** : à surveiller", "1 h 02 min", "un caller", "0,05 %", "relais direct", "100,00 % déchiffré", "s'est reconnecté"} {
+	for _, want := range []string{"**Rapport Voice Relay** : à surveiller", "1 h 02 min", "un caller", "0,05 %", "relais direct", "100,00 % déchiffré", "s'est reconnecté"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("render missing %q:\n%s", want, out)
 		}
@@ -275,11 +275,11 @@ func TestRenderEventLabel(t *testing.T) {
 		if def, lab := Render(r, lang), RenderWithLabel(r, lang, ""); def != lab {
 			t.Fatalf("%s: empty label changed the report:\n%s\n%s", lang, def, lab)
 		}
-		if got := RenderWithLabel(r, lang, "GvG"); strings.Contains(got, "RvR") || !strings.Contains(got, "GvG") {
+		if got := RenderWithLabel(r, lang, "GvG"); strings.Contains(got, "Voice Relay") || !strings.Contains(got, "GvG") {
 			t.Fatalf("%s: %q", lang, got)
 		}
 	}
-	if !strings.HasPrefix(Render(r, "fr"), "**Rapport RvR** :") {
+	if !strings.HasPrefix(Render(r, "fr"), "**Rapport Voice Relay** :") {
 		t.Fatalf("default title changed: %q", Render(r, "fr"))
 	}
 }
