@@ -110,7 +110,10 @@ type ChannelsConfig struct {
 	// FactionRole is the role (name or ID) that sees the channels; empty makes
 	// them visible to everyone. FACTION_ROLE, default the faction name.
 	FactionRole string
-	// Category is the category name. RVR_CATEGORY, default "RvR <faction>".
+	// EventLabel names the event in category names, user commands and
+	// messages, for games where "RvR" means nothing. EVENT_LABEL, default "RvR".
+	EventLabel string
+	// Category is the category name. RVR_CATEGORY, default "<label> <faction>".
 	Category string
 	// After is the existing category (name or ID) the raid category is placed
 	// right below. RVR_CATEGORY_AFTER, default empty (bottom of the list).
@@ -229,7 +232,8 @@ func loadRvR(store string) RvRConfig {
 
 func loadChannels(store string) ChannelsConfig {
 	faction := envOr("FACTION_NAME", "")
-	category := envOr("RVR_CATEGORY", strings.TrimSpace("RvR "+faction))
+	label := envOr("EVENT_LABEL", "RvR")
+	category := envOr("RVR_CATEGORY", strings.TrimSpace(label+" "+faction))
 	count := 10
 	if v := strings.TrimSpace(os.Getenv("SQUAD_COUNT")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 45 {
@@ -241,6 +245,7 @@ func loadChannels(store string) ChannelsConfig {
 	return ChannelsConfig{
 		Enabled:       parseBool("DYNAMIC_CHANNELS", false),
 		Faction:       faction,
+		EventLabel:    label,
 		FactionRole:   noneToEmpty(envOr("FACTION_ROLE", faction)),
 		Category:      category,
 		After:         noneToEmpty(envOr("RVR_CATEGORY_AFTER", "")),

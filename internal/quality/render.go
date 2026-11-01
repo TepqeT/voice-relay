@@ -109,7 +109,10 @@ var english = texts{
 
 // Render formats the report as a Discord message. lang "en" selects English,
 // anything else French.
-func Render(r Report, lang string) string {
+func Render(r Report, lang string) string { return RenderWithLabel(r, lang, "RvR") }
+
+// RenderWithLabel is Render with the event name of EVENT_LABEL in the title.
+func RenderWithLabel(r Report, lang, label string) string {
 	t := french
 	if strings.HasPrefix(strings.ToLower(lang), "en") {
 		t = english
@@ -126,7 +129,10 @@ func Render(r Report, lang string) string {
 		fmt.Fprintf(&b, format, args...)
 		b.WriteByte('\n')
 	}
-	line(t.title, t.verdict[r.Verdict])
+	if label = strings.TrimSpace(label); label == "" {
+		label = "RvR"
+	}
+	line(strings.Replace(t.title, "RvR", label, 1), t.verdict[r.Verdict])
 	mode := t.modes[r.Mode]
 	if mode == "" {
 		mode = r.Mode

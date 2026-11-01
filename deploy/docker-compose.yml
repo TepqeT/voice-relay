@@ -42,6 +42,9 @@ x-rvr-env: &rvr-env
   # Raid Leads : seul ce role peut rejoindre le salon Raid Lead et y etre relaye
   # (utilise si aucun role de capture n'a ete choisi avec /setup)
   RAID_LEAD_ROLE: "Raid Lead"
+  # Nom de l'evenement dans la categorie, les commandes et les messages (v28).
+  # Defaut "RvR" : tout reste identique. Pour un autre jeu, par exemple "GvG".
+  # EVENT_LABEL: "RvR"
   # Salons crees au lancement du raid et supprimes a l'arret
   DYNAMIC_CHANNELS: "true"
   RAID_LEAD_CHANNEL: "Raid Lead"

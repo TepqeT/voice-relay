@@ -31,11 +31,11 @@ func (h *CommandHandlers) squadLeads() (SquadLeadService, bool) {
 
 // squadLeadCommandNames are the raid leads' two user commands. Discord caps a
 // name at 32 characters and an app at 5 user commands (4 used with access).
-func squadLeadCommandNames(faction string) (name, dismiss string) {
-	name = fmt.Sprintf("RvR %s : nommer chef", faction)
-	dismiss = fmt.Sprintf("RvR %s : retirer chef", faction)
+func squadLeadCommandNames(label, faction string) (name, dismiss string) {
+	name = fmt.Sprintf("%s %s : nommer chef", label, faction)
+	dismiss = fmt.Sprintf("%s %s : retirer chef", label, faction)
 	if len([]rune(dismiss)) > 32 {
-		name, dismiss = "RvR : nommer chef", "RvR : retirer chef"
+		name, dismiss = shortCommandName(label, "nommer chef"), shortCommandName(label, "retirer chef")
 	}
 	return name, dismiss
 }
@@ -47,7 +47,7 @@ func (h *CommandHandlers) SquadLeadCommands() []discord.ApplicationCommandCreate
 	if !ok {
 		return nil
 	}
-	name, dismiss := squadLeadCommandNames(s.AccessFaction())
+	name, dismiss := squadLeadCommandNames(h.eventLabel(), s.AccessFaction())
 	return []discord.ApplicationCommandCreate{
 		discord.UserCommandCreate{Name: name},
 		discord.UserCommandCreate{Name: dismiss},
@@ -59,7 +59,7 @@ func (h *CommandHandlers) registerSquadLeads(r handler.Router) {
 	if !ok {
 		return
 	}
-	name, dismiss := squadLeadCommandNames(s.AccessFaction())
+	name, dismiss := squadLeadCommandNames(h.eventLabel(), s.AccessFaction())
 	r.UserCommand("/"+name, h.handleSquadLead(s, true))
 	r.UserCommand("/"+dismiss, h.handleSquadLead(s, false))
 	slog.Info("squad lead commands enabled", slog.String("name", name), slog.String("dismiss", dismiss))
