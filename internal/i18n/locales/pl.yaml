@@ -180,3 +180,7 @@ sort.reason.no_class: "brak roli klasy"
 sort.reason.multiple_classes: "kilka ról klasy"
 sort.reason.no_room: "brak miejsca dla tej klasy"
 sort.reason.squad_lead: "dowódca oddziału, nigdy nie jest przenoszony"
+
+# ── Subscriptions ─────────────────────────────────────────────────────────────
+sub.required: "❌ Ten serwer nie ma aktywnej subskrypcji: rajd nie może się rozpocząć."
+sub.required_site: "❌ Ten serwer nie ma aktywnej subskrypcji: rajd nie może się rozpocząć. Zobacz {{.URL}}"

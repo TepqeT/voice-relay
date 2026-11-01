@@ -170,3 +170,7 @@ sort.reason.no_class: "nenhum cargo de classe"
 sort.reason.multiple_classes: "vários cargos de classe"
 sort.reason.no_room: "sem vaga para esta classe"
 sort.reason.squad_lead: "líder de esquadrão, nunca é movido"
+
+# ── Subscriptions ─────────────────────────────────────────────────────────────
+sub.required: "❌ Este servidor não tem assinatura ativa: o raid não pode começar."
+sub.required_site: "❌ Este servidor não tem assinatura ativa: o raid não pode começar. Veja {{.URL}}"

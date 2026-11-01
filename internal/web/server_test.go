@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/subscription"
 )
 
 const (
@@ -23,6 +25,12 @@ const (
 type fakeBackend struct {
 	canManage map[snowflake.ID]bool // absent = unknown
 	setups    []snowflake.ID
+	srv       *Server
+	subs      *subscription.Store
+}
+
+func (f *fakeBackend) BotGuilds() []GuildRef {
+	return []GuildRef{{ID: managedGuild, Name: "Zeta"}, {ID: 444, Name: "Test Server"}}
 }
 
 func (f *fakeBackend) BotName() string { return "Voix de Test" }
@@ -83,10 +91,12 @@ func newTestSite(t *testing.T) (*httptest.Server, *fakeBackend, *http.Client) {
 	discord := fakeDiscord(t)
 	be := &fakeBackend{canManage: map[snowflake.ID]bool{}}
 	var site *httptest.Server
-	s, err := New(Config{Addr: ":0", BaseURL: "http://placeholder", ClientID: 42, ClientSecret: "secret"}, be)
+	subs, _ := subscription.Open("")
+	s, err := New(Config{Addr: ":0", BaseURL: "http://placeholder", ClientID: 42, ClientSecret: "secret"}, be, subs)
 	if err != nil {
 		t.Fatal(err)
 	}
+	be.srv, be.subs = s, subs
 	site = httptest.NewServer(s.Handler())
 	t.Cleanup(site.Close)
 	s.oauth.apiBase = discord.URL
@@ -267,7 +277,8 @@ func TestGuildStatusReady(t *testing.T) {
 }
 
 func TestNewRejectsRelativeBaseURL(t *testing.T) {
-	if _, err := New(Config{BaseURL: "relais.example"}, &fakeBackend{}); err == nil {
+	subs, _ := subscription.Open("")
+	if _, err := New(Config{BaseURL: "relais.example"}, &fakeBackend{}, subs); err == nil {
 		t.Fatal("relative base URL accepted")
 	}
 }
@@ -293,6 +304,77 @@ func TestPagesRespectCSPAndShowScenes(t *testing.T) {
 		if !strings.Contains(guild, `class="scene `+scene+`"`) {
 			t.Errorf("guild page misses %s", scene)
 		}
+	}
+}
+
+func TestAdminReservedToAdmins(t *testing.T) {
+	site, _, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	if code, _ := get(t, c, site.URL+"/admin"); code != http.StatusForbidden {
+		t.Fatalf("/admin for a non-admin = %d", code)
+	}
+	if code, body := get(t, c, site.URL+"/servers"); code != http.StatusOK || strings.Contains(body, "Administration") {
+		t.Fatal("admin link shown to a non-admin")
+	}
+}
+
+func TestAdminGrantsAndRevokesGiftSubscriptions(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.srv.AddAdmins(7) // the signed-in user of fakeDiscord
+	signIn(t, site, c, "good")
+	code, page := get(t, c, site.URL+"/admin")
+	if code != http.StatusOK || !strings.Contains(page, "Test Server") {
+		t.Fatalf("/admin = %d", code)
+	}
+	csrf := csrfRe.FindStringSubmatch(page)[1]
+
+	resp, err := c.PostForm(site.URL+"/admin/grant", url.Values{"csrf": {csrf}, "guild_pick": {"444"}, "plan": {"lifetime"}, "note": {"partenaire"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Header.Get("Location") != "/admin?ok=offert" {
+		t.Fatalf("grant redirect = %q", resp.Header.Get("Location"))
+	}
+	sub, ok := be.subs.Get(444)
+	if !ok || sub.Plan != subscription.PlanLifetime || !sub.Gift || sub.GuildName != "Test Server" || sub.GrantedBy != 7 || sub.Note != "partenaire" {
+		t.Fatalf("subscription = %+v", sub)
+	}
+
+	// Until a date, typed server ID; the whole chosen day is included.
+	resp, _ = c.PostForm(site.URL+"/admin/grant", url.Values{"csrf": {csrf}, "guild_id": {"111"}, "plan": {"until"}, "until": {"2099-12-31"}})
+	if resp.Header.Get("Location") != "/admin?ok=offert" {
+		t.Fatalf("until grant redirect = %q", resp.Header.Get("Location"))
+	}
+	if sub, _ := be.subs.Get(111); sub.Plan != subscription.PlanUntil || sub.Expires.Format("2006-01-02") != "2100-01-01" {
+		t.Fatalf("until = %+v", sub)
+	}
+
+	// The server owner sees it on their pages.
+	if _, body := get(t, c, site.URL+"/servers"); !strings.Contains(body, "Jusqu&#39;au 31/12/2099 (offert)") {
+		t.Fatalf("subscription not shown on /servers:\n%s", body)
+	}
+	if _, body := get(t, c, site.URL+"/servers/111"); !strings.Contains(body, "(offert)") {
+		t.Fatal("subscription not shown on the server page")
+	}
+
+	for _, bad := range []url.Values{
+		{"csrf": {csrf}, "guild_id": {"abc"}, "plan": {"lifetime"}},
+		{"csrf": {csrf}, "guild_id": {"111"}, "plan": {"until"}, "until": {"2001-01-01"}},
+		{"csrf": {csrf}, "guild_id": {"111"}},
+	} {
+		resp, _ := c.PostForm(site.URL+"/admin/grant", bad)
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Location") != "" {
+			t.Errorf("bad grant %v accepted", bad)
+		}
+	}
+
+	resp, _ = c.PostForm(site.URL+"/admin/revoke", url.Values{"csrf": {csrf}, "guild_id": {"444"}})
+	if resp.Header.Get("Location") != "/admin?ok=retire" || be.subs.Active(444) {
+		t.Fatal("revoke failed")
+	}
+	resp, _ = c.PostForm(site.URL+"/admin/revoke", url.Values{"csrf": {"forged"}, "guild_id": {"111"}})
+	if resp.StatusCode != http.StatusForbidden || !be.subs.Active(111) {
+		t.Fatal("revoke without CSRF token")
 	}
 }
 

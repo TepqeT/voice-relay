@@ -61,6 +61,15 @@ type WebConfig struct {
 	// ClientSecret is the OAuth2 client secret of the owner bot application.
 	// DISCORD_CLIENT_SECRET. Never logged.
 	ClientSecret string
+	// Admins are extra Discord user IDs allowed to grant subscriptions; the
+	// owner of the bot application always is. SITE_ADMINS, comma separated.
+	Admins []string
+	// SubscriptionsFile stores the subscriptions. SUBSCRIPTIONS_FILE, default
+	// "subscriptions.json" next to the store file.
+	SubscriptionsFile string
+	// SubscriptionRequired refuses to start a raid in a server without an
+	// active subscription. SUBSCRIPTION_REQUIRED, default false.
+	SubscriptionRequired bool
 }
 
 // Enabled reports whether the site is fully configured.
@@ -216,15 +225,18 @@ func Load() (*Config, error) {
 			AllowBots: os.Getenv("TEST_ALLOW_BOTS") == "true",
 		},
 		RvR: loadRvR(storePath()),
-		Web: loadWeb(),
+		Web: loadWeb(storePath()),
 	}, nil
 }
 
-func loadWeb() WebConfig {
+func loadWeb(store string) WebConfig {
 	w := WebConfig{
-		Addr:         strings.TrimSpace(os.Getenv("WEB_ADDR")),
-		BaseURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("WEB_BASE_URL")), "/"),
-		ClientSecret: strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
+		Addr:                 strings.TrimSpace(os.Getenv("WEB_ADDR")),
+		BaseURL:              strings.TrimRight(strings.TrimSpace(os.Getenv("WEB_BASE_URL")), "/"),
+		ClientSecret:         strings.TrimSpace(os.Getenv("DISCORD_CLIENT_SECRET")),
+		Admins:               splitList(os.Getenv("SITE_ADMINS")),
+		SubscriptionsFile:    envOr("SUBSCRIPTIONS_FILE", filepath.Join(filepath.Dir(store), "subscriptions.json")),
+		SubscriptionRequired: parseBool("SUBSCRIPTION_REQUIRED", false),
 	}
 	if w.Addr != "" && !w.Enabled() {
 		slog.Warn("WEB_ADDR is set but WEB_BASE_URL or DISCORD_CLIENT_SECRET is missing: the site stays off")

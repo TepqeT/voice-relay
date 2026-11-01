@@ -170,3 +170,7 @@ sort.reason.no_class: "sınıf rolü yok"
 sort.reason.multiple_classes: "birden fazla sınıf rolü"
 sort.reason.no_room: "bu sınıf için yer kalmadı"
 sort.reason.squad_lead: "tim lideri, asla taşınmaz"
+
+# ── Subscriptions ─────────────────────────────────────────────────────────────
+sub.required: "❌ Bu sunucunun etkin aboneliği yok: akın başlatılamaz."
+sub.required_site: "❌ Bu sunucunun etkin aboneliği yok: akın başlatılamaz. Bkz. {{.URL}}"

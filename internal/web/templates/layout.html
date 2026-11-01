@@ -9,7 +9,8 @@
 <body>
 <header class="top">
   <a class="brand" href="/">Voice Relay</a>
-  {{if .User}}<form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><span class="muted">{{.User}}</span> <button class="link">Se déconnecter</button></form>{{end}}
+  {{if .User}}<nav class="inline">{{if .Admin}}<a href="/admin">Administration</a> · {{end}}<a href="/servers">Mes serveurs</a></nav>
+  <form method="post" action="/logout" class="inline"><input type="hidden" name="csrf" value="{{.CSRF}}"><span class="muted">{{.User}}</span> <button class="link">Se déconnecter</button></form>{{end}}
 </header>
 <main>
 {{end}}

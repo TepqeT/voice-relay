@@ -9,6 +9,7 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
 
+	"github.com/TepqeT/voice-relay/internal/i18n"
 	"github.com/TepqeT/voice-relay/internal/manager"
 )
 
@@ -29,6 +30,9 @@ func (f fakeSiteManager) MemberPresent(_ snowflake.ID, id snowflake.ID) (string,
 func (f fakeSiteManager) MissingOwnerPermissions(snowflake.ID) discord.Permissions { return f.missing }
 func (f fakeSiteManager) RoleSetupStatus(snowflake.ID) []manager.RoleSetup {
 	return []manager.RoleSetup{{Purpose: "raid_lead", Name: "Raid Lead", ID: 5}, {Purpose: "class", Name: "Clerc"}}
+}
+func (f fakeSiteManager) OwnerGuilds() []manager.GuildRef {
+	return []manager.GuildRef{{ID: 444, Name: "Test Server"}}
 }
 func (f fakeSiteManager) CreateMissingRoles(context.Context, snowflake.ID) (manager.RoleSetupReport, error) {
 	return manager.RoleSetupReport{Created: []string{"Clerc"}}, nil
@@ -61,6 +65,9 @@ func TestWebBackendGuildStatus(t *testing.T) {
 	if b.BotName() != "le bot principal" {
 		t.Fatalf("fallback name = %q", b.BotName())
 	}
+	if g := b.BotGuilds(); len(g) != 1 || g[0].ID != 444 || g[0].Name != "Test Server" {
+		t.Fatalf("bot guilds = %+v", g)
+	}
 	if rep, _ := b.SetupRoles(context.Background(), 777); len(rep.Created) != 1 {
 		t.Fatalf("setup = %+v", rep)
 	}
@@ -74,5 +81,38 @@ func TestWebBackendBotAbsent(t *testing.T) {
 	}
 	if !siteOwnerPermissions.Has(discord.PermissionManageRoles | discord.PermissionMoveMembers | discord.PermissionMuteMembers | discord.PermissionDeafenMembers) {
 		t.Fatal("site invite lacks raid permissions")
+	}
+}
+
+func TestApplicationAdmins(t *testing.T) {
+	if got := applicationAdmins(nil); len(got) != 0 {
+		t.Fatalf("nil app = %v", got)
+	}
+	app := &discord.Application{Owner: &discord.User{ID: 7}}
+	if got := applicationAdmins(app); len(got) != 1 || got[0] != 7 {
+		t.Fatalf("owner = %v", got)
+	}
+	app.Team = &discord.Team{OwnerID: 8}
+	if got := applicationAdmins(app); len(got) != 2 || got[1] != 8 {
+		t.Fatalf("team = %v", got)
+	}
+}
+
+func TestRaidRefusedWithoutSubscription(t *testing.T) {
+	bundle, err := i18n.NewBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &CommandHandlers{bundle: bundle}
+	h.RequireSubscription(func(id snowflake.ID) bool { return id == 1 }, "https://relais.example.fr")
+	var got string
+	h.startHostRaid(context.Background(), 2, bundle.For("fr", ""), "", func(s string) { got = s })
+	if !strings.Contains(got, "pas d'abonnement actif") || !strings.Contains(got, "https://relais.example.fr") {
+		t.Fatalf("reply = %q", got)
+	}
+	h.RequireSubscription(func(snowflake.ID) bool { return false }, "")
+	h.startHostRaid(context.Background(), 2, bundle.For("fr", ""), "", func(s string) { got = s })
+	if strings.Contains(got, "http") {
+		t.Fatalf("reply without site = %q", got)
 	}
 }

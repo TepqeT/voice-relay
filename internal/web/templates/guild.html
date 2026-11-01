@@ -2,6 +2,15 @@
 <p><a href="/servers">Vos serveurs</a></p>
 <h1>{{.Guild.Name}}</h1>
 {{if .Error}}<p class="card bad">{{.Error}}</p>{{end}}
+<section class="card">
+  <h2>Abonnement</h2>
+  {{with .Sub}}<p><span class="tag sub">{{subLabel .}}</span></p>
+  {{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
+  {{else}}<p>Ce serveur n'a pas encore d'abonnement.</p>
+  <p class="muted">Le paiement en ligne arrive bientôt. En attendant, contactez l'équipe du service.</p>{{end}}
+  {{if .Admin}}<p class="muted"><a href="/admin">Gérer les abonnements</a></p>{{end}}
+</section>
+
 {{with .Report}}
 <div class="card">
   <h2>Résultat</h2>

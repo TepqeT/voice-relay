@@ -106,3 +106,12 @@ footer { text-align:center; padding:24px 16px; }
 @media (max-width:640px) { .with-scene { grid-template-columns:1fr; } }
 
 @media (prefers-reduced-motion: reduce) { .scene * { animation:none !important; } }
+
+/* administration */
+.tag.sub { color:var(--accent); border-color:var(--accent); }
+.form { display:grid; gap:12px; max-width:520px; }
+.form label { display:grid; gap:4px; font-size:14px; }
+.form input, .form select { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
+.form fieldset { border:1px solid var(--line); border-radius:8px; padding:8px 12px; display:grid; gap:8px; }
+.form .radio { display:flex; align-items:center; gap:8px; }
+nav.inline a { margin-right:4px; }

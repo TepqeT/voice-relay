@@ -83,6 +83,16 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
    - `docker compose logs caddy` : `certificate obtained successfully`.
    - Ouvrir `https://relais.ton-domaine.fr` > Se connecter avec Discord > Aion 2 France.
 
+## Abonnements
+
+- Personne ne crée de compte : chacun se connecte avec Discord et voit, pour ses serveurs, l'état de l'abonnement.
+- Administrateur : le propriétaire de l'application Discord du bot principal (toi) l'est automatiquement. Un lien **Administration** apparaît en haut du site. D'autres administrateurs : `SITE_ADMINS` dans `docker-compose.yml` (identifiants Discord, séparés par des virgules).
+- Offrir un abonnement : Administration > choisir le serveur (ou coller son identifiant : clic droit sur le serveur dans Discord > Copier l'identifiant, mode développeur activé) > **À vie** ou **Jusqu'au** une date > Offrir. Rien à payer, le serveur est marqué "offert".
+- Retirer : bouton **Retirer** dans la liste.
+- Les abonnements sont dans `deploy/ovh/data/subscriptions.json` (à sauvegarder avec le reste de `data`).
+- Blocage des raids sans abonnement : désactivé par défaut. Pour l'activer, offrir d'abord un abonnement à vie à Aion 2 France, puis décommenter `SUBSCRIPTION_REQUIRED: "true"` et relancer `mettre-a-jour.sh`.
+- Paiement en ligne : pas encore en place (voir `docs/saas-plan.md`, lot 6).
+
 ## Mettre à jour plus tard
 
 ```

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/disgoorg/disgo/discord"
@@ -172,4 +173,20 @@ func (m *Service) MissingOwnerPermissions(guildID snowflake.ID) discord.Permissi
 	}
 	need := raidBotNeeds | discord.PermissionManageRoles | discord.PermissionDeafenMembers
 	return need &^ m.grantablePermissions(guildID)
+}
+
+// GuildRef names a guild the owner bot is in.
+type GuildRef struct {
+	ID   snowflake.ID
+	Name string
+}
+
+// OwnerGuilds lists the guilds the owner bot is in, by name.
+func (m *Service) OwnerGuilds() []GuildRef {
+	var out []GuildRef
+	for g := range m.ownerClient.Caches.Guilds() {
+		out = append(out, GuildRef{ID: g.ID, Name: g.Name})
+	}
+	slices.SortFunc(out, func(a, b GuildRef) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) })
+	return out
 }

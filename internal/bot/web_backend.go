@@ -21,6 +21,7 @@ type siteManager interface {
 	MissingOwnerPermissions(guildID snowflake.ID) discord.Permissions
 	RoleSetupStatus(guildID snowflake.ID) []manager.RoleSetup
 	CreateMissingRoles(ctx context.Context, guildID snowflake.ID) (manager.RoleSetupReport, error)
+	OwnerGuilds() []manager.GuildRef
 }
 
 // siteOwnerPermissions is what the site's invite asks for: the speaker set,
@@ -95,6 +96,15 @@ func (b *webBackend) SetupRoles(ctx context.Context, guildID snowflake.ID) (web.
 	return web.SetupReport{Created: rep.Created, Existing: rep.Existing, Failed: rep.Failed, PermissionDenied: rep.PermissionDenied}, err
 }
 
+func (b *webBackend) BotGuilds() []web.GuildRef {
+	gs := b.m.OwnerGuilds()
+	out := make([]web.GuildRef, len(gs))
+	for i, g := range gs {
+		out[i] = web.GuildRef{ID: g.ID, Name: g.Name}
+	}
+	return out
+}
+
 // permissionNames lists the French names of perms shown in Discord's settings.
 func permissionNames(perms discord.Permissions) []string {
 	names := []struct {
@@ -121,6 +131,22 @@ func permissionNames(perms discord.Permissions) []string {
 	}
 	if perms != 0 {
 		out = append(out, strings.TrimSpace(perms.String()))
+	}
+	return out
+}
+
+// applicationAdmins are the people who own the bot application: its owner,
+// or the owner of the team that holds it.
+func applicationAdmins(app *discord.Application) []snowflake.ID {
+	var out []snowflake.ID
+	if app == nil {
+		return out
+	}
+	if app.Owner != nil && app.Owner.ID != 0 {
+		out = append(out, app.Owner.ID)
+	}
+	if app.Team != nil && app.Team.OwnerID != 0 {
+		out = append(out, app.Team.OwnerID)
 	}
 	return out
 }

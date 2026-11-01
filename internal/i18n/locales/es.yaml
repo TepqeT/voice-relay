@@ -170,3 +170,7 @@ sort.reason.no_class: "ningún rol de clase"
 sort.reason.multiple_classes: "varios roles de clase"
 sort.reason.no_room: "no queda sitio para su clase"
 sort.reason.squad_lead: "jefe de escuadrón, nunca se mueve"
+
+# ── Subscriptions ─────────────────────────────────────────────────────────────
+sub.required: "❌ Este servidor no tiene una suscripción activa: el raid no puede empezar."
+sub.required_site: "❌ Este servidor no tiene una suscripción activa: el raid no puede empezar. Consulta {{.URL}}"

@@ -85,6 +85,15 @@ type CommandHandlers struct {
 	bundle  *i18n.Bundle
 	rvr     RvRService     // nil disables the end-of-raid sound and squad lead calls
 	reports reportChannels // where each guild's quality report is posted
+	// entitled, when set, refuses raids in guilds without an active
+	// subscription (SUBSCRIPTION_REQUIRED); siteURL points to the site.
+	entitled func(guildID snowflake.ID) bool
+	siteURL  string
+}
+
+// RequireSubscription refuses raid starts in guilds for which active is false.
+func (h *CommandHandlers) RequireSubscription(active func(guildID snowflake.ID) bool, siteURL string) {
+	h.entitled, h.siteURL = active, siteURL
 }
 
 // NewCommandHandlers creates a new CommandHandlers.

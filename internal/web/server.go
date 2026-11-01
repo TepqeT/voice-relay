@@ -12,9 +12,12 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/subscription"
 )
 
 //go:embed templates/*.html static/*
@@ -31,6 +34,9 @@ type Config struct {
 	BaseURL      string       // public URL, e.g. "https://relais.example.fr"
 	ClientID     snowflake.ID // owner bot application ID
 	ClientSecret string       // OAuth2 client secret of the owner bot application
+	// Admins may grant and revoke subscriptions (SITE_ADMINS); the owner of
+	// the bot application is added at startup with AddAdmins.
+	Admins []snowflake.ID
 }
 
 // Server is the administration site.
@@ -42,17 +48,24 @@ type Server struct {
 	tmpl     *template.Template
 	secure   bool // cookies marked Secure (HTTPS base URL)
 	mux      *http.ServeMux
+	subs     *subscription.Store
+	admins   atomic.Pointer[map[snowflake.ID]bool]
 }
 
-// New builds the site.
-func New(cfg Config, backend Backend) (*Server, error) {
+// New builds the site. subs records which servers may use the relay.
+func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error) {
+	if subs == nil {
+		return nil, errors.New("subscription store required")
+	}
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	u, err := url.Parse(base)
 	if err != nil || u.Host == "" {
 		return nil, errors.New("WEB_BASE_URL must be an absolute URL")
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"purpose": purposeLabel,
+		"purpose":  purposeLabel,
+		"subLabel": func(sub subscription.Subscription) string { return sub.Label(time.Now()) },
+		"date":     func(t time.Time) string { return t.Format("02/01/2006") },
 	}).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return nil, err
@@ -65,7 +78,9 @@ func New(cfg Config, backend Backend) (*Server, error) {
 		tmpl:     tmpl,
 		secure:   u.Scheme == "https",
 		mux:      http.NewServeMux(),
+		subs:     subs,
 	}
+	s.AddAdmins(cfg.Admins...)
 	static, _ := fs.Sub(assets, "static")
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
@@ -76,7 +91,47 @@ func New(cfg Config, backend Backend) (*Server, error) {
 	s.mux.HandleFunc("GET /servers", s.withSession(s.handleServers))
 	s.mux.HandleFunc("GET /servers/{id}", s.withSession(s.handleGuild))
 	s.mux.HandleFunc("POST /servers/{id}/setup", s.withSession(s.handleSetup))
+	s.mux.HandleFunc("GET /admin", s.withAdmin(s.handleAdmin))
+	s.mux.HandleFunc("POST /admin/grant", s.withAdmin(s.handleGrant))
+	s.mux.HandleFunc("POST /admin/revoke", s.withAdmin(s.handleRevoke))
 	return s, nil
+}
+
+// AddAdmins lets ids grant subscriptions. Safe while serving.
+func (s *Server) AddAdmins(ids ...snowflake.ID) {
+	for {
+		old := s.admins.Load()
+		next := make(map[snowflake.ID]bool)
+		if old != nil {
+			for k := range *old {
+				next[k] = true
+			}
+		}
+		for _, id := range ids {
+			if id != 0 {
+				next[id] = true
+			}
+		}
+		if s.admins.CompareAndSwap(old, &next) {
+			return
+		}
+	}
+}
+
+func (s *Server) isAdmin(id snowflake.ID) bool {
+	m := s.admins.Load()
+	return m != nil && (*m)[id]
+}
+
+// withAdmin requires a signed-in administrator.
+func (s *Server) withAdmin(fn sessionHandler) http.HandlerFunc {
+	return s.withSession(func(w http.ResponseWriter, r *http.Request, sess *session) {
+		if !s.isAdmin(sess.userID) {
+			http.Error(w, "réservé aux administrateurs du service", http.StatusForbidden)
+			return
+		}
+		fn(w, r, sess)
+	})
 }
 
 // Handler returns the site with its security headers.
@@ -210,15 +265,23 @@ type guildRow struct {
 	Name       string
 	BotPresent bool
 	Ready      bool
+	Sub        *subscription.Subscription
+}
+
+func (s *Server) subOf(id snowflake.ID) *subscription.Subscription {
+	if sub, ok := s.subs.Get(id); ok {
+		return &sub
+	}
+	return nil
 }
 
 func (s *Server) handleServers(w http.ResponseWriter, _ *http.Request, sess *session) {
 	rows := make([]guildRow, 0, len(sess.guilds))
 	for _, g := range sess.guilds {
 		st := s.backend.GuildStatus(g.ID)
-		rows = append(rows, guildRow{ID: g.ID, Name: g.Name, BotPresent: st.BotPresent, Ready: st.Ready()})
+		rows = append(rows, guildRow{ID: g.ID, Name: g.Name, BotPresent: st.BotPresent, Ready: st.Ready(), Sub: s.subOf(g.ID)})
 	}
-	s.render(w, "servers.html", map[string]any{"User": sess.userName, "CSRF": sess.csrf, "Guilds": rows, "Bot": s.backend.BotName()})
+	s.render(w, "servers.html", map[string]any{"User": sess.userName, "CSRF": sess.csrf, "Guilds": rows, "Bot": s.backend.BotName(), "Admin": s.isAdmin(sess.userID)})
 }
 
 // authorizedGuild checks that the session may configure the server in the
@@ -272,6 +335,7 @@ func (s *Server) renderGuild(w http.ResponseWriter, sess *session, g discordGuil
 	s.render(w, "guild.html", map[string]any{
 		"User": sess.userName, "CSRF": sess.csrf, "Guild": g, "Status": st,
 		"Report": rep, "Error": errMsg, "Bot": s.backend.BotName(),
+		"Sub": s.subOf(g.ID), "Admin": s.isAdmin(sess.userID),
 	})
 }
 

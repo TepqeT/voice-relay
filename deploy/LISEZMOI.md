@@ -170,6 +170,9 @@ docker compose logs --since 3h asmos | Select-String -Pattern "rvr quality repor
 | `RAID_LEAD_CHANNEL` / `SQUAD_CHANNEL` | `Raid Lead` / `Escouade` | Noms des salons |
 | `VOICE_REGION` | vide | Région vocale commune à tous les salons, vide = automatique |
 | `EVENT_LABEL` | `RvR` | Nom de l'événement dans la catégorie, les commandes clic droit et les messages |
+| `WEB_ADDR` / `WEB_BASE_URL` / `DISCORD_CLIENT_SECRET` | vide | Site d'administration (voir `deploy/ovh/LISEZMOI.md`) |
+| `SITE_ADMINS` | vide | Administrateurs du site en plus du propriétaire de l'application |
+| `SUBSCRIPTION_REQUIRED` | `false` | Refuser les raids des serveurs sans abonnement actif |
 | `CLASS_ROLES` | vide | Rôles de classe (noms ou ID, séparés par des virgules), vide = tri désactivé |
 | `WAITING_CHANNEL` | vide | Salon d'attente du tri par classe, vide = tri désactivé |
 | `CLASS_RULE` | `balanced` | Règle de composition des escouades (voir Tri automatique par classe) |

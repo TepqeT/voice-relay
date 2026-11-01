@@ -21,6 +21,14 @@ type Backend interface {
 	CanManage(guildID, userID snowflake.ID) (allowed, known bool)
 	// SetupRoles creates the missing roles of guildID.
 	SetupRoles(ctx context.Context, guildID snowflake.ID) (SetupReport, error)
+	// BotGuilds lists the servers the owner bot is in, for the admin page.
+	BotGuilds() []GuildRef
+}
+
+// GuildRef names a server.
+type GuildRef struct {
+	ID   snowflake.ID
+	Name string
 }
 
 // GuildStatus is the installation state of one server.
