@@ -342,8 +342,8 @@ func (r *recording) write(v any) {
 	if err != nil {
 		return
 	}
-	r.w.Write(b)        //nolint:errcheck // flushed and checked on Flush
-	r.w.WriteByte('\n') //nolint:errcheck
+	_, _ = r.w.Write(b)     // errors surface on Flush
+	_ = r.w.WriteByte('\n') // errors surface on Flush
 }
 
 func (r *recording) event(kind string, fields map[string]any) {

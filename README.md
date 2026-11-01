@@ -36,7 +36,9 @@ Les tokens ne sont jamais committés : ils vivent dans `.env` et `.env.elyos` su
 
 1. Une application par bot (principal, puis un par Héraut) sur https://discord.com/developers/applications.
 2. Bot principal : activer "Server Members Intent" (et "Message Content Intent" seulement si `ACCESS_CHANNEL` est utilisé).
-3. Inviter le bot principal avec le lien affiché dans les logs au démarrage (`owner bot invite URL`), puis inviter les Hérauts depuis `/setup`.
+3. Inviter le bot principal avec le lien affiché dans les logs au démarrage (`owner bot invite URL`), ou :
+   `https://discord.com/oauth2/authorize?client_id=<client_id>&scope=bot&permissions=391565771282752`
+   Puis inviter les Hérauts depuis `/setup`.
 4. Donner "Assourdir des membres" au bot principal : c'est la plus grosse économie de CPU.
 
 ## Documentation technique
