@@ -4,7 +4,15 @@
 
 {$SITE_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy asmos:8080
+	# Mises a jour de DaevaTool (outil perso) : fichiers statiques deposes par GitHub Actions
+	# (deploy/ovh/daevatool-maj.sh). Chemin aleatoire sous /maj/, pas de liste des fichiers.
+	handle_path /maj/* {
+		root * /srv/maj
+		file_server
+	}
+	handle {
+		reverse_proxy asmos:8080
+	}
 	log {
 		output stdout
 		format console
