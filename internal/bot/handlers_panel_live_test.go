@@ -145,3 +145,41 @@ func TestPanelHelpButton(t *testing.T) {
 		}
 	}
 }
+
+type squadRvR struct {
+	liveRvR
+	capacity, target int
+}
+
+func (f squadRvR) DynamicChannels() bool            { return true }
+func (f squadRvR) SquadCapacity(snowflake.ID) int   { return f.capacity }
+func (f squadRvR) SquadTarget(snowflake.ID) int     { return f.target }
+func (f squadRvR) SetSquadTarget(snowflake.ID, int) {}
+
+func TestPanelSquadSelect(t *testing.T) {
+	bundle, _ := i18n.NewBundle()
+	h := &CommandHandlers{bundle: bundle}
+	loc := bundle.For("", "")
+	h.SetRvR(squadRvR{capacity: 11, target: 7})
+	msg := h.buildPanel(1, loc)
+	last := msg.Components[len(msg.Components)-1].(discord.ActionRowComponent)
+	menu, ok := last.Components[0].(discord.StringSelectMenuComponent)
+	if !ok || menu.CustomID != panelSquadsID || len(menu.Options) != 11 {
+		t.Fatalf("squad select %#v", last.Components[0])
+	}
+	if !menu.Options[6].Default || menu.Options[0].Label != "1 squad" || menu.Options[10].Label != "11 squads" {
+		t.Fatalf("options %+v", menu.Options)
+	}
+	if !strings.Contains(panelText(msg), "7 at the next start, 11 relay bots available") {
+		t.Fatalf("panel %q", panelText(msg))
+	}
+	// One relay bot only: nothing to choose.
+	h.SetRvR(squadRvR{capacity: 1, target: 1})
+	for _, r := range h.buildPanel(1, loc).Components {
+		for _, c := range r.(discord.ActionRowComponent).Components {
+			if _, isMenu := c.(discord.StringSelectMenuComponent); isMenu {
+				t.Fatal("no squad choice with a single relay bot")
+			}
+		}
+	}
+}

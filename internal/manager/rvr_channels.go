@@ -181,7 +181,7 @@ func (m *Service) prepareRaidChannels(ctx context.Context, guildID snowflake.ID)
 	if err != nil {
 		return RaidChannels{}, err
 	}
-	speakers = pickSquadSpeakers(speakers, c.opts.SquadCount)
+	speakers = pickSquadSpeakers(speakers, m.squadLimit(guildID))
 	if len(speakers) == 0 {
 		return RaidChannels{}, ErrNoBoundSpeakers
 	}
@@ -241,6 +241,18 @@ func (m *Service) prepareRaidChannels(ctx context.Context, guildID snowflake.ID)
 		slog.String("raidLeadRoleID", callerRole.String()),
 	)
 	return rc, nil
+}
+
+// squadLimit is how many squads this raid creates: the panel's choice when
+// one is saved, else the configured maximum.
+func (m *Service) squadLimit(guildID snowflake.ID) int {
+	m.squadChoice.mu.Lock()
+	n, ok := m.squadChoicesLocked()[guildID]
+	m.squadChoice.mu.Unlock()
+	if ok && n >= 1 {
+		return min(n, max(m.channels.opts.SquadCount, 1))
+	}
+	return m.channels.opts.SquadCount
 }
 
 // reusableChannels returns the remembered channels of guildID when all of them
