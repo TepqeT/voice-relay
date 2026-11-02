@@ -119,9 +119,6 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 		live = &st
 	}
 	running := live != nil && live.Running
-	_, accessOn := h.access()
-	mode, modeOn := h.accessMode()
-	open := modeOn && accessOn && mode.AccessOpen(guildID)
 	sorter, sortOn := h.classSort()
 
 	// Row 1: the raid. One Start or Stop button following the state; both
@@ -187,13 +184,8 @@ func (h *CommandHandlers) buildPanel(guildID snowflake.ID, loc *i18n.Localizer) 
 		embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.squads"),
 			Value: loc.T("panel.squads.value", "N", squads.SquadTarget(guildID), "Max", squads.SquadCapacity(guildID))})
 	}
-	if accessOn {
-		value := loc.T("panel.access.open")
-		if !open {
-			value = loc.T("panel.access.restricted", "Role", h.accessRoleMention(guildID))
-		}
-		embed.Fields = append(embed.Fields, discord.EmbedField{Name: loc.T("panel.field.access"), Value: value})
-	}
+	// No access field: every member holds the access role (member_role.go),
+	// there is nothing to ask for.
 	help := []string{loc.T("panel.help.start"), loc.T("panel.help.stop")}
 	if h.rvr != nil && h.rvr.SquadLeadsEnabled(guildID) {
 		help = append(help, loc.T(h.squadKeyText("panel.help.squads")))
