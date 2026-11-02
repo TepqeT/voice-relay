@@ -93,6 +93,9 @@
   {{if .Status.Ready}}<p class="ok">{{t "guild.done"}}</p>{{end}}
   {{if .Status.PanelChannel}}<p>{{t "guild.panelchan"}} <code>#{{.Status.PanelChannel}}</code> {{t "guild.panelchan2"}}</p>
   {{else}}<p>{{t "guild.last"}} <code>{{t "guild.panel"}}</code> {{t "guild.last2"}}</p>{{end}}
+  {{if eq .Status.Onboarding "ok"}}<p class="ok">{{t "guild.onb.ok"}}</p>{{end}}
+  {{if eq .Status.Onboarding "missing"}}<p class="bad">{{t "guild.onb.missing"}}</p>{{end}}
+  {{if .Status.Onboarding}}<p class="muted">{{t "guild.onb.hint"}}</p>{{end}}
   </div>
   {{template "scene-assign" .}}
 </section>

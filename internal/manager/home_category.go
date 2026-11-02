@@ -125,19 +125,13 @@ func (m *Service) RemoveHomeCategory(ctx context.Context, guildID snowflake.ID) 
 
 // homeOverwrites are the category's overwrites. The bots get what they need
 // in its channels: Discord checks a new channel's overwrites against the
-// bot's rights in the parent. With an access role the category is private
-// to it: every member holds the role, and Discord always shows a private
-// channel to those who can see it, even when onboarding hides the others.
+// bot's rights in the parent. The category stays public: onboarding hides
+// private channels too, and only a public channel can be a default one.
 func (m *Service) homeOverwrites(guildID snowflake.ID) []discord.PermissionOverwrite {
 	botAllow := voiceMember | discord.PermissionPrioritySpeaker | discord.PermissionSendMessages
 	ow := []discord.PermissionOverwrite{discord.MemberPermissionOverwrite{UserID: m.ownerBotID, Allow: botAllow}}
 	for _, id := range m.poolSvc.GetIDs() {
 		ow = append(ow, discord.MemberPermissionOverwrite{UserID: id, Allow: voiceMember | discord.PermissionPrioritySpeaker})
-	}
-	if role := m.AccessRoleID(guildID); role != 0 {
-		ow = append(ow,
-			discord.RolePermissionOverwrite{RoleID: guildID, Deny: discord.PermissionViewChannel},
-			discord.RolePermissionOverwrite{RoleID: role, Allow: discord.PermissionViewChannel})
 	}
 	return maskOverwrites(ow, m.grantablePermissions(guildID))
 }

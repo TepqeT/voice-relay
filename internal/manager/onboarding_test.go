@@ -164,3 +164,13 @@ func TestOnboardingRemovesPrivateChannels(t *testing.T) {
 		t.Fatalf("puts = %v, want 100 taken out once", r.puts)
 	}
 }
+
+func TestOnboardingDefaultState(t *testing.T) {
+	m := onboardingService(&onboardingRest{get: `{"enabled":true,"default_channel_ids":["5","100"]}`})
+	if on, in, err := m.OnboardingDefaultState(context.Background(), 10, 100); err != nil || !on || !in {
+		t.Fatalf("on=%v in=%v err=%v", on, in, err)
+	}
+	if _, in, _ := m.OnboardingDefaultState(context.Background(), 10, 7); in {
+		t.Fatal("7 is not a default channel")
+	}
+}
