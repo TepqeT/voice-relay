@@ -95,9 +95,33 @@
   {{else}}<p>{{t "guild.last"}} <code>{{t "guild.panel"}}</code> {{t "guild.last2"}}</p>{{end}}
   {{if eq .Status.Onboarding "ok"}}<p class="ok">{{t "guild.onb.ok"}}</p>{{end}}
   {{if eq .Status.Onboarding "missing"}}<p class="bad">{{t "guild.onb.missing"}}</p>{{end}}
-  {{if .Status.Onboarding}}<p class="muted">{{t "guild.onb.hint"}}</p>{{end}}
   </div>
   {{template "scene-assign" .}}
+</section>
+
+{{if .Status.OnboardingOn}}
+<section class="card">
+  <h2>{{t "guild.s6onb"}}</h2>
+  <p>{{t "guild.onb.why"}}</p>
+  <ol class="steps">
+    <li>{{t "guild.onb.step1"}}</li>
+    <li>{{t "guild.onb.step2"}}</li>
+    <li>{{t "guild.onb.step3" .Status.Category}}</li>
+  </ol>
+  <p class="muted">{{t "guild.onb.after" .Status.Category}}</p>
+  {{with .Status.RoleName "access"}}<p class="muted">{{t "guild.onb.role" .}}</p>{{end}}
+  <p>{{t "guild.onb.pin"}}</p>
+  <pre class="copy">{{t "guild.onb.message" .Status.Category}}</pre>
+</section>
+{{end}}
+
+<section class="card">
+  <h2>{{t "guild.stest" .Status.TestStep}}</h2>
+  <ol class="steps">
+    <li>{{t "guild.test1" .Status.PanelChannel}}</li>
+    <li>{{t "guild.test2" .Status.Category}}</li>
+    <li>{{t "guild.test3"}}</li>
+  </ol>
 </section>
 
 <section class="card danger-zone">

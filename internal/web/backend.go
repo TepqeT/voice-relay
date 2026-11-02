@@ -60,6 +60,8 @@ type GuildStatus struct {
 	Roles              []RoleStatus
 	PanelChannel       string // channel where the bot keeps the control panel, "" when off
 	Onboarding         string // panel among the onboarding default channels: "ok", "missing", "" when no onboarding
+	OnboardingOn       bool   // the server uses onboarding: members must follow the category once
+	Category           string // the bot's permanent category, "" when off
 }
 
 // Ready reports whether nothing is left to do but hand out the roles.
@@ -103,6 +105,26 @@ func (g GuildStatus) NextRelay() *BotStatus {
 		}
 	}
 	return nil
+}
+
+// RoleName is the configured name of the role used for purpose ("access",
+// "raid_lead"...), "" when not configured.
+func (g GuildStatus) RoleName(purpose string) string {
+	for _, r := range g.Roles {
+		if r.Purpose == purpose {
+			return r.Name
+		}
+	}
+	return ""
+}
+
+// TestStep is the number of the final test step: one more when the
+// onboarding step is shown.
+func (g GuildStatus) TestStep() int {
+	if g.OnboardingOn {
+		return 7
+	}
+	return 6
 }
 
 // MissingRoles counts the roles still to create.

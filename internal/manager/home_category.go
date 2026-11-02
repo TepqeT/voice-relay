@@ -69,6 +69,14 @@ func (m *Service) saveHomeLocked() {
 	}
 }
 
+// HomeCategoryName is the permanent category's name, "" when off.
+func (m *Service) HomeCategoryName() string {
+	if !m.HomeCategoryEnabled() {
+		return ""
+	}
+	return strings.TrimSpace(m.channels.opts.Category)
+}
+
 // HomeCategoryEnabled reports whether the tool keeps a permanent category.
 func (m *Service) HomeCategoryEnabled() bool {
 	return m.channels.opts.HomeCategory && m.channels.opts.Category != ""

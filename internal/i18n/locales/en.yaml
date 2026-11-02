@@ -215,7 +215,7 @@ panel.faq.sort: "Moves the players waiting in the waiting channel into the liste
 panel.faq.squads_title: "Squad leads"
 panel.faq.squads: "In their listener channel, they talk normally. To be heard in the speaker channel, they hold Discord's Push to Talk (Priority) key."
 panel.faq.roles_title: "Who does what"
-panel.faq.roles: "The server admin gives the Speaker and Squad Lead roles. Speakers and squad leads then approve members from this panel. Nobody can write in this channel, so the panel always stays in view."
+panel.faq.roles: "The server admin gives the Speaker and Squad Lead roles. Every member gets the listener access role automatically, nothing to approve. Nobody can write in this channel, so the panel always stays in view."
 err.too_fast: "You are clicking too fast. Wait a second and try again."
 panel.squads.option: "{{.N}} listener channels"
 panel.squads.option_one: "1 listener channel"

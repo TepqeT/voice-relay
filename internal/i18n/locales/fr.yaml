@@ -214,7 +214,7 @@ panel.faq.sort: "Place les joueurs du salon d'attente dans les salons Listener s
 panel.faq.squads_title: "Squad Leads"
 panel.faq.squads: "Dans leur salon Listener, ils parlent normalement. Pour être entendus dans le salon Speaker, ils maintiennent la touche Appuyer pour parler (prioritaire) de Discord."
 panel.faq.roles_title: "Qui fait quoi"
-panel.faq.roles: "L'administrateur du serveur donne les rôles Speaker et Squad Lead. Les Speakers et Squad Leads valident ensuite les membres depuis ce panneau. Personne ne peut écrire dans ce salon : le panneau reste toujours visible."
+panel.faq.roles: "L'administrateur du serveur donne les rôles Speaker et Squad Lead. Tous les membres reçoivent automatiquement le rôle d'accès aux salons Listener : rien à valider. Personne ne peut écrire dans ce salon : le panneau reste toujours visible."
 err.too_fast: "Vous cliquez trop vite. Attendez une seconde et réessayez."
 panel.squads.option: "{{.N}} salons Listener"
 panel.squads.option_one: "1 salon Listener"
