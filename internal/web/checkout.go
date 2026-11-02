@@ -199,7 +199,7 @@ func (s *Server) handlePayCapture(w http.ResponseWriter, r *http.Request, sess *
 	}
 	if _, err := s.subs.Extend(sess.userID, sess.userName, p.Days, "PayPal "+cp.CaptureID); err != nil {
 		slog.Error("web: payment received, subscription not credited", slog.String("order", orderID), slog.String("user", sess.userID.String()), slog.Any("err", err))
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": t("pay.err.credit")})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": t("pay.err.activate")})
 		return
 	}
 	slog.Info("web: payment received", slog.String("user", sess.userID.String()), slog.String("plan", p.ID),

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/TepqeT/voice-relay/internal/journal"
 	"github.com/TepqeT/voice-relay/internal/ratelimit"
+	"github.com/TepqeT/voice-relay/internal/statefile"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -71,7 +72,7 @@ func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func()
 		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}, shown: map[snowflake.ID]string{}, fixed: map[snowflake.ID]bool{},
 		retry: ratelimit.New(5*time.Minute, 1)}
 	if file != "" {
-		if b, err := os.ReadFile(file); err == nil {
+		if b, err := statefile.ReadFile(file); err == nil {
 			if err := json.Unmarshal(b, &k.state); err != nil {
 				slog.Warn("panel channel: unreadable state, starting fresh", slog.String("file", file), slog.Any("err", err))
 				k.state = map[snowflake.ID]panelState{}
@@ -435,7 +436,7 @@ func (k *panelKeeper) persist() {
 		return
 	}
 	tmp := k.file + ".tmp"
-	if err := os.MkdirAll(filepath.Dir(k.file), 0o755); err == nil {
+	if err := os.MkdirAll(filepath.Dir(k.file), statefile.DirPerm); err == nil {
 		if err = os.WriteFile(tmp, b, 0o600); err == nil {
 			err = os.Rename(tmp, k.file)
 		}
