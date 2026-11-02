@@ -21,6 +21,10 @@ type fakeSiteManager struct {
 	missing discord.Permissions
 }
 
+func (fakeSiteManager) OnboardingDefaultState(context.Context, snowflake.ID, snowflake.ID) (bool, bool, error) {
+	return false, false, nil
+}
+
 func (f fakeSiteManager) OwnerInGuild(snowflake.ID) bool { return f.inGuild }
 func (f fakeSiteManager) MemberCanManageGuild(snowflake.ID, snowflake.ID) (bool, bool) {
 	return true, true

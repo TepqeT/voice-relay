@@ -59,6 +59,7 @@ type GuildStatus struct {
 	MissingPermissions []string // keys translated by the site: perm.<key>
 	Roles              []RoleStatus
 	PanelChannel       string // channel where the bot keeps the control panel, "" when off
+	Onboarding         string // panel among the onboarding default channels: "ok", "missing", "" when no onboarding
 }
 
 // Ready reports whether nothing is left to do but hand out the roles.

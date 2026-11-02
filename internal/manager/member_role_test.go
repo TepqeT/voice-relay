@@ -71,29 +71,13 @@ func TestGrantAccessToAll(t *testing.T) {
 	}
 }
 
-// With the access role, the home category is private to it.
-func TestHomeCategoryPrivateToAccessRole(t *testing.T) {
+// The home category stays public: onboarding hides private channels too,
+// and only a public channel can be an onboarding default.
+func TestHomeCategoryStaysPublic(t *testing.T) {
 	m := memberRoleService(&memberRoleRest{})
-	var everyoneDenied, roleAllowed bool
 	for _, o := range m.homeOverwrites(mrGuild) {
-		if r, ok := o.(discord.RolePermissionOverwrite); ok {
-			everyoneDenied = everyoneDenied || (r.RoleID == mrGuild && r.Deny.Has(discord.PermissionViewChannel))
-			roleAllowed = roleAllowed || (r.RoleID == mrAccess && r.Allow.Has(discord.PermissionViewChannel))
+		if r, ok := o.(discord.RolePermissionOverwrite); ok && r.RoleID == mrGuild && r.Deny.Has(discord.PermissionViewChannel) {
+			t.Fatalf("overwrites %+v: @everyone must keep seeing the category", m.homeOverwrites(mrGuild))
 		}
-	}
-	if !everyoneDenied || !roleAllowed {
-		t.Fatalf("overwrites %+v: want @everyone denied and the access role allowed", m.homeOverwrites(mrGuild))
-	}
-}
-
-// A member only the gateway cache knows still gets the role.
-func TestGrantAccessToAllUsesCacheToo(t *testing.T) {
-	r := &memberRoleRest{members: []discord.Member{{User: discord.User{ID: 1}}}}
-	m := memberRoleService(r)
-	m.ownerClient.Caches.AddMember(discord.Member{GuildID: mrGuild, User: discord.User{ID: 9}})
-	m.GrantAccessToAll(context.Background(), mrGuild)
-	slices.Sort(r.added)
-	if !reflect.DeepEqual(r.added, []snowflake.ID{1, 9}) {
-		t.Fatalf("role given to %v, want 1 and 9", r.added)
 	}
 }

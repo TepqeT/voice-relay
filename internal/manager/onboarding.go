@@ -168,19 +168,6 @@ func (m *Service) everyoneCanView(guildID snowflake.ID, ch discord.GuildChannel)
 	return p.Has(discord.PermissionViewChannel)
 }
 
-// SyncOnboardingDefaults keeps the Voice Relay channels right in the
-// onboarding default channels: added when they are public, removed when they
-// are private to the access role. Discord refuses a private default channel,
-// and a leftover one would make every later edit of the server's onboarding
-// fail.
-func (m *Service) SyncOnboardingDefaults(ctx context.Context, guildID snowflake.ID, ids ...snowflake.ID) {
-	if m.AccessRoleID(guildID) == 0 {
-		m.EnsureOnboardingDefaults(ctx, guildID, ids...)
-		return
-	}
-	m.RemoveOnboardingDefaults(ctx, guildID, ids...)
-}
-
 // RemoveOnboardingDefaults takes ids out of the onboarding default channels,
 // once per guild and channel set per run.
 func (m *Service) RemoveOnboardingDefaults(ctx context.Context, guildID snowflake.ID, ids ...snowflake.ID) {
@@ -210,4 +197,15 @@ func (m *Service) RemoveOnboardingDefaults(ctx context.Context, guildID snowflak
 	}
 	slog.Info("onboarding: Voice Relay channels taken out of the default channels", slog.String("guildID", guildID.String()),
 		slog.Int("removed", len(ob.DefaultChannelIDs)-len(kept)))
+}
+
+// OnboardingDefaultState tells the site whether channelID is among the
+// onboarding default channels. enabled is false on servers without
+// onboarding (nothing to check then).
+func (m *Service) OnboardingDefaultState(ctx context.Context, guildID, channelID snowflake.ID) (enabled, included bool, err error) {
+	var ob onboardingDefaults
+	if err := m.ownerClient.Rest.Do(rest.GetGuildOnboarding.Compile(nil, guildID), nil, &ob, rest.WithCtx(ctx)); err != nil {
+		return false, false, err
+	}
+	return ob.Enabled, slices.Contains(ob.DefaultChannelIDs, channelID), nil
 }

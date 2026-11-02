@@ -27,14 +27,15 @@ const (
 )
 
 type fakeBackend struct {
-	facts     map[snowflake.ID]ServerFacts // by guild; default: bot present, holder manages
-	canManage map[snowflake.ID]bool        // absent = unknown
-	setups    []snowflake.ID
-	removed   []snowflake.ID
-	panel     string   // PanelChannel reported for every server
-	unFailed  []string // relay bots the next uninstall reports as stuck
-	srv       *Server
-	subs      *subscription.Store
+	facts      map[snowflake.ID]ServerFacts // by guild; default: bot present, holder manages
+	canManage  map[snowflake.ID]bool        // absent = unknown
+	setups     []snowflake.ID
+	removed    []snowflake.ID
+	panel      string   // PanelChannel reported for every server
+	onboarding string   // Onboarding reported for every server
+	unFailed   []string // relay bots the next uninstall reports as stuck
+	srv        *Server
+	subs       *subscription.Store
 }
 
 func (f *fakeBackend) BotGuilds() []GuildRef {
@@ -55,6 +56,7 @@ func (f *fakeBackend) GuildStatus(id snowflake.ID) GuildStatus {
 		RelayBots:    []BotStatus{{Name: "Relay 1", Present: true}, {Name: "Relay 2", InviteURL: "https://discord.com/oauth2/authorize?client_id=2"}},
 		Roles:        []RoleStatus{{Purpose: "raid_lead", Name: "Speaker", Exists: true}, {Purpose: "class", Name: "Healer"}},
 		PanelChannel: f.panel,
+		Onboarding:   f.onboarding,
 	}
 }
 func (f *fakeBackend) CanManage(g, _ snowflake.ID) (bool, bool) {
@@ -870,5 +872,17 @@ func TestGuildStatusNextRelay(t *testing.T) {
 	st.RelayBots[1].Present, st.RelayBots[2].Present = true, true
 	if st.NextRelay() != nil {
 		t.Fatal("all relay bots in: nothing to offer")
+	}
+}
+
+// The server page warns when the panel is not an onboarding default.
+func TestGuildPageOnboardingWarning(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.panel = "control-panel"
+	be.onboarding = "missing"
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/servers/111")
+	if !strings.Contains(page, "Salons par défaut") && !strings.Contains(page, "Default Channels") {
+		t.Fatalf("no onboarding warning:\n%s", page)
 	}
 }

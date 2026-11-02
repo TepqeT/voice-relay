@@ -135,12 +135,12 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 		st = panelState{ChannelID: channelID} // an existing channel the server made
 	}
 
-	// Onboarding first: a channel leaving the defaults before it turns
-	// private, so Discord never sees a private default channel.
+	// Overwrites first: Discord only takes a channel @everyone can see as
+	// an onboarding default.
+	k.refreshOverwrites(ctx, guildID, channelID, st.Created)
 	if k.onboard != nil {
 		k.onboard(ctx, guildID, parent, channelID)
 	}
-	k.refreshOverwrites(ctx, guildID, channelID, st.Created)
 
 	msg := k.build(guildID)
 	sig := panelSignature(msg)
@@ -291,6 +291,13 @@ func (k *panelKeeper) Remove(ctx context.Context, guildID snowflake.ID) {
 }
 
 // IsPanelChannel reports whether channelID is guildID's panel channel.
+// ChannelID is guildID's panel channel, 0 when none yet.
+func (k *panelKeeper) ChannelID(guildID snowflake.ID) snowflake.ID {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.state[guildID].ChannelID
+}
+
 func (k *panelKeeper) IsPanelChannel(guildID, channelID snowflake.ID) bool {
 	k.mu.Lock()
 	defer k.mu.Unlock()

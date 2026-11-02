@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
@@ -23,6 +24,7 @@ type siteManager interface {
 	OwnerGuilds() []manager.GuildRef
 	GuildFacts(guildID, userID snowflake.ID) manager.GuildFacts
 	Uninstall(ctx context.Context, guildID snowflake.ID) (manager.UninstallReport, error)
+	OnboardingDefaultState(ctx context.Context, guildID, channelID snowflake.ID) (enabled, included bool, err error)
 }
 
 // siteOwnerPermissions is what the site's invite asks for the main bot:
@@ -88,6 +90,20 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 	}
 	if b.panel != nil {
 		st.PanelChannel = b.panel.ChannelName()
+		if ch := b.panel.ChannelID(guildID); ch != 0 && st.BotPresent {
+			// Servers with onboarding only show their members the default
+			// channels: the site warns when the panel is not one of them.
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			on, in, err := b.m.OnboardingDefaultState(ctx, guildID, ch)
+			cancel()
+			switch {
+			case err != nil || !on:
+			case in:
+				st.Onboarding = "ok"
+			default:
+				st.Onboarding = "missing"
+			}
+		}
 	}
 	if !st.BotPresent {
 		return st
