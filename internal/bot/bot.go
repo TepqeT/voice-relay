@@ -297,8 +297,15 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "panel.json"))
 		if managerSvc.HomeCategoryEnabled() {
 			panel.home = managerSvc.EnsureHomeCategory
-			panel.onboard = managerSvc.EnsureOnboardingDefaults
+			if !managerSvc.AccessEnabled() {
+				// Public panel: make it an onboarding default channel.
+				panel.onboard = managerSvc.EnsureOnboardingDefaults
+			}
 		}
+		// Private to the access role every member holds: a channel created
+		// private shows to those who can see it, even with onboarding.
+		panel.viewRole = managerSvc.AccessRoleID
+		panel.unlist = managerSvc.RemoveOnboardingDefaults
 		client.AddEventListeners(
 			bot.NewListenerFunc(func(e *events.GuildReady) { go panel.Ensure(context.Background(), e.GuildID) }),
 			bot.NewListenerFunc(func(e *events.GuildJoin) { go panel.Ensure(context.Background(), e.GuildID) }),

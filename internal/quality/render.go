@@ -88,7 +88,7 @@ var english = texts{
 	file:          "Detailed diagnostic: %s",
 	verdict:       map[Level]string{LevelOK: "OK", LevelWatch: "watch", LevelBad: "problem"},
 	findingT: map[string]string{
-		"no_audio":           "no voice captured: check the caller role and the caller bot channel",
+		"no_audio":           "no voice captured: check the Speaker role and that a Speaker talked in the speaker channel",
 		"drops":              "high audio loss: host or network saturated",
 		"dave":               "DAVE decrypt failures: restart the session if voice crackles or cuts",
 		"latency":            "high relay latency: host overloaded",

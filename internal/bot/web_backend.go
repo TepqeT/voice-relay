@@ -90,7 +90,8 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 	}
 	if b.panel != nil {
 		st.PanelChannel = b.panel.ChannelName()
-		if ch := b.panel.ChannelID(guildID); ch != 0 && st.BotPresent {
+		// A private panel cannot be an onboarding default: nothing to check.
+		if ch := b.panel.ChannelID(guildID); ch != 0 && st.BotPresent && b.panel.privateTo(guildID) == 0 {
 			// Servers with onboarding only show their members the default
 			// channels: the site warns when the panel is not one of them.
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

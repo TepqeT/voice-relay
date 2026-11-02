@@ -106,3 +106,29 @@ func TestHomeCategoryReusesExistingOne(t *testing.T) {
 		t.Fatal("a category the server made must never be deleted")
 	}
 }
+
+// A category the bot made public is recreated private once an access role
+// exists, then kept.
+func TestHomeCategoryRecreatedPrivate(t *testing.T) {
+	dir := t.TempDir()
+	m, hr, _ := homeService(t, dir)
+	ctx := context.Background()
+	id, err := m.EnsureHomeCategory(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m2, hr2, caches2 := homeService(t, dir)
+	hr2.next = 50
+	caches2.AddChannel(categoryChannel(t, id, 10, "RvR"))
+	caches2.AddRole(discord.Role{ID: 77, GuildID: 10, Name: "Listener Access"})
+	m2.channels.opts.AccessRole = "Listener Access"
+	got, err := m2.EnsureHomeCategory(ctx, 10)
+	if err != nil || got == id || len(hr2.deleted) != 1 || hr2.deleted[0] != id || len(hr2.created) != 1 {
+		t.Fatalf("got %d err %v deleted %v created %v: want %d replaced by a private one", got, err, hr2.deleted, hr2.created, id)
+	}
+	if again, _ := m2.EnsureHomeCategory(ctx, 10); again != got || len(hr2.created) != 1 {
+		t.Fatal("the private category must be kept")
+	}
+	_ = hr
+}

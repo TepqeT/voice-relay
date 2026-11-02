@@ -256,3 +256,35 @@ func TestPanelChannelPrivateToViewRole(t *testing.T) {
 		t.Fatalf("overwrites %+v: want hidden from @everyone, read-only for the role", fr.created[0].PermissionOverwrites)
 	}
 }
+
+// A panel channel the bot made public is deleted, taken out of the
+// onboarding defaults and recreated private: onboarding keeps hiding a
+// channel that was public first.
+func TestPanelChannelRecreatedPrivate(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "panel.json")
+	k, fr, _ := newTestKeeper(t, file)
+	k.Ensure(context.Background(), panelGuild)
+	old := fr.posted[0]
+
+	k2, fr2, caches2 := newTestKeeper(t, file)
+	fr2.next = 50 // new channel IDs must differ from the first keeper's
+	caches2.AddChannel(textChannel(t, old, "raid-panel"))
+	k2.viewRole = func(snowflake.ID) snowflake.ID { return 77 }
+	var unlisted []snowflake.ID
+	k2.unlist = func(_ context.Context, _ snowflake.ID, ids ...snowflake.ID) { unlisted = append(unlisted, ids...) }
+	k2.Ensure(context.Background(), panelGuild)
+	if len(fr2.deleted) != 1 || fr2.deleted[0] != old || len(unlisted) != 1 || unlisted[0] != old {
+		t.Fatalf("deleted %v unlisted %v, want the old public channel %d", fr2.deleted, unlisted, old)
+	}
+	if len(fr2.created) != 1 || len(fr2.posted) != 1 || fr2.posted[0] == old {
+		t.Fatalf("created %v posted %v: want a new channel with the panel", fr2.created, fr2.posted)
+	}
+	// Done once: a restart keeps the private channel.
+	k3, fr3, caches3 := newTestKeeper(t, file)
+	caches3.AddChannel(textChannel(t, fr2.posted[0], "raid-panel"))
+	k3.viewRole = k2.viewRole
+	k3.Ensure(context.Background(), panelGuild)
+	if len(fr3.deleted) != 0 || len(fr3.created) != 0 {
+		t.Fatalf("the private channel must be kept: deleted %v created %v", fr3.deleted, fr3.created)
+	}
+}

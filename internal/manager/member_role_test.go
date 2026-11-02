@@ -71,13 +71,17 @@ func TestGrantAccessToAll(t *testing.T) {
 	}
 }
 
-// The home category stays public: onboarding hides private channels too,
-// and only a public channel can be an onboarding default.
-func TestHomeCategoryStaysPublic(t *testing.T) {
+// With the access role, the home category is private to it.
+func TestHomeCategoryPrivateToAccessRole(t *testing.T) {
 	m := memberRoleService(&memberRoleRest{})
+	var everyoneDenied, roleAllowed bool
 	for _, o := range m.homeOverwrites(mrGuild) {
-		if r, ok := o.(discord.RolePermissionOverwrite); ok && r.RoleID == mrGuild && r.Deny.Has(discord.PermissionViewChannel) {
-			t.Fatalf("overwrites %+v: @everyone must keep seeing the category", m.homeOverwrites(mrGuild))
+		if r, ok := o.(discord.RolePermissionOverwrite); ok {
+			everyoneDenied = everyoneDenied || (r.RoleID == mrGuild && r.Deny.Has(discord.PermissionViewChannel))
+			roleAllowed = roleAllowed || (r.RoleID == mrAccess && r.Allow.Has(discord.PermissionViewChannel))
 		}
+	}
+	if !everyoneDenied || !roleAllowed {
+		t.Fatalf("overwrites %+v: want @everyone denied and the access role allowed", m.homeOverwrites(mrGuild))
 	}
 }
