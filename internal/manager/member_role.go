@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"slices"
 
+	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 
@@ -29,36 +30,58 @@ func (m *Service) GrantAccessToAll(ctx context.Context, guildID snowflake.ID) {
 		return
 	}
 	g := guildID.String()
-	given, failed := 0, 0
+	// Members from the REST list, completed by the gateway cache: if one
+	// source comes back short, the other still covers the server.
+	members := map[snowflake.ID]discord.Member{}
+	listed := 0
 	var after snowflake.ID
 	for {
 		page, err := m.ownerClient.Rest.GetMembers(guildID, 1000, after, rest.WithCtx(ctx))
 		if err != nil {
 			journal.Record(journal.Event{GuildID: guildID, Level: journal.Warning, Kind: "access_role_refused",
 				Detail: "could not list the members to give them the access role: " + err.Error()})
-			return
+			break
 		}
+		listed += len(page)
 		for _, mem := range page {
-			if mem.User.Bot || slices.Contains(mem.RoleIDs, role) {
-				continue
-			}
-			if err := m.ownerClient.Rest.AddMemberRole(guildID, mem.User.ID, role, rest.WithCtx(ctx), rest.WithReason("Voice Relay: channels visible to every member")); err != nil {
-				failed++
-				if failed == 1 {
-					slog.Warn("access role: grant refused", slog.String("guildID", g), slog.Any("err", err))
-				}
-				continue
-			}
-			given++
-			if given%100 == 0 {
-				slog.Info("access role: granting", slog.String("guildID", g), slog.Int("given", given))
-			}
+			members[mem.User.ID] = mem
 		}
 		if len(page) < 1000 {
 			break
 		}
 		after = page[len(page)-1].User.ID
 	}
+	cached := 0
+	for mem := range m.ownerClient.Caches.Members(guildID) {
+		cached++
+		if _, ok := members[mem.User.ID]; !ok {
+			members[mem.User.ID] = mem
+		}
+	}
+	given, failed, bots, holders := 0, 0, 0, 0
+	for _, mem := range members {
+		switch {
+		case mem.User.Bot:
+			bots++
+			continue
+		case slices.Contains(mem.RoleIDs, role):
+			holders++
+			continue
+		}
+		if err := m.ownerClient.Rest.AddMemberRole(guildID, mem.User.ID, role, rest.WithCtx(ctx), rest.WithReason("Voice Relay: channels visible to every member")); err != nil {
+			failed++
+			if failed == 1 {
+				slog.Warn("access role: grant refused", slog.String("guildID", g), slog.Any("err", err))
+			}
+			continue
+		}
+		given++
+		if given%100 == 0 {
+			slog.Info("access role: granting", slog.String("guildID", g), slog.Int("given", given))
+		}
+	}
+	slog.Info("access role: members seen", slog.String("guildID", g), slog.Int("listed", listed), slog.Int("cached", cached),
+		slog.Int("bots", bots), slog.Int("alreadyHad", holders))
 	level := journal.Info
 	if failed > 0 {
 		level = journal.Warning
