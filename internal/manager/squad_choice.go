@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/statefile"
 )
 
 // Squad choice: the raid leads pick on the panel how many squads the next
@@ -33,7 +35,7 @@ func (m *Service) squadChoicesLocked() map[snowflake.ID]int {
 		c.loaded = true
 		c.n = map[snowflake.ID]int{}
 		if f := m.squadChoiceFile(); f != "" {
-			if b, err := os.ReadFile(f); err == nil {
+			if b, err := statefile.ReadFile(f); err == nil {
 				_ = json.Unmarshal(b, &c.n)
 			}
 		}

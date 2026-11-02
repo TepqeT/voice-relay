@@ -12,6 +12,8 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/statefile"
 )
 
 // Home category: with HomeCategory set, one permanent category holds the
@@ -42,7 +44,7 @@ func (m *Service) homeLocked() map[snowflake.ID]homeCategory {
 		h.loaded = true
 		h.byID = map[snowflake.ID]homeCategory{}
 		if f := m.homeFile(); f != "" {
-			if b, err := os.ReadFile(f); err == nil {
+			if b, err := statefile.ReadFile(f); err == nil {
 				_ = json.Unmarshal(b, &h.byID)
 			}
 		}

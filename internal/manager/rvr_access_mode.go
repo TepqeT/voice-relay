@@ -14,6 +14,8 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/statefile"
 )
 
 // Access mode: with an access role configured, the leaders choose from the
@@ -42,7 +44,7 @@ func (m *Service) loadAccessModesLocked() {
 	a.loaded = true
 	a.open = map[snowflake.ID]bool{}
 	if f := m.accessModeFile(); f != "" {
-		if b, err := os.ReadFile(f); err == nil {
+		if b, err := statefile.ReadFile(f); err == nil {
 			if err := json.Unmarshal(b, &a.open); err != nil {
 				slog.Warn("access mode: unreadable state, everything restricted", slog.String("file", f), slog.Any("err", err))
 				a.open = map[snowflake.ID]bool{}

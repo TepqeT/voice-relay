@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/TepqeT/voice-relay/internal/statefile"
 )
 
 // Entry is one payment received, kept for the accounts.
@@ -38,7 +40,7 @@ func OpenLedger(path string) (*Ledger, error) {
 	if path == "" {
 		return l, nil
 	}
-	f, err := os.Open(path)
+	f, err := statefile.Open(path)
 	if os.IsNotExist(err) {
 		return l, nil
 	}
@@ -72,7 +74,7 @@ func (l *Ledger) Record(e Entry) (bool, error) {
 		return false, nil
 	}
 	if l.path != "" {
-		if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(l.path), statefile.DirPerm); err != nil {
 			return false, err
 		}
 		f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
