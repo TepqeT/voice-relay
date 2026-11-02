@@ -31,6 +31,10 @@ type panelState struct {
 	ChannelID snowflake.ID `json:"channel_id"`
 	MessageID snowflake.ID `json:"message_id"`
 	Created   bool         `json:"created"` // the bot created the channel: removed on uninstall
+	// Private: created private to the view role. A channel that was public
+	// first stays hidden by onboarding even once made private, so such a
+	// channel is recreated private instead.
+	Private bool `json:"private,omitempty"`
 }
 
 // panelRest is the part of the Discord REST API the panel channel uses.
@@ -58,6 +62,9 @@ type panelKeeper struct {
 	// viewRole, when set and non-zero, makes the panel channel private to
 	// that role (the access role every member holds).
 	viewRole func(guildID snowflake.ID) snowflake.ID
+	// unlist, when set, takes channels out of the onboarding default
+	// channels before the bot deletes them.
+	unlist func(ctx context.Context, guildID snowflake.ID, ids ...snowflake.ID)
 
 	mu    sync.Mutex
 	state map[snowflake.ID]panelState
@@ -116,6 +123,9 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 			journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "home_category_refused", Detail: "could not create the category: " + err.Error()})
 		}
 	}
+	if st.Created && st.ChannelID != 0 && !st.Private && k.privateTo(guildID) != 0 {
+		st = k.recreatePrivate(ctx, guildID, st.ChannelID)
+	}
 	channelID := k.findChannel(guildID, st.ChannelID)
 	if channelID != 0 && channelID == st.ChannelID && st.Created && parent != 0 {
 		k.moveInto(ctx, channelID, parent)
@@ -131,7 +141,7 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 			return
 		}
 		channelID = ch.ID()
-		st = panelState{ChannelID: channelID, Created: true}
+		st = panelState{ChannelID: channelID, Created: true, Private: k.privateTo(guildID) != 0}
 	} else if channelID != st.ChannelID {
 		st = panelState{ChannelID: channelID} // an existing channel the server made
 	}
@@ -349,6 +359,24 @@ func (k *panelKeeper) overwrites(guildID snowflake.ID) []discord.PermissionOverw
 		ow = append(ow, discord.MemberPermissionOverwrite{UserID: self, Allow: discord.PermissionViewChannel | discord.PermissionSendMessages | discord.PermissionEmbedLinks})
 	}
 	return maskPanelOverwrites(ow, k.grantable(guildID))
+}
+
+// recreatePrivate deletes a panel channel the bot made public, so the next
+// steps create it private from the start: Discord shows a channel created
+// private to those who can see it, but keeps hiding one that was public when
+// the server uses onboarding. Returns the emptied state.
+func (k *panelKeeper) recreatePrivate(ctx context.Context, guildID, channelID snowflake.ID) panelState {
+	if k.unlist != nil {
+		k.unlist(ctx, guildID, channelID)
+	}
+	// Forget it first: the deletion event must not look like the panel's.
+	k.save(guildID, panelState{})
+	if err := k.rest.DeleteChannel(channelID, rest.WithCtx(ctx), rest.WithReason("Voice Relay: panel recreated private")); err != nil {
+		slog.Warn("panel channel: old public channel not deleted", slog.String("guildID", guildID.String()), slog.Any("err", err))
+	}
+	k.caches.RemoveChannel(channelID)
+	slog.Info("panel channel: recreating it private", slog.String("guildID", guildID.String()))
+	return panelState{}
 }
 
 // privateTo is the role the panel channel is private to, 0 for public.
