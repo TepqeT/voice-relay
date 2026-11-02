@@ -12,6 +12,7 @@ import (
 
 	"github.com/TepqeT/voice-relay/internal/ally"
 	"github.com/TepqeT/voice-relay/internal/announce"
+	"github.com/TepqeT/voice-relay/internal/avatar"
 	"github.com/TepqeT/voice-relay/internal/classsort"
 	"github.com/TepqeT/voice-relay/internal/config"
 	"github.com/TepqeT/voice-relay/internal/dave"
@@ -118,6 +119,7 @@ type Bot struct {
 	store         store.Store
 	poolSvc       *pool.Service
 	speakerTokens []string
+	dataDir       string // where the state files live (data/)
 	guildReadyCh  chan []snowflake.ID
 	bundle        *i18n.Bundle
 	daveStats     *dave.Stats
@@ -355,6 +357,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	}
 
 	b := &Bot{
+		dataDir:       filepath.Dir(cfg.RvR.Channels.StateFile),
 		client:        client,
 		daveStats:     daveStats,
 		daveMetrics:   &metrics.Dave,
@@ -439,6 +442,36 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	return b, nil
 }
 
+// applyAvatars gives each bot its profile picture once the gateways are up:
+// the plain logo for the main bot, the numbered one for each relay bot. A
+// picture already set is not uploaded again (data/avatars.json).
+func (b *Bot) applyAvatars(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(20 * time.Second):
+	}
+	k := avatar.NewKeeper(filepath.Join(b.dataDir, "avatars.json"))
+	if u, ok := b.client.Caches.SelfUser(); ok {
+		if err := k.Apply(ctx, b.client.Rest, u.ID, avatar.Image(0)); err != nil {
+			slog.Warn("avatar: main bot picture refused", slog.Any("err", err))
+		}
+	}
+	for i, id := range b.poolSvc.GetIDs() {
+		c, ok := b.poolSvc.GetClientByID(id)
+		if !ok {
+			continue
+		}
+		name := ""
+		if u, ok := c.Caches.SelfUser(); ok {
+			name = u.Username
+		}
+		if err := k.Apply(ctx, c.Rest, id, avatar.Image(avatar.RelayNumber(name, i+1))); err != nil {
+			slog.Warn("avatar: relay bot picture refused", slog.String("bot", name), slog.Any("err", err))
+		}
+	}
+}
+
 // Run connects the speaker pool, opens the owner gateway, registers slash commands,
 // and blocks until ctx is cancelled.
 func (b *Bot) Run(ctx context.Context) error {
@@ -446,6 +479,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		return err
 	}
 	b.poolSvc.StartWatchdog(ctx, 30*time.Second)
+	go b.applyAvatars(ctx)
 	if b.panel != nil {
 		go b.panel.Watch(ctx, 15*time.Second)
 	}

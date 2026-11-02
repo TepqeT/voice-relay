@@ -33,6 +33,7 @@ type fakeBackend struct {
 	removed    []snowflake.ID
 	panel      string   // PanelChannel reported for every server
 	onboarding string   // Onboarding reported for every server
+	onboardOn  bool     // OnboardingOn reported for every server
 	unFailed   []string // relay bots the next uninstall reports as stuck
 	srv        *Server
 	subs       *subscription.Store
@@ -57,6 +58,8 @@ func (f *fakeBackend) GuildStatus(id snowflake.ID) GuildStatus {
 		Roles:        []RoleStatus{{Purpose: "raid_lead", Name: "Speaker", Exists: true}, {Purpose: "class", Name: "Healer"}},
 		PanelChannel: f.panel,
 		Onboarding:   f.onboarding,
+		OnboardingOn: f.onboardOn,
+		Category:     "Voice Relay",
 	}
 }
 func (f *fakeBackend) CanManage(g, _ snowflake.ID) (bool, bool) {
@@ -884,5 +887,25 @@ func TestGuildPageOnboardingWarning(t *testing.T) {
 	_, page := get(t, c, site.URL+"/servers/111")
 	if !strings.Contains(page, "Salons par défaut") && !strings.Contains(page, "Default Channels") {
 		t.Fatalf("no onboarding warning:\n%s", page)
+	}
+}
+
+// With onboarding on, the server page walks the administrator through
+// following the category, then the test.
+func TestGuildPageOnboardingGuide(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.panel = "control-panel"
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/servers/111")
+	if strings.Contains(page, "Suivre la catégorie") || strings.Contains(page, "Follow Category") {
+		t.Fatal("no onboarding step on a server without onboarding")
+	}
+	be.onboardOn = true
+	_, page = get(t, c, site.URL+"/servers/111")
+	if !strings.Contains(page, "Suivre la catégorie") && !strings.Contains(page, "Follow Category") {
+		t.Fatalf("onboarding step missing:\n%s", page)
+	}
+	if !strings.Contains(page, "7.") {
+		t.Fatal("the test step must come after the onboarding step")
 	}
 }

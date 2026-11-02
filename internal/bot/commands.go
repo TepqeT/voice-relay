@@ -141,8 +141,11 @@ func NewCommandHandlers(m ManagerService, metrics *telemetry.BotMetrics, bundle 
 
 // loc returns a localizer for guildID, picking the guild-pinned locale (if any)
 // over the user's Discord client locale.
-func (h *CommandHandlers) loc(guildID snowflake.ID, interactionLocale discord.Locale) *i18n.Localizer {
-	return h.bundle.For(h.manager.GetLocale(guildID), interactionLocale)
+// The server's language, English when none is pinned, whoever clicks: the
+// replies match the panel instead of following each member's Discord
+// language.
+func (h *CommandHandlers) loc(guildID snowflake.ID, _ discord.Locale) *i18n.Localizer {
+	return h.bundle.For(h.manager.GetLocale(guildID), "")
 }
 
 // Register attaches all routes to the given router.

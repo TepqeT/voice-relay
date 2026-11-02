@@ -21,6 +21,8 @@ type fakeSiteManager struct {
 	missing discord.Permissions
 }
 
+func (fakeSiteManager) HomeCategoryName() string { return "Voice Relay" }
+
 func (fakeSiteManager) OnboardingDefaultState(context.Context, snowflake.ID, snowflake.ID) (bool, bool, error) {
 	return false, false, nil
 }

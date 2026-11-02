@@ -25,6 +25,7 @@ type siteManager interface {
 	GuildFacts(guildID, userID snowflake.ID) manager.GuildFacts
 	Uninstall(ctx context.Context, guildID snowflake.ID) (manager.UninstallReport, error)
 	OnboardingDefaultState(ctx context.Context, guildID, channelID snowflake.ID) (enabled, included bool, err error)
+	HomeCategoryName() string
 }
 
 // siteOwnerPermissions is what the site's invite asks for the main bot:
@@ -87,6 +88,15 @@ func (b *webBackend) GuildStatus(guildID snowflake.ID) web.GuildStatus {
 			name = fmt.Sprintf("Voice Relay %d", i+1)
 		}
 		st.RelayBots = append(st.RelayBots, web.BotStatus{Name: name, Present: present, InviteURL: lockedInvite(id, guildID, siteRelayPermissions)})
+	}
+	st.Category = b.m.HomeCategoryName()
+	if st.BotPresent {
+		// Onboarding hides from existing members the channels they did not
+		// pick: the site then walks the administrator through it.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		on, _, err := b.m.OnboardingDefaultState(ctx, guildID, 0)
+		cancel()
+		st.OnboardingOn = err == nil && on
 	}
 	if b.panel != nil {
 		st.PanelChannel = b.panel.ChannelName()
