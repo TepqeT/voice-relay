@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/disgoorg/disgo/bot"
@@ -64,6 +65,7 @@ func TestGrantAccessToAll(t *testing.T) {
 	m := memberRoleService(r)
 	m.GrantAccessToAll(context.Background(), mrGuild)
 	m.GrantAccessToAll(context.Background(), mrGuild)
+	slices.Sort(r.added)
 	if !reflect.DeepEqual(r.added, []snowflake.ID{1, 4}) {
 		t.Fatalf("role given to %v, want 1 and 4 once", r.added)
 	}
@@ -81,5 +83,17 @@ func TestHomeCategoryPrivateToAccessRole(t *testing.T) {
 	}
 	if !everyoneDenied || !roleAllowed {
 		t.Fatalf("overwrites %+v: want @everyone denied and the access role allowed", m.homeOverwrites(mrGuild))
+	}
+}
+
+// A member only the gateway cache knows still gets the role.
+func TestGrantAccessToAllUsesCacheToo(t *testing.T) {
+	r := &memberRoleRest{members: []discord.Member{{User: discord.User{ID: 1}}}}
+	m := memberRoleService(r)
+	m.ownerClient.Caches.AddMember(discord.Member{GuildID: mrGuild, User: discord.User{ID: 9}})
+	m.GrantAccessToAll(context.Background(), mrGuild)
+	slices.Sort(r.added)
+	if !reflect.DeepEqual(r.added, []snowflake.ID{1, 9}) {
+		t.Fatalf("role given to %v, want 1 and 9", r.added)
 	}
 }
