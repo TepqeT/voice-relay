@@ -53,7 +53,10 @@ func TestPanelShowsLiveState(t *testing.T) {
 		t.Fatalf("rows = %d, want the session row only", len(msg.Components))
 	}
 	text := panelText(msg)
-	for _, want := range []string{"No session running", "Restricted", "<@&902>"} {
+	if strings.Contains(text, "Request access") {
+		t.Fatalf("the panel must not tell members to request access:\n%s", text)
+	}
+	for _, want := range []string{"No session running"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("idle panel lacks %q:\n%s", want, text)
 		}
