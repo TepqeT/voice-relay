@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/disgoorg/disgo/cache"
 	"github.com/disgoorg/disgo/discord"
@@ -38,6 +39,16 @@ type fakePanelRest struct {
 	lostUpdate bool           // the next update answers Unknown Message
 	moved      []snowflake.ID
 	reperm     []snowflake.ID // channels whose overwrites were replaced
+	history    []discord.Message
+	purged     []snowflake.ID // messages deleted
+}
+
+func (f *fakePanelRest) GetMessages(_, _, _, _ snowflake.ID, _ int, _ ...rest.RequestOpt) ([]discord.Message, error) {
+	return f.history, nil
+}
+func (f *fakePanelRest) DeleteMessage(_, messageID snowflake.ID, _ ...rest.RequestOpt) error {
+	f.purged = append(f.purged, messageID)
+	return nil
 }
 
 func (f *fakePanelRest) CreateGuildChannel(guildID snowflake.ID, c discord.GuildChannelCreate, _ ...rest.RequestOpt) (discord.GuildChannel, error) {
@@ -286,5 +297,27 @@ func TestPanelChannelRecreatedPrivate(t *testing.T) {
 	k3.Ensure(context.Background(), panelGuild)
 	if len(fr3.deleted) != 0 || len(fr3.created) != 0 {
 		t.Fatalf("the private channel must be kept: deleted %v created %v", fr3.deleted, fr3.created)
+	}
+}
+
+// Old bot messages (reports) leave the panel channel; the panel, recent
+// messages and other authors' messages stay.
+func TestPanelChannelPurgesOldReports(t *testing.T) {
+	k, fr, _ := newTestKeeper(t, "")
+	k.Ensure(context.Background(), panelGuild)
+	panelMsg := k.state[panelGuild].MessageID
+	now := time.Now()
+	old := snowflake.New(now.Add(-2 * time.Hour))
+	recent := snowflake.New(now.Add(-5 * time.Minute))
+	other := snowflake.New(now.Add(-3 * time.Hour))
+	fr.history = []discord.Message{
+		{ID: panelMsg, Author: discord.User{ID: 1}},
+		{ID: old, Author: discord.User{ID: 1}},
+		{ID: recent, Author: discord.User{ID: 1}},
+		{ID: other, Author: discord.User{ID: 99}},
+	}
+	k.purge(context.Background(), panelGuild, now)
+	if len(fr.purged) != 1 || fr.purged[0] != old {
+		t.Fatalf("purged %v, want only the old report %d", fr.purged, old)
 	}
 }

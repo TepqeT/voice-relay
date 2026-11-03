@@ -44,7 +44,17 @@ type panelRest interface {
 	CreateMessage(channelID snowflake.ID, m discord.MessageCreate, opts ...rest.RequestOpt) (*discord.Message, error)
 	UpdateMessage(channelID, messageID snowflake.ID, m discord.MessageUpdate, opts ...rest.RequestOpt) (*discord.Message, error)
 	UpdateChannel(channelID snowflake.ID, c discord.ChannelUpdate, opts ...rest.RequestOpt) (discord.Channel, error)
+	GetMessages(channelID, around, before, after snowflake.ID, limit int, opts ...rest.RequestOpt) ([]discord.Message, error)
+	DeleteMessage(channelID, messageID snowflake.ID, opts ...rest.RequestOpt) error
 }
+
+// messageTTL is how long the bot's other messages (quality reports, notices)
+// stay in the panel channel: only the panel itself is kept, so the channel
+// never fills up.
+const messageTTL = 30 * time.Minute
+
+// purgeEvery is how many Watch ticks pass between two clean-ups.
+const purgeEvery = 20
 
 type panelKeeper struct {
 	name   string // configured channel name or ID
@@ -213,6 +223,9 @@ func (k *panelKeeper) Watch(ctx context.Context, every time.Duration) {
 			k.mu.Unlock()
 			for _, g := range guilds {
 				k.ensure(ctx, g, tick%forceEvery == 0)
+				if tick%purgeEvery == 0 {
+					k.purge(ctx, g, time.Now())
+				}
 			}
 			// Servers still without a panel (refused at join, permission
 			// fixed since): try again, at most every few minutes each.
@@ -359,6 +372,33 @@ func (k *panelKeeper) overwrites(guildID snowflake.ID) []discord.PermissionOverw
 		ow = append(ow, discord.MemberPermissionOverwrite{UserID: self, Allow: discord.PermissionViewChannel | discord.PermissionSendMessages | discord.PermissionEmbedLinks})
 	}
 	return maskPanelOverwrites(ow, k.grantable(guildID))
+}
+
+// purge deletes the bot's messages older than messageTTL from guildID's
+// panel channel, the panel excepted. Members cannot write there, so these
+// are the quality reports and notices of past sessions.
+func (k *panelKeeper) purge(ctx context.Context, guildID snowflake.ID, now time.Time) {
+	k.mu.Lock()
+	st := k.state[guildID]
+	k.mu.Unlock()
+	self := k.selfID()
+	if st.ChannelID == 0 || self == 0 {
+		return
+	}
+	msgs, err := k.rest.GetMessages(st.ChannelID, 0, 0, 0, 50, rest.WithCtx(ctx))
+	if err != nil {
+		slog.Warn("panel channel: messages not listed for clean-up", slog.String("guildID", guildID.String()), slog.Any("err", err))
+		return
+	}
+	for _, m := range msgs {
+		if m.ID == st.MessageID || m.Author.ID != self || now.Sub(m.ID.Time()) < messageTTL {
+			continue
+		}
+		if err := k.rest.DeleteMessage(st.ChannelID, m.ID, rest.WithCtx(ctx)); err != nil {
+			slog.Warn("panel channel: old message not deleted", slog.String("guildID", guildID.String()), slog.Any("err", err))
+			return
+		}
+	}
 }
 
 // recreatePrivate deletes a panel channel the bot made public, so the next

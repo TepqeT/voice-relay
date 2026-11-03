@@ -206,7 +206,7 @@ access.mode.restricted_kicked: "Les salons Listener sont maintenant restreints. 
 panel.help.channels_home: "Les salons Speaker et Listener apparaissent dans cette catégorie au lancement et sont supprimés à l'arrêt."
 panel.btn.help: "Aide"
 panel.faq.title: "À quoi sert chaque bouton"
-panel.faq.startstop: "Réservé aux Speakers. Lancer : les bots rejoignent les salons et portent la voix des Speakers dans chaque salon Listener. Arrêter : les bots repartent, les salons vocaux sont supprimés et le rapport qualité est publié dans ce salon."
+panel.faq.startstop: "Réservé aux Speakers. Lancer : les bots rejoignent les salons et portent la voix des Speakers dans chaque salon Listener. Arrêter : les bots repartent, les salons vocaux sont supprimés et le rapport qualité est publié dans ce salon, puis supprimé au bout de 30 minutes."
 panel.faq.status: "Affiche la configuration et l'état des bots, visible par vous seul."
 panel.faq.request: "Pour les membres sans accès. Envoie une demande aux Speakers et Squad Leads, qui l'acceptent ou la refusent en un clic. Une fois acceptée, les salons Listener apparaissent."
 panel.faq.mode: "Speakers et Squad Leads. Restreindre : seuls les membres avec le rôle d'accès voient et rejoignent les salons Listener ; pendant une session, les autres en sont sortis. Ouvrir : tout le monde sur le serveur peut rejoindre."
