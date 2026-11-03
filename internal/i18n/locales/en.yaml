@@ -207,7 +207,7 @@ access.mode.restricted_kicked: "The listener channels are now restricted. {{.Cou
 panel.help.channels_home: "The speaker and listener channels appear in this category at start and are removed at stop."
 panel.btn.help: "Help"
 panel.faq.title: "What each button does"
-panel.faq.startstop: "Speakers only. Start: the bots join the channels and carry the speakers' voice into every listener channel. Stop: the bots leave, the voice channels are removed and the quality report is posted in this channel."
+panel.faq.startstop: "Speakers only. Start: the bots join the channels and carry the speakers' voice into every listener channel. Stop: the bots leave, the voice channels are removed and the quality report is posted in this channel and removed after 30 minutes."
 panel.faq.status: "Shows the current setup and the bots' state, only to you."
 panel.faq.request: "For members without access. Sends a request to the speakers and squad leads, who accept or decline it with one click. Once accepted, the listener channels appear."
 panel.faq.mode: "Speakers and squad leads. Restrict: only members with the access role can see and join the listener channels; switching during a session moves the others out. Open: anyone on the server can join."
