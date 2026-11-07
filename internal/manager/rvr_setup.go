@@ -70,7 +70,7 @@ func dedupeRoles(in []RoleSetup) []RoleSetup {
 
 // RoleSetupStatus resolves every configured role in guildID.
 func (m *Service) RoleSetupStatus(guildID snowflake.ID) []RoleSetup {
-	top := m.botTopRolePosition(guildID)
+	top, topKnown := m.botTopRole(guildID)
 	roles := m.wantedRoles()
 	for i := range roles {
 		r := &roles[i]
@@ -80,27 +80,38 @@ func (m *Service) RoleSetupStatus(guildID snowflake.ID) []RoleSetup {
 		if r.ID == 0 {
 			continue
 		}
-		if role, ok := m.ownerClient.Caches.Role(guildID, r.ID); ok && top >= 0 && role.Position >= top {
+		if role, ok := m.ownerClient.Caches.Role(guildID, r.ID); ok && topKnown && (role.ID == top.ID || roleAbove(role, top)) {
 			r.AboveBot = true
 		}
 	}
 	return roles
 }
 
-// botTopRolePosition is the position of the owner bot's highest role, -1 when
-// unknown (not cached yet).
-func (m *Service) botTopRolePosition(guildID snowflake.ID) int {
+// roleAbove reports whether a ranks above b in Discord's role hierarchy:
+// higher position first; on equal positions the older role (lower ID) ranks
+// higher. A role created at position 1 next to the bot's own role therefore
+// stays below it.
+func roleAbove(a, b discord.Role) bool {
+	if a.Position != b.Position {
+		return a.Position > b.Position
+	}
+	return a.ID < b.ID
+}
+
+// botTopRole is the owner bot's highest role; false when unknown (not cached
+// yet). A bot without any cached role ranks as @everyone.
+func (m *Service) botTopRole(guildID snowflake.ID) (discord.Role, bool) {
 	self, ok := m.ownerClient.Caches.SelfMember(guildID)
 	if !ok {
-		return -1
+		return discord.Role{}, false
 	}
-	top := 0
+	top := discord.Role{ID: guildID} // @everyone: same ID as the guild, position 0
 	for _, id := range self.RoleIDs {
-		if r, ok := m.ownerClient.Caches.Role(guildID, id); ok && r.Position > top {
-			top = r.Position
+		if r, ok := m.ownerClient.Caches.Role(guildID, id); ok && roleAbove(r, top) {
+			top = r
 		}
 	}
-	return top
+	return top, true
 }
 
 // CreateMissingRoles creates the configured roles guildID lacks. Roles given

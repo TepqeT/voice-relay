@@ -81,17 +81,17 @@ services:
       # Support (v31) : bouton "Contacter le support" du site. Vide = profil
       # Discord du proprietaire de l'application (message prive ou ajout ami).
       # SUPPORT_URL: "https://discord.com/users/123456789012345678"
-      # Paiement (v31) : lien PayPal du bouton "Payer avec PayPal", par exemple
-      # https://www.paypal.com/paypalme/votre-nom ; vide = pas de bouton.
+      # Dons (v62) : Voice Relay est gratuit. Lien PayPal.me du bouton
+      # "Faire un don", par exemple https://www.paypal.com/paypalme/votre-nom ;
+      # vide = pas de bouton.
       PAYPAL_URL: "${PAYPAL_URL:-}"
-      PRICE_LABEL: "${PRICE_LABEL:-}"
-      # Paiement sur le site (v39), prioritaire sur PAYPAL_URL : l'acheteur
-      # paie dans la fenetre PayPal ouverte depuis le site (compte PayPal ou
-      # carte), l'argent arrive sur le compte PayPal de l'application et
-      # l'abonnement est active tout seul. Identifiants dans .env.
+      # Dons sur le site, prioritaires sur PAYPAL_URL : le visiteur choisit un
+      # montant et paie dans la fenetre PayPal (compte PayPal ou carte),
+      # l'argent arrive sur le compte PayPal de l'application. Identifiants
+      # dans .env (PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET).
       PAYPAL_MODE: "${PAYPAL_MODE:-sandbox}"
       PAYPAL_CURRENCY: "EUR"
-      PAYPAL_PLANS: "${PAYPAL_PLANS:-}"
+      DONATION_AMOUNTS: "${DONATION_AMOUNTS:-3,5,10,20}"
       # Abonnements (v30), dans data/subscriptions.json. Le proprietaire de
       # l'application Discord administre le site ; autres administrateurs :
       # SITE_ADMINS: "123456789012345678"

@@ -245,10 +245,19 @@ func TestLoadWeb(t *testing.T) {
 func TestLoadWebLinks(t *testing.T) {
 	t.Setenv("SUPPORT_URL", "https://discord.com/users/123")
 	t.Setenv("PAYPAL_URL", "http://paypal.me/example")
-	t.Setenv("PRICE_LABEL", " 3 EUR / mois ")
+	t.Setenv("DONATION_AMOUNTS", "")
 	w := loadWeb("/data/store.yaml")
-	if w.SupportURL != "https://discord.com/users/123" || w.PayPalURL != "" || w.PriceLabel != "3 EUR / mois" {
+	if w.SupportURL != "https://discord.com/users/123" || w.PayPalURL != "" || w.DonationAmounts != "3,5,10,20" {
 		t.Fatalf("links = %+v (plain http must be dropped)", w)
+	}
+	if w.CheckoutEnabled() {
+		t.Fatal("donations on without PayPal credentials")
+	}
+	t.Setenv("PAYPAL_CLIENT_ID", "id")
+	t.Setenv("PAYPAL_CLIENT_SECRET", "secret")
+	t.Setenv("DONATION_AMOUNTS", "2, 4")
+	if w = loadWeb("/data/store.yaml"); !w.CheckoutEnabled() || w.DonationAmounts != "2, 4" {
+		t.Fatalf("donations = %+v", w)
 	}
 	t.Setenv("PAYPAL_URL", "https://www.paypal.com/paypalme/example")
 	if w = loadWeb("/data/store.yaml"); w.PayPalURL != "https://www.paypal.com/paypalme/example" {

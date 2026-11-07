@@ -10,11 +10,11 @@
   <ul class="list">{{range .Issues}}<li><span class="tag {{if eq .Level "problem"}}bad{{else}}warn{{end}}">{{.Kind}}</span> <span class="detail">{{.Detail}}</span></li>{{end}}</ul>
 </section>{{end}}
 
-<section class="card">
+{{if .SubRequired}}<section class="card">
   <h2>{{t "admin.sub"}}</h2>
   <div class="row">{{template "coverage" dict "Cov" .Cov "ID" .Guild.ID "CSRF" .CSRF "From" "guild"}}</div>
-  {{if not .Account.Has}}{{template "pay" $}}{{end}}
-</section>
+  {{if not .Account.Has}}<p class="muted">{{t "sub.soon"}}</p>{{end}}
+</section>{{end}}
 
 {{with .Report}}
 <div class="card">

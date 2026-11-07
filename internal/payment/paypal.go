@@ -196,44 +196,33 @@ func (c *Client) CaptureOrder(ctx context.Context, orderID string) (Capture, err
 	return cp, nil
 }
 
-// Plan is one offer sold on the site.
-type Plan struct {
-	ID    string // "30d", "365d", "life"
-	Days  int    // 0 for lifetime
-	Price string // "4.99"
-}
+// MaxDonation caps one donation amount, a guard against typos in the
+// configuration.
+const MaxDonation = 1000
 
-// Lifetime reports whether the plan never expires.
-func (p Plan) Lifetime() bool { return p.Days == 0 }
-
-// ParsePlans reads PAYPAL_PLANS: "30d=4.99, 365d=39, life=79".
-func ParsePlans(s string) ([]Plan, error) {
-	var out []Plan
+// ParseAmounts reads DONATION_AMOUNTS: "3, 5, 10, 20". Amounts come back
+// normalized ("5.00"), in the given order, each once.
+func ParseAmounts(s string) ([]string, error) {
+	var out []string
 	seen := map[string]bool{}
 	for _, part := range strings.Split(s, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		id, price, ok := strings.Cut(part, "=")
-		id, price = strings.ToLower(strings.TrimSpace(id)), strings.TrimSpace(price)
-		if !ok || seen[id] {
-			return nil, fmt.Errorf("plan %q: expected <30d|365d|life>=<price>, once each", part)
+		f, err := strconv.ParseFloat(part, 64)
+		if err != nil || f < 1 || f > MaxDonation {
+			return nil, fmt.Errorf("amount %q: expected a number from 1 to %d", part, MaxDonation)
 		}
-		f, err := strconv.ParseFloat(price, 64)
-		if err != nil || f <= 0 {
-			return nil, fmt.Errorf("plan %q: invalid price", part)
+		a := strconv.FormatFloat(f, 'f', 2, 64)
+		if seen[a] {
+			return nil, fmt.Errorf("amount %q listed twice", part)
 		}
-		p := Plan{ID: id, Price: strconv.FormatFloat(f, 'f', 2, 64)}
-		if id != "life" {
-			days, err := strconv.Atoi(strings.TrimSuffix(id, "d"))
-			if err != nil || !strings.HasSuffix(id, "d") || days < 1 || days > 3660 {
-				return nil, fmt.Errorf("plan %q: duration must be like 30d or life", part)
-			}
-			p.Days = days
-		}
-		seen[id] = true
-		out = append(out, p)
+		seen[a] = true
+		out = append(out, a)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no donation amount")
 	}
 	return out, nil
 }

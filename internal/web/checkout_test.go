@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/TepqeT/voice-relay/internal/payment"
-	"github.com/TepqeT/voice-relay/internal/subscription"
 )
 
 // paypalStub is a fake PayPal API whose capture answer the test sets.
@@ -36,9 +36,15 @@ func captured(order, custom, amount string) map[string]any {
 			"id": "CAP-" + order, "status": "COMPLETED", "custom_id": custom, "amount": map[string]any{"currency_code": "EUR", "value": amount}}}}}}}
 }
 
-func postJSON(t *testing.T, c *http.Client, u string, v url.Values) (int, map[string]string) {
+// postFrom posts a form as the site's own page would (Origin = the site).
+func postFrom(t *testing.T, c *http.Client, origin, u string, v url.Values) (int, map[string]string) {
 	t.Helper()
-	resp, err := c.PostForm(u, v)
+	req, _ := http.NewRequest(http.MethodPost, u, strings.NewReader(v.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	resp, err := c.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,78 +54,78 @@ func postJSON(t *testing.T, c *http.Client, u string, v url.Values) (int, map[st
 	return resp.StatusCode, out
 }
 
-func TestCheckoutOnTheSite(t *testing.T) {
-	site, be, c := newTestSite(t)
+func TestDonationOnTheSite(t *testing.T) {
+	site, be, _ := newTestSite(t)
+	c := &http.Client{} // a visitor who never signed in
 	var capture map[string]any
 	pp := paypalStub(t, &capture)
 	client := payment.NewClient("client-id", "secret", false)
 	client.Base = pp.URL
-	plans, _ := payment.ParsePlans("30d=4.99,life=79")
+	amounts, _ := payment.ParseAmounts("3,5,10")
 	ledger, _ := payment.OpenLedger("")
-	be.srv.cfg.Checkout = &Checkout{Client: client, Plans: plans, Currency: "EUR", Ledger: ledger}
+	be.srv.cfg.Checkout = &Checkout{Client: client, Amounts: amounts, Currency: "EUR", Ledger: ledger}
 
-	signIn(t, site, c, "good")
-	resp, err := c.Get(site.URL + "/servers")
+	req, _ := http.NewRequest(http.MethodGet, site.URL+"/", nil)
+	req.Header.Set("Accept-Language", "fr")
+	resp, err := c.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	csp := resp.Header.Get("Content-Security-Policy")
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	_, page := get(t, c, site.URL+"/servers")
-	for _, want := range []string{"Choisissez votre formule", "1 mois", "4,99 €", "À vie", "79,00 €", "https://www.paypal.com/sdk/js?client-id=client-id", "/static/pay.js", `id="paypal-buttons"`} {
+	page := string(body)
+	for _, want := range []string{"Soutenir Voice Relay", "Choisissez un montant", "3 €", "5 €", "10 €", "https://www.paypal.com/sdk/js?client-id=client-id", "/static/donate.js", `id="paypal-buttons"`} {
 		if !strings.Contains(page, want) {
-			t.Fatalf("checkout page lacks %q:\n%s", want, page)
+			t.Fatalf("home page lacks %q:\n%s", want, page)
 		}
 	}
 	if !strings.Contains(csp, "script-src 'self' 'nonce-") || !strings.Contains(csp, "https://*.paypal.com") {
 		t.Fatalf("CSP must allow PayPal with a nonce: %s", csp)
 	}
-	csrf := csrfRe.FindStringSubmatch(page)[1]
 
-	// Order: needs the CSRF token and a known plan.
-	if code, _ := postJSON(t, c, site.URL+"/pay/order", url.Values{"plan": {"30d"}}); code != http.StatusForbidden {
-		t.Fatalf("order without csrf = %d", code)
+	// Order: same origin only, offered amounts only.
+	if code, _ := postFrom(t, c, "https://evil.example", site.URL+"/donate/order", url.Values{"amount": {"5.00"}}); code != http.StatusForbidden {
+		t.Fatalf("cross-site order = %d", code)
 	}
-	if code, _ := postJSON(t, c, site.URL+"/pay/order", url.Values{"csrf": {csrf}, "plan": {"999d"}}); code != http.StatusBadRequest {
-		t.Fatalf("unknown plan = %d", code)
+	if code, _ := postFrom(t, c, "", site.URL+"/donate/order", url.Values{"amount": {"5.00"}}); code != http.StatusForbidden {
+		t.Fatalf("order without origin = %d", code)
 	}
-	if code, out := postJSON(t, c, site.URL+"/pay/order", url.Values{"csrf": {csrf}, "plan": {"30d"}}); code != 200 || out["id"] != "ORDER1" {
+	if code, _ := postFrom(t, c, site.URL, site.URL+"/donate/order", url.Values{"amount": {"0.01"}}); code != http.StatusBadRequest {
+		t.Fatalf("unknown amount = %d", code)
+	}
+	if code, out := postFrom(t, c, site.URL, site.URL+"/donate/order", url.Values{"amount": {"5.00"}}); code != 200 || out["id"] != "ORDER1" {
 		t.Fatalf("order = %d %v", code, out)
 	}
 
-	// Wrong amount: not credited.
-	capture = captured("BAD", "7:30d", "0.01")
-	if code, _ := postJSON(t, c, site.URL+"/pay/capture", url.Values{"csrf": {csrf}, "order": {"BAD"}}); code != http.StatusPaymentRequired || be.subs.Active(111) {
+	// Tampered amount or a foreign order: not recorded.
+	capture = captured("BAD", donationCustom, "0.01")
+	if code, _ := postFrom(t, c, site.URL, site.URL+"/donate/capture", url.Values{"order": {"BAD"}}); code != http.StatusPaymentRequired {
 		t.Fatalf("tampered amount = %d", code)
 	}
-	if _, ok := be.subs.Get(7); ok {
-		t.Fatal("a tampered payment must not credit anything")
+	capture = captured("OTHER", "7:30d", "5.00")
+	if code, _ := postFrom(t, c, site.URL, site.URL+"/donate/capture", url.Values{"order": {"OTHER"}}); code != http.StatusPaymentRequired {
+		t.Fatalf("foreign order = %d", code)
 	}
-	// Order made for another account: not credited to this one.
-	capture = captured("OTHER", "8:30d", "4.99")
-	if code, _ := postJSON(t, c, site.URL+"/pay/capture", url.Values{"csrf": {csrf}, "order": {"OTHER"}}); code != http.StatusPaymentRequired {
-		t.Fatalf("someone else's order = %d", code)
+	if got := ledger.Recent(5); len(got) != 0 {
+		t.Fatalf("refused captures recorded: %+v", got)
 	}
 
-	// The real one.
-	capture = captured("ORDER1", "7:30d", "4.99")
-	code, out := postJSON(t, c, site.URL+"/pay/capture", url.Values{"csrf": {csrf}, "order": {"ORDER1"}})
-	if code != 200 || out["redirect"] != "/servers?ok=paid" {
+	// The real one: thanked, written down, nothing else changes.
+	capture = captured("ORDER1", donationCustom, "5.00")
+	code, out := postFrom(t, c, site.URL, site.URL+"/donate/capture", url.Values{"order": {"ORDER1"}})
+	if code != 200 || out["thanks"] != messages["en"]["donate.thanks"] {
 		t.Fatalf("capture = %d %v", code, out)
 	}
-	sub, ok := be.subs.Get(7)
-	if !ok || sub.Plan != subscription.PlanUntil || !sub.Active(be.subs.Now()) || sub.Gift {
-		t.Fatalf("subscription after payment: %+v", sub)
-	}
-	if got := ledger.Recent(5); len(got) != 1 || got[0].CaptureID != "CAP-ORDER1" || got[0].Amount != "4.99" {
+	if got := ledger.Recent(5); len(got) != 1 || got[0].CaptureID != "CAP-ORDER1" || got[0].Amount != "5.00" || got[0].Plan != donationCustom || got[0].UserID != "" {
 		t.Fatalf("ledger %+v", got)
 	}
-	// Replayed: counted once.
-	if code, _ := postJSON(t, c, site.URL+"/pay/capture", url.Values{"csrf": {csrf}, "order": {"ORDER1"}}); code != http.StatusConflict {
-		t.Fatalf("replayed capture = %d", code)
+	if _, ok := be.subs.Get(7); ok {
+		t.Fatal("a donation must not create a subscription")
 	}
-	if _, page = get(t, c, site.URL+"/servers?ok=paid"); !strings.Contains(page, "paiement reçu") {
-		t.Fatalf("thank-you message missing:\n%s", page)
+	// Replayed: counted once.
+	if code, _ := postFrom(t, c, site.URL, site.URL+"/donate/capture", url.Values{"order": {"ORDER1"}}); code != http.StatusConflict {
+		t.Fatalf("replayed capture = %d", code)
 	}
 }
 
@@ -134,5 +140,8 @@ func TestOwnScriptsOnlyWithoutCheckout(t *testing.T) {
 	// Only the site's own files: no inline script, no third party.
 	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self';") || strings.Contains(csp, "nonce") || strings.Contains(csp, "paypal") {
 		t.Fatalf("only same-origin scripts allowed without checkout: %s", csp)
+	}
+	if code, _ := postFrom(t, c, site.URL, site.URL+"/donate/order", url.Values{"amount": {"5.00"}}); code != http.StatusNotFound {
+		t.Fatalf("donation without checkout = %d", code)
 	}
 }

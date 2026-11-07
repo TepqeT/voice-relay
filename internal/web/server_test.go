@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"github.com/TepqeT/voice-relay/internal/journal"
 	"github.com/TepqeT/voice-relay/internal/ratelimit"
+	"html"
+	"io"
+	"io/fs"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -345,9 +348,15 @@ func TestPagesRespectCSPAndShowScenes(t *testing.T) {
 			t.Errorf("%s has inline style or script (blocked by the CSP)", name)
 		}
 	}
-	for _, scene := range []string{"scene-raid", "scene-login", "scene-invite", "scene-roles", "scene-assign"} {
+	for _, scene := range []string{"scene-login", "scene-invite", "scene-roles", "scene-assign"} {
 		if !strings.Contains(index, `class="scene `+scene+`"`) {
 			t.Errorf("index misses %s", scene)
+		}
+	}
+	// The home universe: command map, before/after, figures, motion script.
+	for _, want := range []string{`<svg class="cmd"`, `class="vs-scene chaos"`, `class="vs-scene order"`, `class="count" data-to="11"`, `src="/static/motion.js"`} {
+		if !strings.Contains(index, want) {
+			t.Errorf("index misses %s", want)
 		}
 	}
 	for _, scene := range []string{"scene-invite", "scene-roles", "scene-assign"} {
@@ -429,6 +438,7 @@ func TestAdminGrantsAccountSubscription(t *testing.T) {
 // A subscriber activates their subscription on several servers they manage.
 func TestSubscriberActivatesOnSeveralServers(t *testing.T) {
 	site, be, c := newTestSite(t)
+	be.srv.cfg.SubscriptionRequired = true
 	signIn(t, site, c, "good")
 	_, page := get(t, c, site.URL+"/servers")
 	if !strings.Contains(page, "Vous n&#39;avez pas d&#39;abonnement.") || strings.Contains(page, "Activer mon abonnement ici") {
@@ -471,6 +481,7 @@ func TestSubscriberActivatesOnSeveralServers(t *testing.T) {
 
 func TestServerCoveredByAnotherAccount(t *testing.T) {
 	site, be, c := newTestSite(t)
+	be.srv.cfg.SubscriptionRequired = true
 	_ = be.subs.Grant(subscription.Subscription{UserID: 99, Plan: subscription.PlanLifetime})
 	_ = be.subs.Activate(99, 111, "Zeta")
 	_ = be.subs.Grant(subscription.Subscription{UserID: 7, Plan: subscription.PlanLifetime})
@@ -537,6 +548,52 @@ func TestEnglishSite(t *testing.T) {
 	}
 	if code, _ := get(t, c, site.URL+"/lang/de"); code != http.StatusNotFound {
 		t.Fatal("unknown language accepted")
+	}
+}
+
+// The guide is public, speaks both languages, and every screenshot it shows
+// is shipped with the site.
+func TestGuidePage(t *testing.T) {
+	site, _, c := newTestSite(t)
+	for lang, title := range map[string]string{"fr": messages["fr"]["guide.title"], "en": messages["en"]["guide.title"]} {
+		req, _ := http.NewRequest(http.MethodGet, site.URL+"/guide", nil)
+		req.Header.Set("Accept-Language", lang)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		body := string(b)
+		if resp.StatusCode != http.StatusOK || !strings.Contains(body, html.EscapeString(title)) {
+			t.Fatalf("%s: guide = %d\n%s", lang, resp.StatusCode, body)
+		}
+		if regexp.MustCompile(`guide\.[a-z0-9]+\.[a-z]`).MatchString(body) {
+			t.Errorf("%s: untranslated key left in the guide", lang)
+		}
+		imgs := regexp.MustCompile(`src="/static/(guide/[a-z0-9-]+\.jpg)"`).FindAllStringSubmatch(body, -1)
+		if len(imgs) < 10 {
+			t.Fatalf("%s: %d screenshots, want the whole walkthrough", lang, len(imgs))
+		}
+		for _, m := range imgs {
+			if _, err := fs.Stat(assets, "static/"+m[1]); err != nil {
+				t.Errorf("%s: missing %s", lang, m[1])
+			}
+		}
+		if !strings.Contains(body, `src="/static/motion.js"`) || strings.Contains(body, "style=") {
+			t.Errorf("%s: guide must load its script and use no inline style (CSP)", lang)
+		}
+	}
+	// The home page links to it.
+	if _, body := get(t, c, site.URL+"/"); !strings.Contains(body, `href="/guide"`) {
+		t.Error("home page has no link to the guide")
+	}
+	// Switching language from the guide stays on the guide.
+	req, _ := http.NewRequest(http.MethodGet, site.URL+"/lang/en", nil)
+	req.Header.Set("Referer", site.URL+"/guide")
+	resp, _ := c.Do(req)
+	if got := resp.Header.Get("Location"); got != "/guide" {
+		t.Errorf("lang switch from the guide -> %q", got)
 	}
 }
 
@@ -635,32 +692,33 @@ func TestAdminSpotsAndBridlesLending(t *testing.T) {
 	}
 }
 
-// Animations must stay inside the scenes: a rule on a site class (".card"
-// once) made every panel of the site fade out in a loop.
+// Animations never target the site's shared building blocks: a rule on
+// ".card" once made every panel of the site fade out in a loop.
 func TestAnimationsScopedToScenes(t *testing.T) {
 	css, err := assets.ReadFile("static/style.css")
 	if err != nil {
 		t.Fatal(err)
 	}
+	shared := map[string]bool{".card": true, ".row": true, ".list": true, ".button": true, ".step": true, "main": true, "body": true, "section": true, "html": true}
 	for i, line := range strings.Split(string(css), "\n") {
-		if !strings.Contains(line, "animation") {
-			continue
-		}
 		for _, rule := range strings.Split(line, "}") {
-			sel, _, ok := strings.Cut(rule, "{")
-			if !ok || !strings.Contains(rule, "animation") {
-				continue
-			}
-			sel = strings.TrimSpace(sel)
-			if strings.HasPrefix(sel, "@") {
+			sel, decl, ok := strings.Cut(rule, "{")
+			if !ok || !strings.Contains(decl, "animation:") || strings.Contains(decl, "animation:none") || strings.HasPrefix(strings.TrimSpace(sel), "@") {
 				continue
 			}
 			for _, s := range strings.Split(sel, ",") {
-				if !strings.HasPrefix(strings.TrimSpace(s), ".scene") {
-					t.Errorf("style.css:%d animates %q outside .scene", i+1, strings.TrimSpace(s))
+				parts := strings.Fields(s)
+				if len(parts) > 0 && shared[parts[len(parts)-1]] {
+					t.Errorf("style.css:%d animates the shared %q", i+1, strings.TrimSpace(s))
 				}
 			}
 		}
+	}
+	// Visitors who ask for less motion get none: one rule stops every
+	// animation and transition of the site, whatever it animates.
+	stop := regexp.MustCompile(`@media \(prefers-reduced-motion: reduce\) \{\s*\*, \*::before, \*::after \{[^}]*animation:none !important;[^}]*transition:none !important;`)
+	if !stop.Match(css) {
+		t.Fatal("style.css lacks the global prefers-reduced-motion stop")
 	}
 }
 
@@ -754,26 +812,35 @@ func TestSupportButtonAndLogo(t *testing.T) {
 	}
 }
 
-func TestPayPalButton(t *testing.T) {
+// The relay is free: without SUBSCRIPTION_REQUIRED no page talks about
+// subscriptions, and a PayPal.me link becomes a donation button.
+func TestFreeSiteWithDonationLink(t *testing.T) {
 	site, be, c := newTestSite(t)
 	signIn(t, site, c, "good")
-	if _, page := get(t, c, site.URL+"/servers"); strings.Contains(page, "Payer avec PayPal") || !strings.Contains(page, "Le paiement en ligne arrive bientôt") {
-		t.Fatalf("no PayPal button without PAYPAL_URL:\n%s", page)
-	}
-	be.srv.cfg.PayPalURL = "https://www.paypal.com/paypalme/test"
-	be.srv.cfg.PriceLabel = "3 EUR / mois"
 	_, page := get(t, c, site.URL+"/servers")
-	for _, want := range []string{`href="https://www.paypal.com/paypalme/test"`, "Payer avec PayPal", "3 EUR / mois", "<code>7</code>"} {
-		if !strings.Contains(page, want) {
-			t.Fatalf("servers page lacks %q:\n%s", want, page)
+	for _, gone := range []string{"Mon abonnement", "Sans abonnement", "Activer mon abonnement ici", "Faire un don"} {
+		if strings.Contains(page, gone) {
+			t.Fatalf("free site shows %q:\n%s", gone, page)
 		}
 	}
-	_ = be.subs.Grant(subscription.Subscription{UserID: 7, Plan: subscription.PlanLifetime, Gift: true})
-	if _, page = get(t, c, site.URL+"/servers"); strings.Contains(page, "Payer avec PayPal") {
-		t.Fatal("an active subscriber must not be asked to pay")
+	if _, page = get(t, c, site.URL+"/servers/111"); strings.Contains(page, "Abonnement") {
+		t.Fatalf("guild page talks about subscriptions:\n%s", page)
 	}
-	if _, page = get(t, c, site.URL+"/servers/111"); strings.Contains(page, "Payer avec PayPal") {
-		t.Fatal("guild page: an active subscriber must not be asked to pay")
+	be.srv.cfg.PayPalURL = "https://www.paypal.com/paypalme/test"
+	for _, u := range []string{"/servers", "/", "/guide"} {
+		_, page = get(t, c, site.URL+u)
+		if u == "/" {
+			c2 := &http.Client{} // signed out: the home page itself
+			_, page = get(t, c2, site.URL+u)
+		}
+		if !strings.Contains(page, `href="https://www.paypal.com/paypalme/test"`) || !strings.Contains(page, "Soutenir Voice Relay") && !strings.Contains(page, "Support Voice Relay") {
+			t.Fatalf("%s lacks the donation link:\n%s", u, page)
+		}
+	}
+	// Subscriptions turned back on: the account card returns.
+	be.srv.cfg.SubscriptionRequired = true
+	if _, page = get(t, c, site.URL+"/servers"); !strings.Contains(page, "Mon abonnement") || !strings.Contains(page, "Pour un abonnement, contactez le support.") {
+		t.Fatalf("subscription card missing when required:\n%s", page)
 	}
 }
 

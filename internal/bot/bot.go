@@ -400,9 +400,9 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		backend.panel = panel
 		var checkout *web.Checkout
 		if cfg.Web.CheckoutEnabled() {
-			plans, err := payment.ParsePlans(cfg.Web.PayPalPlans)
+			amounts, err := payment.ParseAmounts(cfg.Web.DonationAmounts)
 			if err != nil {
-				return nil, fmt.Errorf("PAYPAL_PLANS: %w", err)
+				return nil, fmt.Errorf("DONATION_AMOUNTS: %w", err)
 			}
 			ledger, err := payment.OpenLedger(cfg.Web.PaymentsFile)
 			if err != nil {
@@ -410,12 +410,12 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			}
 			checkout = &web.Checkout{
 				Client:   payment.NewClient(cfg.Web.PayPalClientID, cfg.Web.PayPalSecret, cfg.Web.PayPalLive),
-				Plans:    plans,
+				Amounts:  amounts,
 				Currency: cfg.Web.PayPalCurrency,
 				Ledger:   ledger,
 				Live:     cfg.Web.PayPalLive,
 			}
-			slog.Info("paypal checkout enabled", slog.Bool("live", cfg.Web.PayPalLive), slog.Int("plans", len(plans)), slog.String("currency", cfg.Web.PayPalCurrency))
+			slog.Info("paypal donations enabled", slog.Bool("live", cfg.Web.PayPalLive), slog.Any("amounts", amounts), slog.String("currency", cfg.Web.PayPalCurrency))
 		}
 		var admins []snowflake.ID
 		for _, a := range cfg.Web.Admins {
@@ -426,8 +426,8 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 			}
 		}
 		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins,
-			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL, PriceLabel: cfg.Web.PriceLabel,
-			Checkout: checkout}, backend, subs)
+			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL,
+			Checkout: checkout, SubscriptionRequired: cfg.Web.SubscriptionRequired}, backend, subs)
 		if err != nil {
 			return nil, fmt.Errorf("web site: %w", err)
 		}

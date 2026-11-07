@@ -77,6 +77,41 @@ func TestRoleSetupStatus(t *testing.T) {
 	}
 }
 
+// A role created next to the bot's role shares its position: Discord ranks the
+// older role (the bot's, lower ID) higher, so the new role is manageable.
+func TestRoleSetupStatusEqualPosition(t *testing.T) {
+	m, _ := setupService(t)
+	caches := m.ownerClient.Caches
+	caches.AddRole(discord.Role{ID: 950, GuildID: 10, Name: "Squad Lead", Position: 5}) // newer than Bot (902)
+	caches.AddRole(discord.Role{ID: 800, GuildID: 10, Name: "Healer", Position: 5})     // older than Bot
+	byName := map[string]RoleSetup{}
+	for _, r := range m.RoleSetupStatus(10) {
+		byName[r.Name] = r
+	}
+	if r := byName["Squad Lead"]; r.ID != 950 || r.AboveBot {
+		t.Errorf("newer role at the bot's position must stay below it: %+v", r)
+	}
+	if r := byName["Healer"]; r.ID != 800 || !r.AboveBot {
+		t.Errorf("older role at the bot's position ranks above it: %+v", r)
+	}
+}
+
+func TestRoleAbove(t *testing.T) {
+	for _, c := range []struct {
+		a, b discord.Role
+		want bool
+	}{
+		{discord.Role{ID: 2, Position: 3}, discord.Role{ID: 1, Position: 2}, true},
+		{discord.Role{ID: 1, Position: 2}, discord.Role{ID: 2, Position: 3}, false},
+		{discord.Role{ID: 1, Position: 1}, discord.Role{ID: 2, Position: 1}, true},
+		{discord.Role{ID: 2, Position: 1}, discord.Role{ID: 1, Position: 1}, false},
+	} {
+		if got := roleAbove(c.a, c.b); got != c.want {
+			t.Errorf("roleAbove(%+v, %+v) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
 func TestCreateMissingRoles(t *testing.T) {
 	m, rr := setupService(t)
 	rep, err := m.CreateMissingRoles(context.Background(), 10)

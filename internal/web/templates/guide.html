@@ -1,0 +1,123 @@
+{{/* Step-by-step installation guide. Screenshots live in static/guide (taken
+     on a test server, personal details pixelated). Motion: CSS only, started
+     by static/guide.js when a block scrolls into view; without script or with
+     prefers-reduced-motion every block shows its final state. Spot and cursor
+     positions are classes (the CSP forbids inline styles). */}}
+
+{{define "shot"}}<figure class="shot reveal{{if .Wide}} wide{{end}}">
+  <div class="shot-frame"><span class="spot-box">
+    <img src="/static/guide/{{.Src}}.jpg" alt="{{.Alt}}" width="{{.W}}" height="{{.H}}" loading="lazy" decoding="async">
+    {{if .Spot}}<span class="spot at-{{.Spot}}" aria-hidden="true"></span>
+    <svg class="g-cursor at-{{.Spot}}" viewBox="0 0 14 20" aria-hidden="true">{{template "cursor"}}</svg>{{end}}
+  </span></div>
+  {{if .Cap}}<figcaption>{{.Cap}}</figcaption>{{end}}
+</figure>{{end}}
+
+{{template "head" .}}
+<div class="g-progress" aria-hidden="true"><span id="g-bar"></span></div>
+
+<section class="card g-hero reveal">
+  <div class="hero-grid">
+    <div>
+      <p class="g-kicker">{{t "guide.kicker"}}</p>
+      <h1>{{t "guide.title"}}</h1>
+      <p>{{t "guide.lead"}}</p>
+      <p><a class="button" href="/login">{{t "guide.start"}}</a></p>
+      <p class="muted">{{t "guide.shots"}}</p>
+    </div>
+    {{template "scene-raid" .}}
+  </div>
+</section>
+
+<nav class="g-toc" aria-label="{{t "guide.toc"}}">
+  <a href="#s1" data-step="s1"><span class="num">1</span>{{t "guide.s1.title"}}</a>
+  <a href="#s2" data-step="s2"><span class="num">2</span>{{t "guide.s2.title"}}</a>
+  <a href="#s3" data-step="s3"><span class="num">3</span>{{t "guide.s3.title"}}</a>
+  <a href="#s4" data-step="s4"><span class="num">4</span>{{t "guide.s4.title"}}</a>
+  <a href="#s5" data-step="s5"><span class="num">5</span>{{t "guide.s5.title"}}</a>
+  <a href="#s6" data-step="s6"><span class="num">6</span>{{t "guide.s6.title"}}</a>
+  <a href="#s7" data-step="s7"><span class="num">7</span>{{t "guide.s7.title"}}</a>
+</nav>
+
+<ol class="g-steps">
+  <li class="g-step" id="s1">
+    <div class="g-head reveal"><span class="g-num">1</span><h2>{{t "guide.s1.title"}}</h2></div>
+    <p class="reveal">{{t "guide.s1.text"}}</p>
+    {{template "shot" dict "Src" "accueil" "W" 655 "H" 360 "Alt" (t "guide.alt.home") "Spot" "home"}}
+    <p class="reveal">{{t "guide.s1.servers"}}</p>
+    {{template "shot" dict "Src" "serveurs" "W" 525 "H" 360 "Alt" (t "guide.alt.servers") "Spot" "servers"}}
+  </li>
+
+  <li class="g-step" id="s2">
+    <div class="g-head reveal"><span class="g-num">2</span><h2>{{t "guide.s2.title"}}</h2></div>
+    <p class="reveal">{{t "guide.s2.text"}}</p>
+    {{template "shot" dict "Src" "installation" "W" 530 "H" 704 "Alt" (t "guide.alt.install") "Spot" "install"}}
+    <div class="g-seq">
+      {{template "shot" dict "Src" "invitation-1" "W" 310 "H" 445 "Alt" (t "guide.alt.invite1") "Spot" "invite1" "Cap" (t "guide.s2.cont")}}
+      <span class="g-arrow" aria-hidden="true"></span>
+      {{template "shot" dict "Src" "invitation-2" "W" 310 "H" 447 "Alt" (t "guide.alt.invite2") "Spot" "invite2" "Cap" (t "guide.s2.auth")}}
+      <span class="g-arrow" aria-hidden="true"></span>
+      {{template "shot" dict "Src" "invitation-ok" "W" 310 "H" 235 "Alt" (t "guide.alt.inviteok") "Cap" (t "guide.s2.done")}}
+    </div>
+  </li>
+
+  <li class="g-step" id="s3">
+    <div class="g-head reveal"><span class="g-num">3</span><h2>{{t "guide.s3.title"}}</h2></div>
+    <p class="reveal">{{t "guide.s3.text"}}</p>
+    <ol class="g-list reveal">
+      <li>{{t "guide.s3.li1"}}</li>
+      <li>{{t "guide.s3.li2"}}</li>
+      <li>{{t "guide.s3.li3"}}</li>
+    </ol>
+    {{template "shot" dict "Src" "relais" "W" 520 "H" 490 "Alt" (t "guide.alt.relays") "Spot" "relays"}}
+    <p class="g-tip reveal">{{t "guide.s3.tip"}}</p>
+  </li>
+
+  <li class="g-step" id="s4">
+    <div class="g-head reveal"><span class="g-num">4</span><h2>{{t "guide.s4.title"}}</h2></div>
+    <p class="reveal">{{t "guide.s4.text"}}</p>
+    {{template "shot" dict "Src" "roles" "W" 520 "H" 240 "Alt" (t "guide.alt.roles") "Spot" "roles"}}
+    <ul class="g-roles reveal">
+      <li><span class="role-dot d-red"></span><strong>Speaker</strong> {{t "guide.s4.speaker"}}</li>
+      <li><span class="role-dot d-orange"></span><strong>Squad Lead</strong> {{t "guide.s4.squad"}}</li>
+      <li><span class="role-dot d-blue"></span><strong>Listener Access</strong> {{t "guide.s4.access"}}</li>
+    </ul>
+    <p class="g-tip reveal">{{t "guide.s4.order"}}</p>
+    {{template "shot" dict "Src" "ordre-roles" "W" 430 "H" 714 "Alt" (t "guide.alt.order") "Spot" "order"}}
+  </li>
+
+  <li class="g-step" id="s5">
+    <div class="g-head reveal"><span class="g-num">5</span><h2>{{t "guide.s5.title"}}</h2></div>
+    <p class="reveal">{{t "guide.s5.text"}}</p>
+    {{template "shot" dict "Src" "apres-install" "W" 1050 "H" 744 "Alt" (t "guide.alt.after") "Spot" "after" "Wide" true}}
+    <p class="reveal">{{t "guide.s5.give"}}</p>
+    {{template "shot" dict "Src" "donner-speaker" "W" 428 "H" 365 "Alt" (t "guide.alt.give") "Spot" "give"}}
+  </li>
+
+  <li class="g-step" id="s6">
+    <div class="g-head reveal"><span class="g-num">6</span><h2>{{t "guide.s6.title"}}</h2></div>
+    <p class="reveal">{{t "guide.s6.text"}}</p>
+    {{template "shot" dict "Src" "panneau" "W" 1120 "H" 744 "Alt" (t "guide.alt.panel") "Spot" "panel" "Wide" true}}
+    <p class="reveal">{{t "guide.s6.live"}}</p>
+    {{template "shot" dict "Src" "session" "W" 1405 "H" 744 "Alt" (t "guide.alt.session") "Spot" "session" "Wide" true}}
+    <p class="reveal">{{t "guide.s6.return"}}</p>
+    {{template "shot" dict "Src" "retour-chefs" "W" 470 "H" 214 "Alt" (t "guide.alt.return") "Spot" "return"}}
+  </li>
+
+  <li class="g-step" id="s7">
+    <div class="g-head reveal"><span class="g-num">7</span><h2>{{t "guide.s7.title"}}</h2></div>
+    <p class="reveal">{{t "guide.s7.text"}}</p>
+    {{template "shot" dict "Src" "arret" "W" 1170 "H" 254 "Alt" (t "guide.alt.stop") "Wide" true}}
+  </li>
+</ol>
+
+<section class="card reveal">
+  <h2>{{t "guide.extra.title"}}</h2>
+  <p>{{t "guide.extra.text"}}</p>
+  <h2>{{t "guide.uninstall.title"}}</h2>
+  <p>{{t "guide.uninstall.text"}}</p>
+  <p><a class="button" href="/login">{{t "guide.start"}}</a></p>
+</section>
+{{template "donate-section" .}}
+<script src="/static/motion.js"></script>
+{{template "foot" .}}

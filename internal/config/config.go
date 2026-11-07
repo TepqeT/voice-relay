@@ -74,27 +74,26 @@ type WebConfig struct {
 	// SupportURL is where "Contact support" leads. SUPPORT_URL, https only;
 	// empty: the Discord profile of the bot application's owner.
 	SupportURL string
-	// PayPalURL is the PayPal link of the "Pay with PayPal" button.
-	// PAYPAL_URL, https only; empty: no button.
+	// PayPalURL is a donation link (PayPal.me), shown when donations are not
+	// taken on the site. PAYPAL_URL, https only; empty: no link.
 	PayPalURL string
-	// PriceLabel is the price shown next to the button, free text. PRICE_LABEL.
-	PriceLabel string
-	// PayPal Checkout on the site: REST app credentials (PAYPAL_CLIENT_ID,
-	// PAYPAL_CLIENT_SECRET, never logged), PAYPAL_MODE sandbox (default) or
-	// live, PAYPAL_CURRENCY (default EUR) and PAYPAL_PLANS, e.g.
-	// "30d=4.99,365d=39,life=79". Off unless id, secret and plans are set.
-	PayPalClientID string
-	PayPalSecret   string
-	PayPalLive     bool
-	PayPalCurrency string
-	PayPalPlans    string
-	// PaymentsFile records the payments, next to the subscriptions.
+	// Donations on the site (PayPal Checkout): REST app credentials
+	// (PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, never logged), PAYPAL_MODE
+	// sandbox (default) or live, PAYPAL_CURRENCY (default EUR) and
+	// DONATION_AMOUNTS, the amounts offered (default "3,5,10,20"). Off unless
+	// id and secret are set.
+	PayPalClientID  string
+	PayPalSecret    string
+	PayPalLive      bool
+	PayPalCurrency  string
+	DonationAmounts string
+	// PaymentsFile records the donations, next to the subscriptions.
 	PaymentsFile string
 }
 
-// CheckoutEnabled reports whether payments are taken on the site.
+// CheckoutEnabled reports whether donations are taken on the site.
 func (w WebConfig) CheckoutEnabled() bool {
-	return w.PayPalClientID != "" && w.PayPalSecret != "" && w.PayPalPlans != ""
+	return w.PayPalClientID != "" && w.PayPalSecret != ""
 }
 
 // Enabled reports whether the site is fully configured.
@@ -283,12 +282,11 @@ func loadWeb(store string) WebConfig {
 		SubscriptionRequired: parseBool("SUBSCRIPTION_REQUIRED", false),
 		SupportURL:           httpsURL("SUPPORT_URL"),
 		PayPalURL:            httpsURL("PAYPAL_URL"),
-		PriceLabel:           strings.TrimSpace(os.Getenv("PRICE_LABEL")),
 		PayPalClientID:       strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_ID")),
 		PayPalSecret:         strings.TrimSpace(os.Getenv("PAYPAL_CLIENT_SECRET")),
 		PayPalLive:           strings.EqualFold(strings.TrimSpace(os.Getenv("PAYPAL_MODE")), "live"),
 		PayPalCurrency:       strings.ToUpper(envOr("PAYPAL_CURRENCY", "EUR")),
-		PayPalPlans:          strings.TrimSpace(os.Getenv("PAYPAL_PLANS")),
+		DonationAmounts:      envOr("DONATION_AMOUNTS", "3,5,10,20"),
 		PaymentsFile:         filepath.Join(filepath.Dir(store), "payments.jsonl"),
 	}
 	if w.Addr != "" && !w.Enabled() {
