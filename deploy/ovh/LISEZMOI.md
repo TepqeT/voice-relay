@@ -55,7 +55,7 @@ sudo -u voicerelay nano /opt/voice-relay/deploy/ovh/.env
 
 - `SITE_DOMAIN` (sans `https://`), `ACME_EMAIL`, `DISCORD_CLIENT_SECRET` (étape 2).
 - Les tokens : `DISCORD_OWNER_BOT_TOKEN` (bot principal) puis `DISCORD_SPEAKER_BOT_TOKEN_1`, `_2`... (un par bot relais, autant que voulu).
-- Paiement (facultatif) : `PAYPAL_URL` (lien PayPal.me) et `PRICE_LABEL` (texte du prix, par exemple `3 EUR / mois`).
+- Dons (facultatif) : `PAYPAL_URL` (lien PayPal.me du bouton "Faire un don").
 - Copier les valeurs directement d'un fichier à l'autre, sans les coller dans une conversation ni un ticket.
 
 ## 6. Bascule
@@ -86,12 +86,13 @@ sudo -u voicerelay APPLY=true ./mettre-a-jour.sh    # phase 2 : tests, construct
 - Retirer : bouton **Retirer**. Les serveurs restent associés au compte et le bot annonce que l'abonnement a pris fin.
 - Les abonnements et les serveurs activés sont dans `deploy/ovh/data/subscriptions.json` (à sauvegarder avec `data`).
 - Blocage des sessions : désactivé par défaut. Une fois `SUBSCRIPTION_REQUIRED: "true"` activé, un lancement de session sur un serveur non couvert affiche, dans la langue du serveur : pas d'abonnement, abonnement expiré le jj/mm/aaaa, ou abonnement terminé, avec le lien du site. Avant d'activer : t'offrir un abonnement à vie et l'activer sur ton serveur depuis le site.
-- Paiement sur le site (PayPal Checkout) : l'acheteur choisit une formule et paie dans la fenêtre PayPal ouverte depuis le site, avec un compte PayPal ou une carte. L'argent arrive sur le compte PayPal propriétaire de l'application, l'abonnement est activé tout seul et le paiement apparaît dans Administration > Paiements reçus (fichier `data/payments.jsonl`, à sauvegarder).
+- Depuis v62, Voice Relay est gratuit : le site ne vend plus d'abonnement et n'en parle plus tant que `SUBSCRIPTION_REQUIRED` n'est pas à `true`. Les abonnements donnés depuis l'administration restent possibles.
+- Dons sur le site (PayPal Checkout) : le visiteur, connecté ou non, choisit un montant et paie dans la fenêtre PayPal, avec un compte PayPal ou une carte. Un don ne débloque rien. L'argent arrive sur le compte PayPal propriétaire de l'application et le don apparaît dans Administration > Dons reçus (fichier `data/payments.jsonl`, à sauvegarder).
   1. https://developer.paypal.com > Apps & Credentials > Create App (type Merchant). Un compte PayPal Business est nécessaire pour les identifiants Live.
-  2. Dans `.env` : `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE=sandbox`, `PAYPAL_PLANS=30d=4.99,365d=39,life=79` (durée=prix).
-  3. Relancer `mettre-a-jour.sh`, payer avec un compte de test sandbox, vérifier l'abonnement.
+  2. Dans `.env` : `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE=sandbox`. Montants proposés : `DONATION_AMOUNTS` (défaut `3,5,10,20`).
+  3. Relancer `mettre-a-jour.sh`, donner avec un compte de test sandbox, vérifier Administration > Dons reçus.
   4. Passer aux identifiants de l'onglet Live et `PAYPAL_MODE=live`, relancer.
-- Ancien mode (lien `PAYPAL_URL`) : utilisé seulement si le paiement sur le site n'est pas configuré.
+- Sans identifiants PayPal : le lien `PAYPAL_URL` sert de bouton "Faire un don".
 - Support : bouton "Contacter le support" en bas de chaque page, vers ton profil Discord (propriétaire de l'application) ; `SUPPORT_URL` pour un autre lien.
 - Désinstaller : page du serveur > Désinstaller (case à cocher). Arrête la session, supprime les salons, fait partir le bot principal et les bots relais, libère l'abonnement. Les rôles restent.
 

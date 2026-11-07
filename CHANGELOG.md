@@ -2,6 +2,17 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v62
+
+- Voice Relay est gratuit : le site ne vend plus d'abonnement. Dons PayPal à la place (`DONATION_AMOUNTS`, défaut 3,5,10,20), ouverts à tout visiteur, sans contrepartie. Les abonnements ne s'affichent que si `SUBSCRIPTION_REQUIRED=true`. `PRICE_LABEL` et `PAYPAL_PLANS` supprimés.
+- Accueil refondu en univers animé : carte radar du Speaker vers six salons Listener, retour du Squad Lead, avant/après de la cacophonie, chiffres. Tout s'arrête avec "réduire les animations".
+- Guide pas à pas `/guide` (fr, en) avec captures floutées, repères animés et menu d'étapes.
+- Rôles : un rôle créé à la même position que celui du bot n'est plus signalé "au-dessus du bot".
+
+## v44 à v61
+
+- Rôle d'accès automatique, catégorie et panneau privés, rapports effacés au bout de 30 minutes, étapes guidées sur le site, langue du serveur, photos de profil des bots.
+
 ## v43
 
 - Usage générique, sans référence à un jeu : rôles Speaker et Squad Lead, salons Speaker et Listener 1 à N, catégorie "Voice Relay", factions supprimées (`FACTION_NAME`, `FACTION_ROLE`).

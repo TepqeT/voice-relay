@@ -6,19 +6,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
-func TestParsePlans(t *testing.T) {
-	ps, err := ParsePlans(" 30d=4.99 , 365d=39, life=79 ")
-	if err != nil || len(ps) != 3 {
-		t.Fatalf("plans %+v err %v", ps, err)
+func TestParseAmounts(t *testing.T) {
+	as, err := ParseAmounts(" 3 , 5.5, 10,20 ")
+	if err != nil || !reflect.DeepEqual(as, []string{"3.00", "5.50", "10.00", "20.00"}) {
+		t.Fatalf("amounts %v err %v", as, err)
 	}
-	if ps[0].Days != 30 || ps[0].Price != "4.99" || ps[1].Days != 365 || !ps[2].Lifetime() || ps[2].Price != "79.00" {
-		t.Fatalf("plans %+v", ps)
-	}
-	for _, bad := range []string{"30=4", "30d=0", "30d=abc", "30d=4,30d=5", "month=4"} {
-		if _, err := ParsePlans(bad); err == nil {
+	for _, bad := range []string{"", " , ", "0", "0.5", "abc", "5,5.00", "1001", "-3"} {
+		if _, err := ParseAmounts(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
 	}

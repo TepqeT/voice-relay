@@ -45,12 +45,14 @@ type Config struct {
 	// SupportURL is where "Contact support" leads; empty until SetSupportUser
 	// points it at a Discord profile.
 	SupportURL string
-	// PayPalURL is the "Pay with PayPal" link, empty for no button;
-	// PriceLabel the price shown next to it.
-	PayPalURL  string
-	PriceLabel string
-	// Checkout takes payments on the site (PayPal Checkout); nil = off.
+	// PayPalURL is a donation link (PayPal.me) shown when donations are not
+	// taken on the site; empty for none.
+	PayPalURL string
+	// Checkout takes donations on the site (PayPal Checkout); nil = off.
 	Checkout *Checkout
+	// SubscriptionRequired shows the subscription parts of the site (account
+	// card, per-server activation). Off: the relay is free for everyone.
+	SubscriptionRequired bool
 }
 
 // Server is the administration site.
@@ -127,6 +129,7 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	s.mux.HandleFunc("GET /guide", s.handleGuide)
 	s.mux.HandleFunc("GET /lang/{lang}", s.handleLang)
 	s.mux.HandleFunc("GET /login", s.handleLogin)
 	s.mux.HandleFunc("GET /callback", s.handleCallback)
@@ -137,8 +140,8 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 	s.mux.HandleFunc("POST /servers/{id}/activate", s.withSession(s.handleActivate))
 	s.mux.HandleFunc("POST /servers/{id}/deactivate", s.withSession(s.handleDeactivate))
 	s.mux.HandleFunc("POST /servers/{id}/uninstall", s.withSession(s.handleUninstall))
-	s.mux.HandleFunc("POST /pay/order", s.withSession(s.handlePayOrder))
-	s.mux.HandleFunc("POST /pay/capture", s.withSession(s.handlePayCapture))
+	s.mux.HandleFunc("POST /donate/order", s.handleDonateOrder)
+	s.mux.HandleFunc("POST /donate/capture", s.handleDonateCapture)
 	s.mux.HandleFunc("GET /admin", s.withAdmin(s.handleAdmin))
 	s.mux.HandleFunc("POST /admin/grant", s.withAdmin(s.handleGrant))
 	s.mux.HandleFunc("POST /admin/revoke", s.withAdmin(s.handleRevoke))
@@ -326,6 +329,18 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "index.html", map[string]any{"Bot": s.backend.BotName(), "Error": r.URL.Query().Get("erreur")})
 }
 
+// handleGuide shows the step-by-step installation guide, open to everyone;
+// a signed-in visitor keeps the usual header.
+func (s *Server) handleGuide(w http.ResponseWriter, r *http.Request) {
+	data := map[string]any{"Guide": true}
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		if sess, ok := s.sessions.get(c.Value); ok {
+			data["User"], data["CSRF"], data["Admin"] = sess.userName, sess.csrf, s.isAdmin(sess.userID)
+		}
+	}
+	s.render(w, r, "guide.html", data)
+}
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	state := randomToken()
 	// #nosec G124 -- Secure follows the public URL: always on behind HTTPS, off only for local http tests
@@ -464,7 +479,7 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request, sess *ses
 // okKey and errKey read the flash message of a redirect, known keys only.
 func okKey(r *http.Request) string {
 	switch k := r.URL.Query().Get("ok"); k {
-	case "activated", "deactivated", "uninstalled", "uninstalled_partial", "paid":
+	case "activated", "deactivated", "uninstalled", "uninstalled_partial":
 		return "ok." + k
 	}
 	return ""
@@ -622,9 +637,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, dat
 	data["Other"] = map[string]string{"fr": "en", "en": "fr"}[lang]
 	data["Support"] = s.supportURL()
 	data["PayPal"] = s.cfg.PayPalURL
-	data["Price"] = s.cfg.PriceLabel
+	data["SubRequired"] = s.cfg.SubscriptionRequired
 	if s.checkoutOn() {
-		data["Plans"] = s.planViews(lang)
+		data["Donate"] = s.amountViews(lang)
 		data["PayClientID"] = s.cfg.Checkout.Client.ClientID
 		data["PayCurrency"] = s.cfg.Checkout.Currency
 	}
@@ -672,6 +687,8 @@ func returnPath(r *http.Request) string {
 		return "/servers"
 	case "/admin":
 		return "/admin"
+	case "/guide":
+		return "/guide"
 	}
 	if rest, ok := strings.CutPrefix(ref.Path, "/servers/"); ok {
 		if id, err := snowflake.Parse(rest); err == nil {

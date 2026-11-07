@@ -10,31 +10,36 @@ import (
 	"github.com/TepqeT/voice-relay/internal/journal"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
-
-	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/TepqeT/voice-relay/internal/payment"
 )
 
-// Checkout: the buyer chooses a plan on the site and pays in the PayPal
-// window (PayPal account or card); the server creates and captures the order
-// and credits the subscription at once. Money goes to the PayPal account of
-// the API credentials.
+// Donations: Voice Relay is free; whoever wants to support it picks an amount
+// on the site and pays in the PayPal window (PayPal account or card). The
+// server creates and captures the order and writes it down in the ledger.
+// Money goes to the PayPal account of the API credentials. Signing in is not
+// needed: a donation buys nothing, so the only guard is the same-origin check
+// against forged requests.
 
-// Checkout configures payments on the site; nil Client disables them.
+// Checkout configures donations on the site; nil Client disables them.
 type Checkout struct {
 	Client   *payment.Client
-	Plans    []payment.Plan
-	Currency string // "EUR"
+	Amounts  []string // donation amounts offered, normalized ("5.00")
+	Currency string   // "EUR"
 	Ledger   *payment.Ledger
 	Live     bool // production PayPal (else sandbox)
 }
 
+// donationCustom marks the orders of this site in PayPal (custom_id).
+const donationCustom = "donation"
+
 func (s *Server) checkoutOn() bool {
 	c := s.cfg.Checkout
-	return c != nil && c.Client != nil && len(c.Plans) > 0 && c.Ledger != nil
+	return c != nil && c.Client != nil && len(c.Amounts) > 0 && c.Ledger != nil
 }
 
 type nonceKey struct{}
@@ -47,7 +52,7 @@ func newNonce() string {
 }
 
 // csp is the Content-Security-Policy; PayPal's script, frames and calls are
-// allowed only when payments are on, the script tag carrying nonce.
+// allowed only when donations are on, the script tag carrying nonce.
 func (s *Server) csp(nonce string) string {
 	if !s.checkoutOn() {
 		return "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https://cdn.discordapp.com; form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'"
@@ -61,41 +66,27 @@ func (s *Server) csp(nonce string) string {
 		"form-action 'self' https://discord.com; base-uri 'none'; frame-ancestors 'none'"
 }
 
-// planView is a plan as shown on the site.
-type planView struct {
-	ID, Label, Price string
+// amountView is a donation amount as shown on the site.
+type amountView struct {
+	Value, Label string
 }
 
-func (s *Server) planViews(lang string) []planView {
+func (s *Server) amountViews(lang string) []amountView {
 	if !s.checkoutOn() {
 		return nil
 	}
 	c := s.cfg.Checkout
-	out := make([]planView, 0, len(c.Plans))
-	for _, p := range c.Plans {
-		out = append(out, planView{ID: p.ID, Label: planLabel(lang, p), Price: priceLabel(lang, p.Price, c.Currency)})
+	out := make([]amountView, 0, len(c.Amounts))
+	for _, a := range c.Amounts {
+		out = append(out, amountView{Value: a, Label: priceLabel(lang, a, c.Currency)})
 	}
 	return out
 }
 
-func planLabel(lang string, p payment.Plan) string {
-	t := tr(lang)
-	switch {
-	case p.Lifetime():
-		return t("pay.plan.life")
-	case p.Days == 365:
-		return t("pay.plan.year")
-	case p.Days%365 == 0:
-		return t("pay.plan.years", p.Days/365)
-	case p.Days == 30:
-		return t("pay.plan.month")
-	case p.Days%30 == 0:
-		return t("pay.plan.months", p.Days/30)
-	}
-	return t("pay.plan.days", p.Days)
-}
-
+// priceLabel shows an amount the way lang writes it; whole amounts lose
+// their cents ("5 €", "5,50 €").
 func priceLabel(lang, price, currency string) string {
+	price = strings.TrimSuffix(price, ".00")
 	sym := map[string]string{"EUR": "€", "USD": "$", "GBP": "£"}[currency]
 	if sym == "" {
 		sym = currency
@@ -109,15 +100,6 @@ func priceLabel(lang, price, currency string) string {
 	return sym + price
 }
 
-func (s *Server) plan(id string) (payment.Plan, bool) {
-	for _, p := range s.cfg.Checkout.Plans {
-		if p.ID == id {
-			return p, true
-		}
-	}
-	return payment.Plan{}, false
-}
-
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -125,44 +107,76 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// handlePayOrder creates the PayPal order of the chosen plan.
-func (s *Server) handlePayOrder(w http.ResponseWriter, r *http.Request, sess *session) {
-	lang := langFor(r)
-	if !s.checkoutOn() {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": tr(lang)("pay.err.off")})
+// sameOrigin refuses requests sent by another site: the browser's Origin
+// header (or, without it, Sec-Fetch-Site) must name this site.
+func sameOrigin(r *http.Request) bool {
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		return err == nil && u.Host == r.Host
+	}
+	return r.Header.Get("Sec-Fetch-Site") == "same-origin"
+}
+
+// donor is the signed-in visitor, if any: user ID and name, else zero.
+func (s *Server) donor(r *http.Request) (string, string) {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		if sess, ok := s.sessions.get(c.Value); ok {
+			return sess.userID.String(), sess.userName
+		}
+	}
+	return "", ""
+}
+
+// donationGuard answers the refusals common to both donation steps; false
+// means the request was answered.
+func (s *Server) donationGuard(w http.ResponseWriter, r *http.Request) bool {
+	t := tr(langFor(r))
+	switch {
+	case !s.checkoutOn():
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": t("pay.err.off")})
+	case !sameOrigin(r):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": t("forbidden.csrf")})
+	default:
+		return true
+	}
+	return false
+}
+
+// handleDonateOrder creates the PayPal order of the chosen amount.
+func (s *Server) handleDonateOrder(w http.ResponseWriter, r *http.Request) {
+	if !s.donationGuard(w, r) {
 		return
 	}
-	p, ok := s.plan(r.PostFormValue("plan"))
-	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": tr(lang)("pay.err.plan")})
+	t := tr(langFor(r))
+	amount := r.PostFormValue("amount")
+	if !slices.Contains(s.cfg.Checkout.Amounts, amount) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": t("pay.err.amount")})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	id, err := s.cfg.Checkout.Client.CreateOrder(ctx, payment.Order{
-		Amount:      p.Price,
+		Amount:      amount,
 		Currency:    s.cfg.Checkout.Currency,
-		Description: "Voice Relay, " + planLabel(lang, p),
-		CustomID:    sess.userID.String() + ":" + p.ID,
+		Description: "Voice Relay, " + t("donate.item"),
+		CustomID:    donationCustom,
 	})
 	if err != nil {
-		journal.Record(journal.Event{UserID: sess.userID, Level: journal.Problem, Kind: "payment_order_failed", Detail: err.Error()})
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": tr(lang)("pay.err.paypal")})
+		journal.Record(journal.Event{Level: journal.Problem, Kind: "donation_order_failed", Detail: err.Error()})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": t("pay.err.paypal")})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id})
 }
 
-// handlePayCapture takes the money of an approved order and credits the
-// subscription of the signed-in account. The amount, currency and account
-// are checked against what PayPal reports, and each order counts once.
-func (s *Server) handlePayCapture(w http.ResponseWriter, r *http.Request, sess *session) {
-	lang := langFor(r)
-	t := tr(lang)
-	if !s.checkoutOn() {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": t("pay.err.off")})
+// handleDonateCapture takes the money of an approved order and writes the
+// donation down. Status, amount, currency and origin are checked against what
+// PayPal reports, and each order counts once.
+func (s *Server) handleDonateCapture(w http.ResponseWriter, r *http.Request) {
+	if !s.donationGuard(w, r) {
 		return
 	}
+	t := tr(langFor(r))
 	orderID := strings.TrimSpace(r.PostFormValue("order"))
 	if orderID == "" || s.cfg.Checkout.Ledger.Seen(orderID) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": t("pay.err.done")})
@@ -172,53 +186,42 @@ func (s *Server) handlePayCapture(w http.ResponseWriter, r *http.Request, sess *
 	defer cancel()
 	cp, err := s.cfg.Checkout.Client.CaptureOrder(ctx, orderID)
 	if err != nil {
-		journal.Record(journal.Event{UserID: sess.userID, Level: journal.Problem, Kind: "payment_capture_failed", Detail: "order " + orderID + ": " + err.Error()})
+		journal.Record(journal.Event{Level: journal.Problem, Kind: "donation_capture_failed", Detail: "order " + orderID + ": " + err.Error()})
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": t("pay.err.paypal")})
 		return
 	}
-	userPart, planID, _ := strings.Cut(cp.CustomID, ":")
-	buyer, _ := snowflake.Parse(userPart)
-	p, ok := s.plan(planID)
-	if err := checkCapture(cp, ok, p, s.cfg.Checkout.Currency, buyer, sess.userID); err != nil {
-		slog.Error("web: paypal capture not credited", slog.String("by", sess.userID.String()), slog.String("order", orderID),
+	if err := checkDonation(cp, s.cfg.Checkout.Amounts, s.cfg.Checkout.Currency); err != nil {
+		slog.Error("web: paypal capture not recorded as a donation", slog.String("order", orderID),
 			slog.String("status", cp.Status), slog.String("amount", cp.Amount+" "+cp.Currency), slog.String("custom", cp.CustomID), slog.Any("err", err))
 		writeJSON(w, http.StatusPaymentRequired, map[string]string{"error": t("pay.err.check")})
 		return
 	}
+	userID, userName := s.donor(r)
 	fresh, err := s.cfg.Checkout.Ledger.Record(payment.Entry{
-		At: s.subs.Now().UTC(), UserID: sess.userID.String(), UserName: sess.userName, Plan: p.ID,
+		At: s.subs.Now().UTC(), UserID: userID, UserName: userName, Plan: donationCustom,
 		Amount: cp.Amount, Currency: cp.Currency, OrderID: orderID, CaptureID: cp.CaptureID, Payer: cp.Payer,
 	})
 	if err != nil {
-		// Paid but not written down: say so loudly, the admin credits by hand.
-		slog.Error("web: payment received but not recorded", slog.String("order", orderID), slog.String("capture", cp.CaptureID), slog.Any("err", err))
+		// Received but not written down: the money is there, only the ledger misses it.
+		slog.Error("web: donation received but not recorded", slog.String("order", orderID), slog.String("capture", cp.CaptureID), slog.Any("err", err))
 	}
 	if !fresh && err == nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": t("pay.err.done")})
 		return
 	}
-	if _, err := s.subs.Extend(sess.userID, sess.userName, p.Days, "PayPal "+cp.CaptureID); err != nil {
-		slog.Error("web: payment received, subscription not credited", slog.String("order", orderID), slog.String("user", sess.userID.String()), slog.Any("err", err))
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": t("pay.err.activate")})
-		return
-	}
-	slog.Info("web: payment received", slog.String("user", sess.userID.String()), slog.String("plan", p.ID),
-		slog.String("amount", cp.Amount+" "+cp.Currency), slog.String("capture", cp.CaptureID))
-	writeJSON(w, http.StatusOK, map[string]string{"redirect": "/servers?ok=paid"})
+	slog.Info("web: donation received", slog.String("amount", cp.Amount+" "+cp.Currency), slog.String("capture", cp.CaptureID))
+	writeJSON(w, http.StatusOK, map[string]string{"thanks": t("donate.thanks")})
 }
 
-// checkCapture refuses a capture that is not exactly what the site sold to
-// this account.
-func checkCapture(cp payment.Capture, planOK bool, p payment.Plan, currency string, buyer, user snowflake.ID) error {
+// checkDonation refuses a capture that is not one of this site's donations.
+func checkDonation(cp payment.Capture, amounts []string, currency string) error {
 	switch {
 	case cp.Status != "COMPLETED":
 		return fmt.Errorf("status %s", cp.Status)
-	case !planOK:
-		return errors.New("unknown plan")
-	case buyer != user:
-		return errors.New("order made for another account")
-	case cp.Currency != currency || cp.Amount != p.Price:
-		return errors.New("amount differs from the plan")
+	case cp.CustomID != donationCustom:
+		return errors.New("not a donation of this site")
+	case cp.Currency != currency || !slices.Contains(amounts, cp.Amount):
+		return errors.New("amount differs from the offered ones")
 	}
 	return nil
 }

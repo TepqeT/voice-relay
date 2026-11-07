@@ -1,32 +1,60 @@
 {{template "head" .}}
-<section class="card hero">
-  <div class="hero-grid">
-    <div>
-      <img src="/static/logo.svg" alt="" class="hero-logo" width="64" height="64">
+<section class="u-hero">
+  <div class="u-stars" aria-hidden="true"></div>
+  <div class="u-grid">
+    <div class="u-copy">
+      <p class="u-kicker"><span class="live-dot" aria-hidden="true"></span>{{t "index.kicker"}}</p>
       <h1>{{t "index.h1"}}</h1>
-      <p>{{t "index.lead"}}</p>
+      <p class="u-lead">{{t "index.lead"}}</p>
       {{if eq .Error "session"}}<p class="bad">{{t "err.session"}}</p>{{end}}
       {{if eq .Error "refus"}}<p class="bad">{{t "err.refus"}}</p>{{end}}
       {{if eq .Error "discord"}}<p class="bad">{{t "err.discord"}}</p>{{end}}
-      <p><a class="button" href="/login">{{t "index.login"}}</a></p>
-      <p class="muted">{{t "index.privacy"}}</p>
+      <p class="u-cta"><a class="button glow" href="/login">{{t "index.login"}}</a> <a class="button ghost light" href="/guide">{{t "index.guide"}}</a></p>
+      <p class="u-free"><span class="tag free">{{t "index.free"}}</span> {{t "index.privacy"}}</p>
     </div>
-    {{template "scene-raid" .}}
+    <div class="u-map">{{template "scene-command" .}}</div>
   </div>
 </section>
 
-<h2>{{t "index.how"}}</h2>
+<section class="u-vs reveal">
+  <h2>{{t "vs.h2"}}</h2>
+  <div class="vs-grid">
+    <div class="vs-card before">{{template "scene-chaos" .}}<h3>{{t "vs.before.title"}}</h3><p>{{t "vs.before.text"}}</p></div>
+    <div class="vs-arrow" aria-hidden="true"></div>
+    <div class="vs-card after">{{template "scene-order" .}}<h3>{{t "vs.after.title"}}</h3><p>{{t "vs.after.text"}}</p></div>
+  </div>
+</section>
+
+<section class="u-stats reveal" aria-label="{{t "stats.aria"}}">
+  <div class="stat"><span class="count" data-to="11">11</span><span class="stat-l">{{t "stats.l1"}}</span></div>
+  <div class="stat"><span class="count" data-to="12">12</span><span class="stat-l">{{t "stats.l2"}}</span></div>
+  <div class="stat"><span class="count" data-to="1">1</span><span class="stat-l">{{t "stats.l3"}}</span></div>
+  <div class="stat"><span class="count" data-to="0">0</span><span class="stat-l">{{t "stats.l4"}}</span></div>
+</section>
+
+<h2 class="reveal">{{t "index.how"}}</h2>
 <div class="steps">
-  <div class="step">{{template "scene-login" .}}<h3><span class="num">1</span>{{t "step1.title"}}</h3><p>{{t "step1.text"}}</p></div>
-  <div class="step">{{template "scene-invite" .}}<h3><span class="num">2</span>{{t "step2.title"}}</h3><p>{{t "step2.text" .Bot}}</p></div>
-  <div class="step">{{template "scene-roles" .}}<h3><span class="num">3</span>{{t "step3.title"}}</h3><p>{{t "step3.text"}}</p></div>
-  <div class="step">{{template "scene-assign" .}}<h3><span class="num">4</span>{{t "step4.title"}}</h3><p>{{t "step4.text"}}</p></div>
+  <div class="step reveal">{{template "scene-login" .}}<h3><span class="num">1</span>{{t "step1.title"}}</h3><p>{{t "step1.text"}}</p></div>
+  <div class="step reveal">{{template "scene-invite" .}}<h3><span class="num">2</span>{{t "step2.title"}}</h3><p>{{t "step2.text" .Bot}}</p></div>
+  <div class="step reveal">{{template "scene-roles" .}}<h3><span class="num">3</span>{{t "step3.title"}}</h3><p>{{t "step3.text"}}</p></div>
+  <div class="step reveal">{{template "scene-assign" .}}<h3><span class="num">4</span>{{t "step4.title"}}</h3><p>{{t "step4.text"}}</p></div>
 </div>
-<h2>{{t "uses.h2"}}</h2>
+<p class="reveal center"><a class="button ghost" href="/guide">{{t "index.guide.more"}}</a></p>
+
+<h2 class="reveal">{{t "uses.h2"}}</h2>
 <div class="uses">
-  <div class="use card"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="stroke" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg><h3>{{t "uses.raid.title"}}</h3><p>{{t "uses.raid.text"}}</p></div>
-  <div class="use card"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="stroke" d="M4 4l10 10M20 4L10 14M6.5 15.5l2 2M17.5 15.5l-2 2M4.5 19.5l3-3M19.5 19.5l-3-3"/></svg><h3>{{t "uses.pvp.title"}}</h3><p>{{t "uses.pvp.text"}}</p></div>
-  <div class="use card"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5zM10.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5z"/></svg><h3>{{t "uses.meet.title"}}</h3><p>{{t "uses.meet.text"}}</p></div>
-  <div class="use card"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path class="stroke" d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0"/></svg><h3>{{t "uses.private.title"}}</h3><p>{{t "uses.private.text"}}</p></div>
+  <div class="use card reveal"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="stroke" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg><h3>{{t "uses.raid.title"}}</h3><p>{{t "uses.raid.text"}}</p></div>
+  <div class="use card reveal"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="stroke" d="M4 4l10 10M20 4L10 14M6.5 15.5l2 2M17.5 15.5l-2 2M4.5 19.5l3-3M19.5 19.5l-3-3"/></svg><h3>{{t "uses.pvp.title"}}</h3><p>{{t "uses.pvp.text"}}</p></div>
+  <div class="use card reveal"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5zM10.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5z"/></svg><h3>{{t "uses.meet.title"}}</h3><p>{{t "uses.meet.text"}}</p></div>
+  <div class="use card reveal"><svg class="use-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path class="stroke" d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0"/></svg><h3>{{t "uses.private.title"}}</h3><p>{{t "uses.private.text"}}</p></div>
 </div>
+
+<section class="u-final reveal">
+  <h2>{{t "cta.h2"}}</h2>
+  <p>{{t "cta.text"}}</p>
+  <p><a class="button glow" href="/login">{{t "index.login"}}</a></p>
+</section>
+
+{{template "donate-section" .}}
+<script src="/static/motion.js"></script>
 {{template "foot" .}}
