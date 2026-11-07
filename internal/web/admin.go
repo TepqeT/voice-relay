@@ -89,6 +89,7 @@ func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, sess *sessi
 		"Accounts": len(rows), "Servers": servers, "Flagged": flagged,
 		"Tomorrow": time.Now().AddDate(0, 0, 1).Format("2006-01-02"),
 		"Payments": s.recentPayments(),
+		"Stats":    s.statRows(),
 		"Journal":  journal.Recent(60, false),
 	})
 }

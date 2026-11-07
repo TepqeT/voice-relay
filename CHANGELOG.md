@@ -2,6 +2,10 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v63
+
+- Fréquentation sur la page d'administration : visiteurs par jour (sans adresse conservée), pages d'accueil et guide vues, clics sur Se connecter, connexions réussies ou refusées, listes de serveurs, installations, désinstallations, dons. Compteurs dans `data/stats.json`, 400 jours gardés.
+
 ## v62
 
 - Voice Relay est gratuit : le site ne vend plus d'abonnement. Dons PayPal à la place (`DONATION_AMOUNTS`, défaut 3,5,10,20), ouverts à tout visiteur, sans contrepartie. Les abonnements ne s'affichent que si `SUBSCRIPTION_REQUIRED=true`. `PRICE_LABEL` et `PAYPAL_PLANS` supprimés.

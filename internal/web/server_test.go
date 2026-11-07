@@ -976,3 +976,29 @@ func TestGuildPageOnboardingGuide(t *testing.T) {
 		t.Fatal("the test step must come after the onboarding step")
 	}
 }
+
+func TestAdminShowsTraffic(t *testing.T) {
+	site, be, c := newTestSite(t)
+	be.srv.AddAdmins(7)
+	get(t, c, site.URL+"/")
+	get(t, c, site.URL+"/")
+	get(t, c, site.URL+"/guide")
+	signIn(t, site, c, "good")
+	get(t, c, site.URL+"/servers")
+	code, page := get(t, c, site.URL+"/admin")
+	if code != http.StatusOK {
+		t.Fatalf("/admin = %d", code)
+	}
+	if !strings.Contains(page, "Fréquentation") {
+		t.Fatal("traffic section missing")
+	}
+	for key, want := range map[string]int{"visitors": 1, "home": 2, "guide": 1, "login": 1, "signin": 1, "signin_failed": 0, "servers": 1, "setup": 0, "donation": 0} {
+		if got := be.srv.stats.Totals(key).Today; got != want {
+			t.Errorf("%s today = %d, want %d", key, got, want)
+		}
+	}
+	row := regexp.MustCompile(`(?s)Visiteurs</th><td>(\d+)</td><td>(\d+)</td><td>(\d+)</td><td>(\d+)</td>`).FindStringSubmatch(page)
+	if row == nil || row[1] != "1" || row[4] != "1" {
+		t.Fatalf("visitors row = %v", row)
+	}
+}

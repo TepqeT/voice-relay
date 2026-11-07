@@ -210,6 +210,7 @@ func (s *Server) handleDonateCapture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("web: donation received", slog.String("amount", cp.Amount+" "+cp.Currency), slog.String("capture", cp.CaptureID))
+	s.stats.Count(statDonation)
 	writeJSON(w, http.StatusOK, map[string]string{"thanks": t("donate.thanks")})
 }
 
