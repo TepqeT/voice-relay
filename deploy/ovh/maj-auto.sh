@@ -30,7 +30,10 @@ mkdir -p "$LOG_DIR"
 
 if [ "$INSTALLER" = "true" ]; then
 	ligne="$INTERVALLE $OVH/maj-auto.sh >> $LOG 2>&1"
-	( crontab -l 2>/dev/null | grep -v "maj-auto.sh" ; echo "$ligne" ) | crontab -
+	# Sans crontab existant, crontab -l et grep echouent : ce n'est pas une erreur.
+	actuel="$(crontab -l 2>/dev/null || true)"
+	reste="$(printf '%s\n' "$actuel" | grep -v "maj-auto.sh" || true)"
+	printf '%s\n%s\n' "$reste" "$ligne" | sed '/^$/d' | crontab -
 	echo "Cron installe pour $(id -un) :"
 	crontab -l
 	exit 0
