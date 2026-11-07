@@ -2,6 +2,10 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v64
+
+- Mise à jour automatique sur la VM : `deploy/ovh/maj-auto.sh` en cron toutes les 30 minutes (compte `voicerelay`), lance `mettre-a-jour.sh` quand `origin/main` a avancé, jamais pendant une session. Installation : `sudo -u voicerelay INSTALLER=true /opt/voice-relay/deploy/ovh/maj-auto.sh`.
+
 ## v63
 
 - Fréquentation sur la page d'administration : visiteurs par jour (sans adresse conservée), pages d'accueil et guide vues, clics sur Se connecter, connexions réussies ou refusées, listes de serveurs, installations, désinstallations, dons. Compteurs dans `data/stats.json`, 400 jours gardés.

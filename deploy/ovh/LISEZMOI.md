@@ -104,6 +104,14 @@ cd /opt/voice-relay/deploy/ovh && sudo -u voicerelay APPLY=true ./mettre-a-jour.
 
 Le script récupère `main`, lance les tests, reconstruit et redémarre. À faire hors session.
 
+### Mise à jour automatique (cron)
+
+```
+sudo -u voicerelay INSTALLER=true /opt/voice-relay/deploy/ovh/maj-auto.sh
+```
+
+Toutes les 30 minutes, `maj-auto.sh` compare le dépôt à `origin/main` : s'il y a du nouveau, il lance `mettre-a-jour.sh` (tests, construction, redémarrage), sauf pendant une session vocale (il réessaie au passage suivant). Journal dans `deploy/ovh/logs/maj-auto.log`. Retrait : `sudo -u voicerelay crontab -r`.
+
 ## Sauvegarde
 
 À sauvegarder : `deploy/ovh/data` et `.env`. Le reste se reconstruit depuis le dépôt.
