@@ -427,7 +427,8 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		}
 		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins,
 			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL,
-			Checkout: checkout, SubscriptionRequired: cfg.Web.SubscriptionRequired}, backend, subs)
+			Checkout: checkout, SubscriptionRequired: cfg.Web.SubscriptionRequired,
+			StatsFile: filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "stats.json")}, backend, subs)
 		if err != nil {
 			return nil, fmt.Errorf("web site: %w", err)
 		}

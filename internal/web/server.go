@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/TepqeT/voice-relay/internal/journal"
 	"github.com/TepqeT/voice-relay/internal/ratelimit"
+	"github.com/TepqeT/voice-relay/internal/stats"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -53,6 +54,9 @@ type Config struct {
 	// SubscriptionRequired shows the subscription parts of the site (account
 	// card, per-server activation). Off: the relay is free for everyone.
 	SubscriptionRequired bool
+	// StatsFile keeps the site's daily counters (data/stats.json); "" keeps
+	// them in memory.
+	StatsFile string
 }
 
 // Server is the administration site.
@@ -65,6 +69,7 @@ type Server struct {
 	secure   bool                          // cookies marked Secure (HTTPS base URL)
 	mux      *http.ServeMux
 	subs     *subscription.Store
+	stats    *stats.Store
 	admins   atomic.Pointer[map[snowflake.ID]bool]
 	support  atomic.Pointer[string]
 	// Request limits per visitor (IP address): pages and files, then the
@@ -123,6 +128,7 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 		actionLimit: ratelimit.New(time.Second, 6),
 		mux:         http.NewServeMux(),
 		subs:        subs,
+		stats:       stats.Open(cfg.StatsFile),
 	}
 	s.AddAdmins(cfg.Admins...)
 	static, _ := fs.Sub(assets, "static")
@@ -326,12 +332,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.stats.Visit(statHome, clientIP(r))
 	s.render(w, r, "index.html", map[string]any{"Bot": s.backend.BotName(), "Error": r.URL.Query().Get("erreur")})
 }
 
 // handleGuide shows the step-by-step installation guide, open to everyone;
 // a signed-in visitor keeps the usual header.
 func (s *Server) handleGuide(w http.ResponseWriter, r *http.Request) {
+	s.stats.Visit(statGuide, clientIP(r))
 	data := map[string]any{"Guide": true}
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		if sess, ok := s.sessions.get(c.Value); ok {
@@ -342,6 +350,7 @@ func (s *Server) handleGuide(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	s.stats.Count(statLogin)
 	state := randomToken()
 	// #nosec G124 -- Secure follows the public URL: always on behind HTTPS, off only for local http tests
 	http.SetCookie(w, &http.Cookie{
@@ -362,12 +371,14 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if q.Get("error") != "" || q.Get("code") == "" {
 		journal.Record(journal.Event{Kind: "sign_in_refused", Detail: "the user cancelled the Discord authorization (" + q.Get("error") + ")"})
+		s.stats.Count(statSignInFailed)
 		http.Redirect(w, r, "/?erreur=refus", http.StatusSeeOther)
 		return
 	}
 	user, guilds, err := s.oauth.exchange(r.Context(), q.Get("code"))
 	if err != nil {
 		journal.Record(journal.Event{Level: journal.Problem, Kind: "sign_in_failed", Detail: "Discord refused the sign-in (client secret or redirect URL?): " + err.Error()})
+		s.stats.Count(statSignInFailed)
 		http.Redirect(w, r, "/?erreur=discord", http.StatusSeeOther)
 		return
 	}
@@ -385,6 +396,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, Secure: s.secure, SameSite: http.SameSiteLaxMode,
 	})
 	slog.Info("web: sign-in", slog.String("userID", user.ID.String()), slog.Int("managedGuilds", len(managed)))
+	s.stats.Count(statSignIn)
 	http.Redirect(w, r, "/servers", http.StatusSeeOther)
 }
 
@@ -463,6 +475,7 @@ func (s *Server) coverage(lang string, userID, guildID snowflake.ID) coverageVie
 }
 
 func (s *Server) handleServers(w http.ResponseWriter, r *http.Request, sess *session) {
+	s.stats.Visit(statServers, clientIP(r))
 	lang := langFor(r)
 	rows := make([]guildRow, 0, len(sess.guilds))
 	for _, g := range sess.guilds {
@@ -557,6 +570,7 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request, sess *s
 		lvl, detail = journal.Warning, detail+"; could not leave: "+strings.Join(rep.Failed, ", ")
 	}
 	journal.Record(journal.Event{GuildID: g.ID, Guild: g.Name, UserID: sess.userID, Level: lvl, Kind: "uninstalled", Detail: detail})
+	s.stats.Count(statUninstall)
 	if len(rep.Failed) > 0 {
 		http.Redirect(w, r, "/servers?ok=uninstalled_partial", http.StatusSeeOther)
 		return
@@ -615,6 +629,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request, sess *sessi
 	}
 	slog.Info("web: setup", slog.String("guildID", g.ID.String()), slog.String("by", sess.userID.String()),
 		slog.Int("created", len(rep.Created)), slog.Int("failed", len(rep.Failed)))
+	s.stats.Count(statSetup)
 	s.renderGuild(w, r, sess, g, &rep, msg)
 }
 
