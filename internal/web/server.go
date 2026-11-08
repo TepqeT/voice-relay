@@ -67,6 +67,7 @@ type Server struct {
 	sessions *sessionStore
 	tmpls    map[string]*template.Template // by language
 	secure   bool                          // cookies marked Secure (HTTPS base URL)
+	base     string                        // public URL without trailing slash
 	mux      *http.ServeMux
 	subs     *subscription.Store
 	stats    *stats.Store
@@ -124,6 +125,7 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 		sessions:    newSessionStore(),
 		tmpls:       tmpls,
 		secure:      u.Scheme == "https",
+		base:        base,
 		pageLimit:   ratelimit.New(100*time.Millisecond, 60),
 		actionLimit: ratelimit.New(time.Second, 6),
 		mux:         http.NewServeMux(),
@@ -134,6 +136,8 @@ func New(cfg Config, backend Backend, subs *subscription.Store) (*Server, error)
 	static, _ := fs.Sub(assets, "static")
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	s.mux.HandleFunc("GET /robots.txt", s.handleRobots)
+	s.mux.HandleFunc("GET /sitemap.xml", s.handleSitemap)
 	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 	s.mux.HandleFunc("GET /guide", s.handleGuide)
 	s.mux.HandleFunc("GET /lang/{lang}", s.handleLang)
@@ -333,14 +337,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.stats.Visit(statHome, clientIP(r))
-	s.render(w, r, "index.html", map[string]any{"Bot": s.backend.BotName(), "Error": r.URL.Query().Get("erreur")})
+	s.render(w, r, "index.html", map[string]any{"Bot": s.backend.BotName(), "Error": r.URL.Query().Get("erreur"),
+		"Title": "seo.index.title", "Desc": "seo.index.desc", "Canon": "/"})
 }
 
 // handleGuide shows the step-by-step installation guide, open to everyone;
 // a signed-in visitor keeps the usual header.
 func (s *Server) handleGuide(w http.ResponseWriter, r *http.Request) {
 	s.stats.Visit(statGuide, clientIP(r))
-	data := map[string]any{"Guide": true}
+	data := map[string]any{"Guide": true, "Title": "seo.guide.title", "Desc": "seo.guide.desc", "Canon": "/guide"}
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		if sess, ok := s.sessions.get(c.Value); ok {
 			data["User"], data["CSRF"], data["Admin"] = sess.userName, sess.csrf, s.isAdmin(sess.userID)
@@ -649,6 +654,7 @@ func (s *Server) renderGuild(w http.ResponseWriter, r *http.Request, sess *sessi
 func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, data map[string]any) {
 	lang := langFor(r)
 	data["Lang"] = lang
+	data["Base"] = s.base
 	data["Other"] = map[string]string{"fr": "en", "en": "fr"}[lang]
 	data["Support"] = s.supportURL()
 	data["PayPal"] = s.cfg.PayPalURL

@@ -3,8 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{t "title"}}</title>
-<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<title>{{if .Title}}{{t .Title}}{{else}}{{t "title"}}{{end}}</title>
+{{if .Canon}}<meta name="description" content="{{t .Desc}}">
+<link rel="canonical" href="{{.Base}}{{.Canon}}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Voice Relay">
+<meta property="og:title" content="{{t .Title}}">
+<meta property="og:description" content="{{t .Desc}}">
+<meta property="og:url" content="{{.Base}}{{.Canon}}">
+<meta property="og:image" content="{{.Base}}/static/guide/accueil.jpg">
+<meta property="og:locale" content="{{if eq .Lang "fr"}}fr_FR{{else}}en_US{{end}}">
+<meta name="twitter:card" content="summary_large_image">
+{{else}}<meta name="robots" content="noindex">
+{{end}}<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>

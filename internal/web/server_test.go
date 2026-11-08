@@ -329,7 +329,8 @@ func TestNewRejectsRelativeBaseURL(t *testing.T) {
 // hasInlineScript reports a script tag without src, which the CSP blocks.
 func hasInlineScript(body string) bool {
 	for _, tag := range regexp.MustCompile(`<script[^>]*>`).FindAllString(body, -1) {
-		if !strings.Contains(tag, " src=") {
+		// JSON-LD is data, never run: the CSP does not apply to it.
+		if !strings.Contains(tag, " src=") && !strings.Contains(tag, `type="application/ld+json"`) {
 			return true
 		}
 	}
@@ -1000,5 +1001,42 @@ func TestAdminShowsTraffic(t *testing.T) {
 	row := regexp.MustCompile(`(?s)Visiteurs</th><td>(\d+)</td><td>(\d+)</td><td>(\d+)</td><td>(\d+)</td>`).FindStringSubmatch(page)
 	if row == nil || row[1] != "1" || row[4] != "1" {
 		t.Fatalf("visitors row = %v", row)
+	}
+}
+
+func TestSearchEngineMetadata(t *testing.T) {
+	site, _, c := newTestSite(t)
+	_, index := get(t, c, site.URL+"/")
+	for _, want := range []string{
+		`<title>` + html.EscapeString(messages["fr"]["seo.index.title"]) + `</title>`,
+		`<meta name="description" content="` + html.EscapeString(messages["fr"]["seo.index.desc"]) + `">`,
+		`<link rel="canonical" href="http://placeholder/">`,
+		`<meta property="og:title"`, `<meta property="og:image" content="http://placeholder/static/guide/accueil.jpg">`,
+		`<script type="application/ld+json">`, `"@type":"SoftwareApplication"`,
+	} {
+		if !strings.Contains(index, want) {
+			t.Errorf("index misses %s", want)
+		}
+	}
+	if strings.Contains(index, `name="robots"`) {
+		t.Error("index must be indexable")
+	}
+	_, guide := get(t, c, site.URL+"/guide")
+	if !strings.Contains(guide, `<link rel="canonical" href="http://placeholder/guide">`) || strings.Contains(guide, `name="robots"`) {
+		t.Error("guide canonical or robots wrong")
+	}
+	signIn(t, site, c, "good")
+	for _, p := range []string{"/servers", "/servers/111"} {
+		if _, body := get(t, c, site.URL+p); !strings.Contains(body, `<meta name="robots" content="noindex">`) {
+			t.Errorf("%s must be noindex", p)
+		}
+	}
+	code, robots := get(t, c, site.URL+"/robots.txt")
+	if code != http.StatusOK || !strings.Contains(robots, "Disallow: /admin\n") || !strings.Contains(robots, "Sitemap: http://placeholder/sitemap.xml") {
+		t.Fatalf("robots.txt = %d\n%s", code, robots)
+	}
+	code, sitemap := get(t, c, site.URL+"/sitemap.xml")
+	if code != http.StatusOK || !strings.Contains(sitemap, "<loc>http://placeholder/</loc>") || !strings.Contains(sitemap, "<loc>http://placeholder/guide</loc>") || strings.Contains(sitemap, "/servers") {
+		t.Fatalf("sitemap.xml = %d\n%s", code, sitemap)
 	}
 }
