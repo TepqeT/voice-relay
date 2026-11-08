@@ -2,6 +2,10 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v65
+
+- Référencement : titre et description propres à l'accueil et au guide, URL canonique, balises Open Graph et Twitter, JSON-LD (SoftwareApplication) sur l'accueil, `robots.txt` et `sitemap.xml` ; les pages connectées (serveurs, administration) sont en `noindex`.
+
 ## v64
 
 - Mise à jour automatique sur la VM : `deploy/ovh/maj-auto.sh` en cron toutes les 30 minutes (compte `voicerelay`), lance `mettre-a-jour.sh` quand `origin/main` a avancé, jamais pendant une session. Installation : `sudo -u voicerelay INSTALLER=true /opt/voice-relay/deploy/ovh/maj-auto.sh`.
