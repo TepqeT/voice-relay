@@ -89,7 +89,7 @@ func (f *fakePanelRest) UpdateMessage(channelID, messageID snowflake.ID, _ disco
 func newTestKeeper(t *testing.T, file string) (*panelKeeper, *fakePanelRest, cache.Caches) {
 	t.Helper()
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: panelGuild, Name: "Test"})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: panelGuild, Name: "Test"}})
 	fr := &fakePanelRest{t: t, caches: caches}
 	k := newPanelKeeper("raid-panel", fr, caches, func() snowflake.ID { return 1 },
 		func(snowflake.ID) discord.MessageCreate { return discord.MessageCreate{Content: "panel"} }, file)

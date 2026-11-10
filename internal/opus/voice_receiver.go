@@ -176,7 +176,7 @@ type VoiceReceiver struct {
 	// workaround; remove it if/when disgo routes CleanupUser onto the receive
 	// goroutine. Held only around map/cache access — never across CGO decode.
 	//
-	// UPSTREAM(disgo v0.19.3): CleanupUser runs on the gateway goroutine, not the
+	// UPSTREAM(disgo v0.20.0): CleanupUser runs on the gateway goroutine, not the
 	// receive one, so these fields need a mutex they were designed without.
 	cacheMu sync.Mutex
 

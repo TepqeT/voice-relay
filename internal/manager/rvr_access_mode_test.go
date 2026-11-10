@@ -47,7 +47,7 @@ const (
 func accessModeService(t *testing.T) (*Service, *overwriteRest) {
 	t.Helper()
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: amGuild})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: amGuild}})
 	caches.AddRole(discord.Role{ID: amRaidLead, GuildID: amGuild, Name: "Raid Lead"})
 	caches.AddRole(discord.Role{ID: amSquadLead, GuildID: amGuild, Name: "Squad Lead"})
 	caches.AddRole(discord.Role{ID: amAccess, GuildID: amGuild, Name: "Raid Access"})

@@ -40,7 +40,7 @@ func setupService(t *testing.T) (*Service, *roleRest) {
 	t.Helper()
 	const guildID snowflake.ID = 10
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: guildID, Name: "Test"})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: guildID, Name: "Test"}})
 	caches.AddRole(discord.Role{ID: 900, GuildID: guildID, Name: "Raid Lead", Position: 2})
 	caches.AddRole(discord.Role{ID: 901, GuildID: guildID, Name: "Admin", Position: 9})
 	caches.AddRole(discord.Role{ID: 902, GuildID: guildID, Name: "Bot", Position: 5})

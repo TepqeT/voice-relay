@@ -56,7 +56,7 @@ func uninstallService(t *testing.T) uninstallFixture {
 	t.Helper()
 	const guildID snowflake.ID = 10
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: guildID, Name: "Test"})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: guildID, Name: "Test"}})
 	caches.AddMember(discord.Member{GuildID: guildID, User: discord.User{ID: 21, Username: "Voice Relay 1", Bot: true}})
 	caches.AddMember(discord.Member{GuildID: guildID, User: discord.User{ID: 22, Username: "Voice Relay 2", Bot: true}})
 	f := uninstallFixture{owner: &leaveRest{}, h1: &leaveRest{}, h2: &leaveRest{}, h3: &leaveRest{}}

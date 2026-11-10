@@ -13,6 +13,7 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
+	"github.com/disgoorg/omit"
 	"github.com/disgoorg/snowflake/v2"
 
 	"github.com/TepqeT/voice-relay/internal/classsort"
@@ -218,7 +219,7 @@ func (m *Service) SortPlayers(ctx context.Context, guildID snowflake.ID) (SortRe
 }
 
 func (m *Service) moveMember(ctx context.Context, guildID, userID, channelID snowflake.ID) error {
-	_, err := m.ownerClient.Rest.UpdateMember(guildID, userID, discord.MemberUpdate{ChannelID: &channelID},
+	_, err := m.ownerClient.Rest.UpdateMember(guildID, userID, discord.MemberUpdate{ChannelID: omit.New(&channelID)},
 		rest.WithCtx(ctx), rest.WithReason("Voice Relay class sort"))
 	return err
 }

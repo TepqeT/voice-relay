@@ -16,7 +16,7 @@ import (
 func feedbackService(t *testing.T) *Service {
 	t.Helper()
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: 10})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: 10}})
 	caches.AddRole(discord.Role{ID: 900, GuildID: 10, Name: "Speaker"})
 	caches.AddMember(discord.Member{GuildID: 10, User: discord.User{ID: 5}, RoleIDs: []snowflake.ID{900}}) // speaker
 	caches.AddMember(discord.Member{GuildID: 10, User: discord.User{ID: 6}})                               // no role

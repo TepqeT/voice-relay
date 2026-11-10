@@ -90,7 +90,7 @@ func (h *callersHarness) member(userID snowflake.ID, bot bool, roles ...snowflak
 func (h *callersHarness) startup(members []discord.Member, voiceStates []discord.VoiceState) {
 	h.client.Caches.SetGuildUnready(testGuildID, true)
 	h.dispatch(gateway.EventTypeGuildCreate, gateway.EventGuildCreate{GatewayGuild: discord.GatewayGuild{
-		RestGuild:   discord.RestGuild{Guild: discord.Guild{ID: testGuildID}},
+		CacheGuild:  discord.CacheGuild{Guild: discord.Guild{ID: testGuildID}},
 		Members:     members,
 		VoiceStates: voiceStates,
 	}})

@@ -54,7 +54,7 @@ func (r *homeRest) DeleteChannel(id snowflake.ID, _ ...rest.RequestOpt) error {
 func homeService(t *testing.T, dir string) (*Service, *homeRest, cache.Caches) {
 	t.Helper()
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: 10})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: 10}})
 	hr := &homeRest{t: t}
 	m := NewService(store.NewInMemoryStore(), emptyPool{}, &bot.Client{Caches: caches, Rest: hr}, 1, config.TestConfig{}, nil)
 	m.channels.opts = ChannelOptions{Enabled: true, HomeCategory: true, Category: "RvR", StateFile: filepath.Join(dir, "rvr-channels.json")}

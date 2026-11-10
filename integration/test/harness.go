@@ -19,6 +19,7 @@ import (
 	disgobot "github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/gateway"
+	"github.com/disgoorg/omit"
 	"github.com/disgoorg/snowflake/v2"
 	"go.opentelemetry.io/otel/metric/noop"
 )
@@ -148,7 +149,7 @@ func (h *Harness) DisconnectSpeakerVoice(ctx context.Context, guildID, speakerID
 // OnBotVoiceMove → ReconnectBotChannel.
 func (h *Harness) MoveSpeakerVoice(_ context.Context, guildID, speakerID, targetChannelID snowflake.ID) error {
 	_, err := h.Listener.UpdateMember(guildID, speakerID, discord.MemberUpdate{
-		ChannelID: &targetChannelID,
+		ChannelID: omit.New(&targetChannelID),
 	})
 	return err
 }
