@@ -1,10 +1,13 @@
 package bot
 
 import (
+	"log/slog"
+
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/cache"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 )
 
@@ -39,9 +42,15 @@ func ownerCacheOpts(caches *cache.Caches) []cache.ConfigOpt {
 // ownerCacheListeners keep the member cache consistent with ownerCacheOpts.
 func ownerCacheListeners() []bot.EventListener {
 	return []bot.EventListener{
-		bot.NewListenerFunc(func(e *events.GuildReady) { cacheVoiceMembers(e.Client().Caches, e.Guild) }),
-		bot.NewListenerFunc(func(e *events.GuildAvailable) { cacheVoiceMembers(e.Client().Caches, e.Guild) }),
-		bot.NewListenerFunc(func(e *events.GuildJoin) { cacheVoiceMembers(e.Client().Caches, e.Guild) }),
+		bot.NewListenerFunc(func(e *events.GuildReady) {
+			go cacheVoiceMembers(e.Client().Caches, e.Guild.ID, e.Client().Rest.GetMember)
+		}),
+		bot.NewListenerFunc(func(e *events.GuildAvailable) {
+			go cacheVoiceMembers(e.Client().Caches, e.Guild.ID, e.Client().Rest.GetMember)
+		}),
+		bot.NewListenerFunc(func(e *events.GuildJoin) {
+			go cacheVoiceMembers(e.Client().Caches, e.Guild.ID, e.Client().Rest.GetMember)
+		}),
 		bot.NewListenerFunc(func(e *events.GuildVoiceStateUpdate) {
 			cacheVoiceStateMember(e.Client().Caches, e.VoiceState, e.Member)
 		}),
@@ -53,7 +62,7 @@ func ownerCacheListeners() []bot.EventListener {
 
 // cacheVoiceStateMember caches the member carried by a VOICE_STATE_UPDATE.
 //
-// UPSTREAM(disgo v0.19.3): the member object of that event has no guild_id, so
+// UPSTREAM(disgo v0.20.0): the member object of that event has no guild_id, so
 // disgo's own AddMember stores it under guild 0 and the policy above, which
 // looks the voice state up by the member's guild, rejects it. The member of
 // anyone joining voice after startup was then never cached: their squad
@@ -68,13 +77,30 @@ func cacheVoiceStateMember(caches cache.Caches, vs discord.VoiceState, m discord
 	caches.AddMember(m)
 }
 
-// cacheVoiceMembers re-adds the members of a GUILD_CREATE. disgo caches them
-// before the guild's voice states, so the policy rejects everyone in voice on
-// that first pass.
-func cacheVoiceMembers(caches cache.Caches, g discord.GatewayGuild) {
-	for _, m := range g.Members {
-		m.GuildID = g.ID
-		caches.AddMember(m)
+// cacheVoiceMembers caches the members already in voice when a guild comes
+// up. disgo's GUILD_CREATE handler adds the members before the voice states,
+// so the policy rejects everyone in voice on that first pass; the guild events
+// no longer carry the members (disgo v0.20.0), so the missing ones are fetched
+// one by one. Runs off the event goroutine: fetch is a REST call.
+//
+// UPSTREAM(disgo v0.20.0): members cached before voice states on GUILD_CREATE.
+type memberFetcher func(guildID, userID snowflake.ID, opts ...rest.RequestOpt) (*discord.Member, error)
+
+func cacheVoiceMembers(caches cache.Caches, guildID snowflake.ID, fetch memberFetcher) {
+	for vs := range caches.VoiceStates(guildID) {
+		if vs.ChannelID == nil {
+			continue
+		}
+		if _, ok := caches.Member(guildID, vs.UserID); ok {
+			continue
+		}
+		m, err := fetch(guildID, vs.UserID)
+		if err != nil || m == nil {
+			slog.Debug("owner cache: member in voice not fetched", slog.String("guildID", guildID.String()), slog.String("userID", vs.UserID.String()), slog.Any("err", err))
+			continue
+		}
+		m.GuildID = guildID
+		caches.AddMember(*m)
 	}
 }
 

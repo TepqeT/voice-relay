@@ -9,12 +9,18 @@ import (
 	"time"
 
 	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/godave"
 )
 
-// stubConn is a voice.Conn used only as a registry key. The audio sender
-// dereferences its Conn solely once a frame is produced, and blockedProvider
-// never produces one, so the embedded nil interface is never called.
+// stubConn is a voice.Conn used as a registry key. Since disgo v0.20.0 the
+// audio sender asks the conn's DAVE session whether it is ready before it
+// pulls a frame, so that one method answers; blockedProvider never produces
+// a frame, so nothing else on the embedded nil interface is called.
 type stubConn struct{ voice.Conn }
+
+func (stubConn) DAVE() godave.Session {
+	return godave.NewNoopSession(slog.New(slog.DiscardHandler), "", nil)
+}
 
 // blockedProvider mimics opus.EmptyVoiceProvider: ProvideOpusFrame blocks
 // until Close, then returns an error on every subsequent call. It counts calls
@@ -135,8 +141,8 @@ func TestAudioSenderRegistryCloseAll(t *testing.T) {
 // disgo's defaultAudioSender.Close calls s.cancelFunc unconditionally, and
 // that field stays nil until the goroutine Open spawns gets scheduled. Join
 // timeouts make teardown of a never-started sender routine, and an unrecovered
-// panic there would kill the process — the same failure mode safeUDPConn
-// guards for UDP sockets.
+// panic there would kill the process (disgo fixed the same hazard in its UDP
+// conn in v0.20.0, not here).
 func TestAudioSenderCloseBeforeOpen(t *testing.T) {
 	// Not parallel: senderStartTimeout is package state.
 	orig := senderStartTimeout
@@ -156,7 +162,7 @@ func TestAudioSenderCloseBeforeOpen(t *testing.T) {
 // upstream bug. When it fails, disgo has fixed defaultAudioSender.Close and the
 // recover inside safeAudioSender.Close is obsolete.
 //
-// UPSTREAM-TRIPWIRE(disgo v0.19.3): delete safeAudioSender's recover.
+// UPSTREAM-TRIPWIRE(disgo v0.20.0): delete safeAudioSender's recover.
 func TestDisgoAudioSenderStillPanicsOnCloseBeforeOpen(t *testing.T) {
 	t.Parallel()
 	defer func() {

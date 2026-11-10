@@ -6,6 +6,8 @@ import (
 
 	"github.com/disgoorg/disgo/voice"
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/pool"
 )
 
 // watchVoiceReady re-arms a bot's audio pipeline after disgo transparently
@@ -39,9 +41,10 @@ import (
 // Only Ready is watched, not Resumed: a successful resume keeps the existing
 // UDP socket and needs no repair.
 //
-// UPSTREAM(disgo v0.19.3): a transparent voice re-identify swaps in a new UDP conn.
+// UPSTREAM(disgo v0.20.0): a transparent voice re-identify swaps in a new UDP conn.
+// The events come through pool.VoiceEventsOpt, installed on every client.
 func (m *Service) watchVoiceReady(guildID, botUserID snowflake.ID, conn voice.Conn) {
-	conn.SetEventHandlerFunc(func(_ voice.Gateway, op voice.Opcode, _ int, data voice.GatewayMessageData) {
+	pool.WatchVoiceGateway(conn.Gateway(), func(_ voice.Gateway, op voice.Opcode, _ int, data voice.GatewayMessageData) {
 		if op == voice.OpcodeSpeaking {
 			if d, ok := data.(voice.GatewayMessageDataSpeaking); ok {
 				m.recordSpeaking(guildID, d.UserID, d.Speaking)

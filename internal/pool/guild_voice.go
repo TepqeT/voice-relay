@@ -12,7 +12,7 @@ import (
 // disgo's Open and Close both block on nothing but the caller's context, and
 // the raid context they are given has no deadline.
 //
-// UPSTREAM(disgo v0.19.3): Open and Close bound nothing themselves.
+// UPSTREAM(disgo v0.20.0): Open and Close bound nothing themselves.
 const (
 	VoiceJoinTimeout    = 15 * time.Second
 	voiceCleanupTimeout = 5 * time.Second
@@ -94,8 +94,8 @@ func (v GuildVoice) Join(ctx context.Context, guildID snowflake.ID) (voice.Conn,
 }
 
 // Leave closes the bot's current voice connection in the guild, if any.
-// Safe on a connection whose Open never completed — see safeUDPConn, which the
-// voice manager installs via SafeUDPConnOpt.
+// Safe on a connection whose Open never completed (disgo v0.20.0 guards its
+// UDP conn Close against a nil socket).
 //
 // disgo's connImpl.Close does not stop the audio sender, and the sender's loop
 // does not exit on a provider error either — so once teardown closes the

@@ -1,10 +1,12 @@
 package bot
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/disgoorg/disgo/cache"
 	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 )
 
@@ -66,9 +68,16 @@ func TestCacheVoiceMembersRestoresMembersAlreadyInVoiceAtGuildCreate(t *testing.
 	caches.AddMember(idle)
 	joinVoice(caches, inVoice.User.ID)
 
-	cacheVoiceMembers(caches, discord.GatewayGuild{
-		Guild:   discord.Guild{ID: cacheTestGuild},
-		Members: []discord.Member{inVoice, idle},
+	fetched := 0
+	cacheVoiceMembers(caches, cacheTestGuild, func(guildID, userID snowflake.ID, _ ...rest.RequestOpt) (*discord.Member, error) {
+		fetched++
+		for _, m := range []discord.Member{inVoice, idle} {
+			if m.User.ID == userID && guildID == cacheTestGuild {
+				m.GuildID = 0 // the REST member carries no guild_id in its body
+				return &m, nil
+			}
+		}
+		return nil, errors.New("unknown member")
 	})
 
 	if !isCached(caches, inVoice.User.ID) {
@@ -77,6 +86,14 @@ func TestCacheVoiceMembersRestoresMembersAlreadyInVoiceAtGuildCreate(t *testing.
 	if isCached(caches, idle.User.ID) {
 		t.Error("member outside voice at GUILD_CREATE was cached")
 	}
+	if fetched != 1 {
+		t.Errorf("fetched %d members, want 1 (only the one in voice)", fetched)
+	}
+	// Already cached: nothing fetched again.
+	cacheVoiceMembers(caches, cacheTestGuild, func(snowflake.ID, snowflake.ID, ...rest.RequestOpt) (*discord.Member, error) {
+		t.Error("member fetched although cached")
+		return nil, nil
+	})
 }
 
 func TestEvictVoiceLeaverDropsHumansButKeepsBots(t *testing.T) {

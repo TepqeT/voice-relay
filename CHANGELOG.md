@@ -2,6 +2,11 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v66
+
+- disgo v0.19.3 à v0.20.0. Le 10/11, Discord a envoyé un type de salon inconnu (20) dans GUILD_CREATE : disgo v0.19.3 refusait le message, le bot principal se reconnectait en boucle (166 fois en une heure) et Discord a révoqué son token. v0.20.0 accepte les types inconnus.
+- Gardes devenues inutiles supprimées (`safeGateway`, `safeUDPConn`) ; événements vocaux par `pool.VoiceEventsOpt` (disgo ne les accepte plus sur une connexion existante) ; membres en vocal au démarrage récupérés par l'API (les événements de guilde ne portent plus la liste des membres).
+
 ## v65
 
 - Référencement : titre et description propres à l'accueil et au guide, URL canonique, balises Open Graph et Twitter, JSON-LD (SoftwareApplication) sur l'accueil, `robots.txt` et `sitemap.xml` ; les pages connectées (serveurs, administration) sont en `noindex`.

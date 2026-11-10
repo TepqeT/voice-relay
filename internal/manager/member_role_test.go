@@ -47,7 +47,7 @@ func (r *memberRoleRest) AddMemberRole(_, userID, roleID snowflake.ID, _ ...rest
 
 func memberRoleService(r *memberRoleRest) *Service {
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: mrGuild})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: mrGuild}})
 	caches.AddRole(discord.Role{ID: mrAccess, GuildID: mrGuild, Name: "Listener Access"})
 	m := NewService(store.NewInMemoryStore(), mapPool{}, &bot.Client{Caches: caches, Rest: r}, 1, config.TestConfig{}, nil)
 	m.channels.opts = ChannelOptions{Enabled: true, AccessRole: "Listener Access"}

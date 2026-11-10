@@ -12,7 +12,7 @@ import (
 func TestPanelStatusIdleAndCounts(t *testing.T) {
 	const guildID, ch snowflake.ID = 10, 70
 	caches := cache.New(cache.WithCaches(cache.FlagsAll))
-	caches.AddGuild(discord.Guild{ID: guildID})
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: guildID}})
 	caches.AddRole(discord.Role{ID: 900, GuildID: guildID, Name: "Raid Access"})
 	caches.AddRole(discord.Role{ID: 901, GuildID: guildID, Name: "Raid Board"})
 	in := ch
