@@ -87,21 +87,38 @@ func cacheVoiceStateMember(caches cache.Caches, vs discord.VoiceState, m discord
 type memberFetcher func(guildID, userID snowflake.ID, opts ...rest.RequestOpt) (*discord.Member, error)
 
 func cacheVoiceMembers(caches cache.Caches, guildID snowflake.ID, fetch memberFetcher) {
-	for vs := range caches.VoiceStates(guildID) {
-		if vs.ChannelID == nil {
+	for _, userID := range voiceUserIDs(caches, guildID) {
+		if _, ok := caches.Member(guildID, userID); ok {
 			continue
 		}
-		if _, ok := caches.Member(guildID, vs.UserID); ok {
-			continue
-		}
-		m, err := fetch(guildID, vs.UserID)
+		m, err := fetch(guildID, userID)
 		if err != nil || m == nil {
-			slog.Debug("owner cache: member in voice not fetched", slog.String("guildID", guildID.String()), slog.String("userID", vs.UserID.String()), slog.Any("err", err))
+			slog.Debug("owner cache: member in voice not fetched", slog.String("guildID", guildID.String()), slog.String("userID", userID.String()), slog.Any("err", err))
 			continue
 		}
 		m.GuildID = guildID
 		caches.AddMember(*m)
 	}
+}
+
+// voiceUserIDs copies the users in voice in guildID out of the cache.
+//
+// Ranging over caches.VoiceStates holds the voice-state read lock for the
+// whole loop. AddMember re-reads that cache through the member policy, so a
+// loop that adds members while ranging takes the read lock twice; as soon as
+// a voice state update waits for the write lock in between, every reader and
+// the writer block for good. That writer is the gateway read loop: the main
+// bot then stopped reading the gateway, missed every heartbeat ACK and
+// reconnected every three minutes (v66, 2026-11-10 to 2026-11-12). Copy
+// first, release, then work.
+func voiceUserIDs(caches cache.Caches, guildID snowflake.ID) []snowflake.ID {
+	var ids []snowflake.ID
+	for vs := range caches.VoiceStates(guildID) {
+		if vs.ChannelID != nil {
+			ids = append(ids, vs.UserID)
+		}
+	}
+	return ids
 }
 
 func evictVoiceLeaver(caches cache.Caches, guildID snowflake.ID, m discord.Member) {

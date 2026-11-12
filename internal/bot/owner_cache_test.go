@@ -3,6 +3,7 @@ package bot
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/disgoorg/disgo/cache"
 	"github.com/disgoorg/disgo/discord"
@@ -160,5 +161,34 @@ func TestCacheVoiceStateMemberIgnoresLeave(t *testing.T) {
 	cacheVoiceStateMember(caches, discord.VoiceState{GuildID: cacheTestGuild, UserID: 8}, discord.Member{User: discord.User{ID: 8}})
 	if isCached(caches, 8) {
 		t.Fatal("a leave event must not cache the member")
+	}
+}
+
+// A voice state update can arrive while the members are fetched: the voice
+// cache must not be locked then, or the gateway read loop blocks for good
+// (the v66 deadlock: the main bot stopped reading the gateway).
+func TestCacheVoiceMembersDoesNotHoldVoiceCacheWhileFetching(t *testing.T) {
+	caches := newOwnerCaches()
+	for _, id := range []snowflake.ID{1, 2} {
+		joinVoice(caches, id)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		cacheVoiceMembers(caches, cacheTestGuild, func(guildID, userID snowflake.ID, _ ...rest.RequestOpt) (*discord.Member, error) {
+			joinVoice(caches, userID+100) // what the gateway does on a VOICE_STATE_UPDATE
+			m := testMember(userID, false)
+			return &m, nil
+		})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cacheVoiceMembers deadlocked against a voice state update")
+	}
+	if !isCached(caches, 1) || !isCached(caches, 2) {
+		t.Error("members in voice were not cached")
 	}
 }

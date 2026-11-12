@@ -2,6 +2,10 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v67
+
+- Bot principal figé depuis v66 : la reprise des membres en vocal au démarrage gardait le verrou du cache vocal pendant qu'elle ajoutait des membres. À la première mise à jour vocale, la lecture du gateway se bloquait : battements de cœur ratés, reconnexion toutes les 3 minutes (environ 480 par jour), boutons du panneau sans réponse. La liste est maintenant copiée avant d'être traitée.
+
 ## v66
 
 - disgo v0.19.3 à v0.20.0. Le 10/11, Discord a envoyé un type de salon inconnu (20) dans GUILD_CREATE : disgo v0.19.3 refusait le message, le bot principal se reconnectait en boucle (166 fois en une heure) et Discord a révoqué son token. v0.20.0 accepte les types inconnus.
