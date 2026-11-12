@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -203,7 +204,7 @@ func (m *Service) StartMetrics() {
 // for every guild the owner bot is currently a member of.
 // Reads directly from the disgo cache — no duplicate state needed.
 func (m *Service) observeGuildInfo(_ context.Context, o metric.Observer) error {
-	for g := range m.ownerClient.Caches.Guilds() {
+	for _, g := range slices.Collect(m.ownerClient.Caches.Guilds()) {
 		m.metrics.Bot.ObserveGuildInfo(o, g.ID.String(), g.Name)
 	}
 	return nil
@@ -217,12 +218,12 @@ func (m *Service) observeGuildInfo(_ context.Context, o metric.Observer) error {
 // mid-call — while the cache stays correct by construction.
 func (m *Service) observeVoiceCallers(_ context.Context, o metric.Observer) error {
 	caches := m.ownerClient.Caches
-	for g := range caches.Guilds() {
+	for _, g := range slices.Collect(caches.Guilds()) {
 		if !m.HasActiveSession(g.ID) {
 			continue
 		}
 		perChannel := make(map[snowflake.ID]int64)
-		for vs := range caches.VoiceStates(g.ID) {
+		for _, vs := range slices.Collect(caches.VoiceStates(g.ID)) {
 			if vs.ChannelID == nil {
 				continue
 			}
@@ -379,7 +380,7 @@ type cacheVoiceProbe struct {
 // hear the audio.
 func (p *cacheVoiceProbe) HasListeners(channelID snowflake.ID) bool {
 	caches := p.svc.ownerClient.Caches
-	for vs := range caches.VoiceStates(p.guildID) {
+	for _, vs := range slices.Collect(caches.VoiceStates(p.guildID)) {
 		if vs.ChannelID == nil || *vs.ChannelID != channelID {
 			continue
 		}
@@ -397,7 +398,7 @@ func (p *cacheVoiceProbe) HasListeners(channelID snowflake.ID) bool {
 func (p *cacheVoiceProbe) EnumerateCallers(channelID, roleID snowflake.ID) []snowflake.ID {
 	caches := p.svc.ownerClient.Caches
 	var users []snowflake.ID
-	for vs := range caches.VoiceStates(p.guildID) {
+	for _, vs := range slices.Collect(caches.VoiceStates(p.guildID)) {
 		if vs.ChannelID == nil || *vs.ChannelID != channelID {
 			continue
 		}

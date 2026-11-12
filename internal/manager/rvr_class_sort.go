@@ -233,7 +233,7 @@ func (m *Service) waitingChannel(guildID snowflake.ID) (snowflake.ID, bool) {
 	}
 	want := strings.TrimSpace(strings.TrimPrefix(m.sort.opts.Waiting, "#"))
 	var chans []discord.GuildChannel
-	for ch := range m.ownerClient.Caches.ChannelsForGuild(guildID) {
+	for _, ch := range slices.Collect(m.ownerClient.Caches.ChannelsForGuild(guildID)) {
 		if ch.Type() == discord.ChannelTypeGuildVoice || ch.Type() == discord.ChannelTypeGuildStageVoice {
 			chans = append(chans, ch)
 		}
@@ -312,7 +312,7 @@ func (m *Service) classRoles(guildID snowflake.ID) map[snowflake.ID]string {
 // voicePlayers groups the human members in voice by channel.
 func (m *Service) voicePlayers(guildID snowflake.ID, classes map[snowflake.ID]string, squadRole snowflake.ID) map[snowflake.ID][]classsort.Player {
 	var states []memberVoice
-	for vs := range m.ownerClient.Caches.VoiceStates(guildID) {
+	for _, vs := range slices.Collect(m.ownerClient.Caches.VoiceStates(guildID)) {
 		if vs.ChannelID == nil {
 			continue
 		}

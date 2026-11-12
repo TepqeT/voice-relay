@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"slices"
 	"time"
 
 	"github.com/disgoorg/snowflake/v2"
@@ -50,7 +51,7 @@ func (m *Service) PanelStatus(guildID snowflake.ID) PanelStatus {
 func (m *Service) humansIn(guildID, channelID snowflake.ID) int {
 	caches := m.ownerClient.Caches
 	n := 0
-	for vs := range caches.VoiceStates(guildID) {
+	for _, vs := range slices.Collect(caches.VoiceStates(guildID)) {
 		if vs.ChannelID == nil || *vs.ChannelID != channelID {
 			continue
 		}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TepqeT/voice-relay/internal/dave"
+	"github.com/TepqeT/voice-relay/internal/gatewayguard"
 	"github.com/TepqeT/voice-relay/internal/guild"
 	"github.com/TepqeT/voice-relay/internal/telemetry"
 	"github.com/disgoorg/disgo"
@@ -39,6 +40,47 @@ type Service struct {
 	voiceRegion *telemetry.VoiceRegionMetrics
 	daveStats   *dave.Stats
 	daveStalls  *dave.EncryptStalls
+	// guard counts each relay bot's new gateway sessions; a bot it blocks is
+	// neither opened nor reconnected (see package gatewayguard). nil = off.
+	guard *gatewayguard.Guard
+}
+
+// SetGuard installs the reconnect guard. Call before ConnectPool.
+func (s *Service) SetGuard(g *gatewayguard.Guard) { s.guard = g }
+
+// blocked reports whether the guard forbids opening botUserID's gateway.
+func (s *Service) blocked(botUserID snowflake.ID) bool {
+	return s.guard != nil && s.guard.Blocked(botUserID)
+}
+
+// BlockedCount is the number of relay bots the guard keeps offline.
+func (s *Service) BlockedCount() int {
+	n := 0
+	for _, id := range s.GetIDs() {
+		if s.blocked(id) {
+			n++
+		}
+	}
+	return n
+}
+
+// Halt closes botUserID's gateway; the guard keeps it from reconnecting.
+func (s *Service) Halt(ctx context.Context, botUserID snowflake.ID) {
+	s.mu.RLock()
+	client := s.poolClients[botUserID]
+	s.mu.RUnlock()
+	if client != nil {
+		client.Close(ctx)
+	}
+	slog.ErrorContext(ctx, "pool: relay bot gateway halted by the reconnect guard", slog.String("botUserID", botUserID.String()))
+}
+
+// guardListeners counts the Ready events of botUserID.
+func (s *Service) guardListeners(botUserID snowflake.ID) []bot.EventListener {
+	if s.guard == nil {
+		return nil
+	}
+	return []bot.EventListener{s.guard.Listener(botUserID)}
 }
 
 // extraBot is a bot reported in the info/latency metrics but not lifecycle-managed
@@ -71,11 +113,11 @@ func (s *Service) RegisterBot(id snowflake.ID, name string, client *bot.Client) 
 }
 
 // newPoolClient builds a disgo client for a speaker bot token.
-func newPoolClient(token string, voiceRegion *telemetry.VoiceRegionMetrics, daveStats *dave.Stats, daveStalls *dave.EncryptStalls) (*bot.Client, error) {
+func newPoolClient(token string, voiceRegion *telemetry.VoiceRegionMetrics, daveStats *dave.Stats, daveStalls *dave.EncryptStalls, extra ...bot.EventListener) (*bot.Client, error) {
 	botUserID, _ := guild.BotUserID(token)
 
 	return disgo.New(token,
-		bot.WithEventListeners(VoiceRegionListeners(botUserID, voiceRegion)...),
+		bot.WithEventListeners(append(VoiceRegionListeners(botUserID, voiceRegion), extra...)...),
 		bot.WithGatewayConfigOpts(
 			gateway.WithIntents(gateway.IntentGuildVoiceStates),
 		),
@@ -113,7 +155,7 @@ func (s *Service) ConnectPool(ctx context.Context, tokens []string) {
 				return
 			}
 
-			client, err := newPoolClient(token, s.voiceRegion, s.daveStats, s.daveStalls)
+			client, err := newPoolClient(token, s.voiceRegion, s.daveStats, s.daveStalls, s.guardListeners(botUserID)...)
 			if err != nil {
 				slog.WarnContext(ctx, "pool: failed to build client",
 					slog.Int("index", index),
@@ -125,6 +167,11 @@ func (s *Service) ConnectPool(ctx context.Context, tokens []string) {
 			// Always record the bot ID and client (even before gateway opens) so
 			// the token is available for reconnection via client.Token.
 			results[i] = result{botUserID: botUserID, client: client}
+
+			if s.blocked(botUserID) {
+				slog.ErrorContext(ctx, "pool: gateway left closed by the reconnect guard (too many sessions in 24h)", slog.Int("index", index))
+				return
+			}
 
 			if err = client.OpenGateway(ctx); err != nil {
 				slog.WarnContext(ctx, "pool: failed to open gateway",
@@ -216,6 +263,9 @@ func (s *Service) Reconnect(ctx context.Context, botUserID snowflake.ID) bool {
 	if isConnected(client) {
 		return true // already connected; disgo's internal loop handles future drops
 	}
+	if s.blocked(botUserID) {
+		return false // the reconnect guard keeps it offline
+	}
 
 	token := ""
 	if client != nil {
@@ -227,7 +277,7 @@ func (s *Service) Reconnect(ctx context.Context, botUserID snowflake.ID) bool {
 
 	s.metrics.ReconnectAttempt(ctx, botUserID)
 
-	newClient, err := newPoolClient(token, s.voiceRegion, s.daveStats, s.daveStalls)
+	newClient, err := newPoolClient(token, s.voiceRegion, s.daveStats, s.daveStalls, s.guardListeners(botUserID)...)
 	if err != nil {
 		slog.WarnContext(ctx, "pool: reconnect failed to build client",
 			slog.String("botUserID", botUserID.String()),
@@ -296,6 +346,9 @@ func (s *Service) watchdogCheck(ctx context.Context) {
 
 		if isConnected(client) {
 			continue // healthy
+		}
+		if s.blocked(botUserID) {
+			continue // kept offline by the reconnect guard, on purpose
 		}
 
 		if client == nil || client.Gateway == nil {

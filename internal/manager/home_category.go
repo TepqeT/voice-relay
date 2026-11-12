@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -110,7 +111,7 @@ func (m *Service) EnsureHomeCategory(ctx context.Context, guildID snowflake.ID) 
 		}
 	}
 	name := strings.TrimSpace(m.channels.opts.Category)
-	for ch := range m.ownerClient.Caches.ChannelsForGuild(guildID) {
+	for _, ch := range slices.Collect(m.ownerClient.Caches.ChannelsForGuild(guildID)) {
 		if ch.Type() == discord.ChannelTypeGuildCategory && strings.EqualFold(ch.Name(), name) {
 			homes[guildID] = homeCategory{ID: ch.ID()}
 			m.saveHomeLocked()

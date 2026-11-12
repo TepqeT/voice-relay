@@ -2,6 +2,7 @@ package bot
 
 import (
 	"log/slog"
+	"slices"
 
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/cache"
@@ -113,7 +114,7 @@ func cacheVoiceMembers(caches cache.Caches, guildID snowflake.ID, fetch memberFe
 // first, release, then work.
 func voiceUserIDs(caches cache.Caches, guildID snowflake.ID) []snowflake.ID {
 	var ids []snowflake.ID
-	for vs := range caches.VoiceStates(guildID) {
+	for _, vs := range slices.Collect(caches.VoiceStates(guildID)) {
 		if vs.ChannelID != nil {
 			ids = append(ids, vs.UserID)
 		}

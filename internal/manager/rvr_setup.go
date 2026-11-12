@@ -210,7 +210,7 @@ type GuildRef struct {
 // OwnerGuilds lists the guilds the owner bot is in, by name.
 func (m *Service) OwnerGuilds() []GuildRef {
 	var out []GuildRef
-	for g := range m.ownerClient.Caches.Guilds() {
+	for _, g := range slices.Collect(m.ownerClient.Caches.Guilds()) {
 		out = append(out, GuildRef{ID: g.ID, Name: g.Name})
 	}
 	slices.SortFunc(out, func(a, b GuildRef) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) })
