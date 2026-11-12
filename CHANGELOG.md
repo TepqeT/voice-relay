@@ -2,6 +2,11 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v68
+
+- Garde-fou de reconnexion (`internal/gatewayguard`) sur le bot principal et les 11 relais : chaque nouvelle session Discord est comptée (`data/gateway-guard.json`, conservé au redémarrage, remis à zéro à chaque nouvelle version). 5 sessions en une heure : message privé au propriétaire de l'application et état des goroutines dans `DIAG_DIR`. 100 en 24 h : la connexion du bot est coupée avant que Discord ne révoque son token (limite vers 1000) ; le site reste en ligne et le bot revient au déploiement suivant.
+- Plus aucune boucle directe sur un cache disgo : tout passe par `slices.Collect`, et un test (`internal/cacheiter`) refuse toute nouvelle boucle de ce type (cause de l'interblocage de v66).
+
 ## v67
 
 - Bot principal figé depuis v66 : la reprise des membres en vocal au démarrage gardait le verrou du cache vocal pendant qu'elle ajoutait des membres. À la première mise à jour vocale, la lecture du gateway se bloquait : battements de cœur ratés, reconnexion toutes les 3 minutes (environ 480 par jour), boutons du panneau sans réponse. La liste est maintenant copiée avant d'être traitée.

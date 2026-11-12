@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -229,7 +230,7 @@ func (k *panelKeeper) Watch(ctx context.Context, every time.Duration) {
 			}
 			// Servers still without a panel (refused at join, permission
 			// fixed since): try again, at most every few minutes each.
-			for g := range k.caches.Guilds() {
+			for _, g := range slices.Collect(k.caches.Guilds()) {
 				if !known[g.ID] && k.retry.Allow(g.ID.String()) {
 					k.Ensure(ctx, g.ID)
 				}
@@ -338,7 +339,7 @@ func (k *panelKeeper) findChannel(guildID, remembered snowflake.ID) snowflake.ID
 	}
 	id, idErr := snowflake.Parse(k.name)
 	want := strings.ToLower(strings.ReplaceAll(k.name, " ", "-"))
-	for ch := range k.caches.ChannelsForGuild(guildID) {
+	for _, ch := range slices.Collect(k.caches.ChannelsForGuild(guildID)) {
 		if ch.Type() != discord.ChannelTypeGuildText {
 			continue
 		}

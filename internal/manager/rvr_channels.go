@@ -149,7 +149,7 @@ func (m *Service) resolveRole(guildID snowflake.ID, want string) snowflake.ID {
 			return id
 		}
 	}
-	for r := range m.ownerClient.Caches.Roles(guildID) {
+	for _, r := range slices.Collect(m.ownerClient.Caches.Roles(guildID)) {
 		if strings.EqualFold(strings.TrimSpace(r.Name), want) {
 			return r.ID
 		}
@@ -382,7 +382,7 @@ func (m *Service) placeCategory(ctx context.Context, guildID, categoryID snowfla
 		return
 	}
 	var cats []discord.GuildChannel
-	for ch := range m.ownerClient.Caches.ChannelsForGuild(guildID) {
+	for _, ch := range slices.Collect(m.ownerClient.Caches.ChannelsForGuild(guildID)) {
 		if ch.Type() == discord.ChannelTypeGuildCategory {
 			cats = append(cats, ch)
 		}

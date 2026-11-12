@@ -52,7 +52,7 @@ func (m *Service) GrantAccessToAll(ctx context.Context, guildID snowflake.ID) {
 		after = page[len(page)-1].User.ID
 	}
 	cached := 0
-	for mem := range m.ownerClient.Caches.Members(guildID) {
+	for _, mem := range slices.Collect(m.ownerClient.Caches.Members(guildID)) {
 		cached++
 		if _, ok := members[mem.User.ID]; !ok {
 			members[mem.User.ID] = mem

@@ -125,7 +125,7 @@ func (m *Service) NotifyMemberUpdate(guildID snowflake.ID, member discord.Member
 	// Look up the user's current voice channel from the cache; only nudge
 	// the router when the user is in voice (a role change for someone not in
 	// voice has no effect on per-channel caller counts).
-	for vs := range m.ownerClient.Caches.VoiceStates(guildID) {
+	for _, vs := range slices.Collect(m.ownerClient.Caches.VoiceStates(guildID)) {
 		if vs.UserID == member.User.ID && vs.ChannelID != nil {
 			router.Debounce(*vs.ChannelID)
 			return
@@ -144,7 +144,7 @@ func (m *Service) prefetchChannelMembers(ctx context.Context, conn voice.Conn, b
 		return
 	}
 	var userIDs []snowflake.ID
-	for vs := range m.ownerClient.Caches.VoiceStates(guildID) {
+	for _, vs := range slices.Collect(m.ownerClient.Caches.VoiceStates(guildID)) {
 		if vs.ChannelID != nil && *vs.ChannelID == *chID && vs.UserID != botUserID {
 			userIDs = append(userIDs, vs.UserID)
 		}

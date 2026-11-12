@@ -127,7 +127,7 @@ func (m *Service) disconnectWithoutAccess(ctx context.Context, guildID snowflake
 	voice = append(voice, rc.RaidLead, rc.Waiting)
 	caches := m.ownerClient.Caches
 	var targets []snowflake.ID
-	for vs := range caches.VoiceStates(guildID) {
+	for _, vs := range slices.Collect(caches.VoiceStates(guildID)) {
 		if vs.ChannelID == nil || *vs.ChannelID == 0 || !slices.Contains(voice, *vs.ChannelID) {
 			continue
 		}

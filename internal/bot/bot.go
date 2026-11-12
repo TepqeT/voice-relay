@@ -17,6 +17,7 @@ import (
 	"github.com/TepqeT/voice-relay/internal/config"
 	"github.com/TepqeT/voice-relay/internal/dave"
 	"github.com/TepqeT/voice-relay/internal/diag"
+	"github.com/TepqeT/voice-relay/internal/gatewayguard"
 	"github.com/TepqeT/voice-relay/internal/guild"
 	"github.com/TepqeT/voice-relay/internal/i18n"
 	"github.com/TepqeT/voice-relay/internal/manager"
@@ -25,6 +26,7 @@ import (
 	"github.com/TepqeT/voice-relay/internal/store"
 	"github.com/TepqeT/voice-relay/internal/subscription"
 	"github.com/TepqeT/voice-relay/internal/telemetry"
+	"github.com/TepqeT/voice-relay/internal/version"
 	"github.com/TepqeT/voice-relay/internal/web"
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
@@ -131,6 +133,10 @@ type Bot struct {
 	extraCommands []discord.ApplicationCommandCreate
 	// site is the administration site, nil when WEB_ADDR is not configured.
 	site *web.Server
+	// guard watches every bot's new gateway sessions (gateway_guard.go).
+	guard      *gatewayguard.Guard
+	ownerBotID snowflake.ID
+	diagDir    string // goroutine dumps go there; "" = none
 }
 
 // New creates and configures a new Bot instance. It performs no network I/O —
@@ -204,6 +210,11 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	client.AddEventListeners(pool.VoiceRegionListeners(ownerBotID, &metrics.Voice)...)
 
 	poolSvc := pool.NewService(&metrics.Pool, &metrics.Voice, daveStats, daveStalls)
+	// Reconnect guard: counts each bot's new gateway sessions so a reconnect
+	// loop alerts and, past a daily limit, stops before Discord resets a token.
+	guard := gatewayguard.Open(filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "gateway-guard.json"), version.Fork)
+	poolSvc.SetGuard(guard)
+	client.AddEventListeners(guard.Listener(ownerBotID))
 	managerSvc := manager.NewService(st, poolSvc, client, ownerBotID, cfg.Test, metrics)
 	daveStalls.SetHandler(managerSvc.OnEncryptStall)
 	managerSvc.SetSessionIdleTimeout(cfg.SessionIdleTimeout)
@@ -357,6 +368,9 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 	}
 
 	b := &Bot{
+		guard:         guard,
+		ownerBotID:    ownerBotID,
+		diagDir:       cfg.RvR.DiagDir,
 		dataDir:       filepath.Dir(cfg.RvR.Channels.StateFile),
 		client:        client,
 		daveStats:     daveStats,
@@ -476,6 +490,7 @@ func (b *Bot) applyAvatars(ctx context.Context) {
 // Run connects the speaker pool, opens the owner gateway, registers slash commands,
 // and blocks until ctx is cancelled.
 func (b *Bot) Run(ctx context.Context) error {
+	b.installGuardActions(ctx)
 	if err := connectPool(ctx, b.poolSvc, b.speakerTokens); err != nil {
 		return err
 	}
@@ -488,7 +503,11 @@ func (b *Bot) Run(ctx context.Context) error {
 	b.daveStats.StartMetrics(b.daveMetrics)
 	b.manager.StartMetrics()
 
-	if err := b.client.OpenGateway(ctx); err != nil {
+	if b.guard.Blocked(b.ownerBotID) {
+		// Too many sessions in 24h for this version: stay offline rather
+		// than let Discord reset the token. The site keeps running.
+		slog.ErrorContext(ctx, "owner gateway left closed by the reconnect guard (too many sessions in 24h)")
+	} else if err := b.client.OpenGateway(ctx); err != nil {
 		return err
 	}
 	defer func() {
@@ -650,7 +669,9 @@ func connectPool(ctx context.Context, poolSvc *pool.Service, tokens []string) er
 	poolCancel()
 
 	total := len(poolSvc.GetIDs())
-	connected := len(poolSvc.GetClients())
+	// Relay bots the reconnect guard keeps offline are expected: failing the
+	// start for them would make the container restart in a loop.
+	connected := len(poolSvc.GetClients()) + poolSvc.BlockedCount()
 	if connected < total {
 		return fmt.Errorf("speaker pool: only %d/%d speaker gateways connected at startup", connected, total)
 	}
