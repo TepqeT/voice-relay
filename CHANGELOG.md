@@ -2,6 +2,12 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v70
+
+- Installation plus courte : un seul bot relais suffit. Le site ne réclame plus les 11 relais (12 autorisations Discord d'affilée), il explique "un bot relais = un salon Listener, invitez seulement le nombre de salons voulus" et considère le serveur prêt dès 1 relais. Textes du guide et de l'accueil mis à jour.
+- Rôles créés automatiquement à l'arrivée du bot principal (Speaker, Squad Lead, rôle d'accès...) : plus besoin de cliquer "Créer les rôles". Résultat dans le journal (`roles_created_on_join` ou `roles_on_join_failed`) ; le bouton reste pour réparer.
+- Le panneau oublie un serveur quand le bot le quitte et ignore un serveur où il n'est plus : fin des "panel_channel_refused" envoyés pour un serveur désinstallé trois jours plus tôt.
+
 ## v69
 
 - Relais muets corrigés : depuis disgo v0.20.0, un bot n'émettait et ne captait rien tant que son chiffrement DAVE n'était pas "prêt", ce qui n'arrive jamais en mode non chiffré ni sans clé de chiffrement. Le 13/11 sur server A, 5 relais sur 8 n'ont rien émis pendant toute la session, et la réparation automatique (nouvelle connexion du relais quand le chiffrement échoue) ne se déclenchait plus. La session DAVE répond maintenant toujours "prête" à disgo ; l'audio passe en clair en mode non chiffré et les échecs de chiffrement relancent de nouveau le relais.

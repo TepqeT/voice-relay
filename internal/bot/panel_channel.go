@@ -244,6 +244,12 @@ func (k *panelKeeper) pass(ctx context.Context, tick, forceEvery int) {
 	}
 	k.mu.Unlock()
 	for _, g := range guilds {
+		// Not (or no longer) in the server: nothing to keep. A known server
+		// missing from the cache right after a restart is only skipped until
+		// its GUILD_CREATE; GuildLeave forgets it for good.
+		if _, in := k.caches.Guild(g); !in {
+			continue
+		}
 		// A server that refused the panel (permission removed) is retried
 		// every few minutes, not every tick: on 2026-11-18 one server logged
 		// two refusals every 15 seconds.
@@ -559,4 +565,18 @@ func (k *panelKeeper) persist() {
 func isUnknownMessage(err error) bool {
 	var re *rest.Error
 	return errors.As(err, &re) && (re.Code == 10008 || re.Code == 10003)
+}
+
+// Forget drops everything known about guildID's panel: the bot left the
+// server (kicked, uninstalled, server deleted). Without it the keeper went on
+// trying to create a panel there every 15 seconds; on 2026-11-18 a server
+// uninstalled three days earlier filled the install journal with refusals.
+func (k *panelKeeper) Forget(guildID snowflake.ID) {
+	k.mu.Lock()
+	delete(k.state, guildID)
+	delete(k.refused, guildID)
+	delete(k.shown, guildID)
+	delete(k.fixed, guildID)
+	k.mu.Unlock()
+	k.persist()
 }

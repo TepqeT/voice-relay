@@ -322,6 +322,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		client.AddEventListeners(
 			bot.NewListenerFunc(func(e *events.GuildReady) { go panel.Ensure(context.Background(), e.GuildID) }),
 			bot.NewListenerFunc(func(e *events.GuildJoin) { go panel.Ensure(context.Background(), e.GuildID) }),
+			bot.NewListenerFunc(func(e *events.GuildLeave) { panel.Forget(e.GuildID) }),
 			bot.NewListenerFunc(func(e *events.GuildChannelDelete) {
 				go panel.OnChannelDeleted(context.Background(), e.GuildID, e.ChannelID)
 			}),

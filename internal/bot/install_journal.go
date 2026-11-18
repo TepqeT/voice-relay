@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -47,6 +48,7 @@ func installListeners(m siteManager, relayIDs func() []snowflake.ID) []bot.Event
 
 // checkInstall records what still blocks guildID.
 func checkInstall(m siteManager, guildID snowflake.ID, name string, relays []snowflake.ID) {
+	createRolesOnJoin(m, guildID, name)
 	if missing := m.MissingOwnerPermissions(guildID); missing != 0 {
 		journal.Record(journal.Event{GuildID: guildID, Guild: name, Level: journal.Problem, Kind: "missing_permissions",
 			Detail: "main bot lacks: " + strings.Join(permissionKeys(missing), ", ") + " (re-invite it from the site)"})
@@ -70,5 +72,29 @@ func checkInstall(m siteManager, guildID snowflake.ID, name string, relays []sno
 	if present < len(relays) {
 		journal.Record(journal.Event{GuildID: guildID, Guild: name, Level: journal.Warning, Kind: "relay_bots_missing",
 			Detail: fmt.Sprintf("%d of %d relay bots on the server", present, len(relays))})
+	}
+}
+
+// createRolesOnJoin creates the roles the configuration names (Speaker,
+// Squad Lead, access role, ...) as soon as the main bot joins, so the
+// administrator no longer has to press "Create the roles" on the site: one
+// step fewer in an install people found long. Roles that already exist are
+// kept; the site's button stays for repairs.
+func createRolesOnJoin(m siteManager, guildID snowflake.ID, name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	rep, err := m.CreateMissingRoles(ctx, guildID)
+	switch {
+	case err != nil || rep.PermissionDenied || len(rep.Failed) > 0:
+		detail := "roles not created on join"
+		if err != nil {
+			detail += ": " + err.Error()
+		}
+		if len(rep.Failed) > 0 {
+			detail += "; failed: " + strings.Join(rep.Failed, ", ")
+		}
+		journal.Record(journal.Event{GuildID: guildID, Guild: name, Level: journal.Warning, Kind: "roles_on_join_failed", Detail: detail})
+	case len(rep.Created) > 0:
+		journal.Record(journal.Event{GuildID: guildID, Guild: name, Kind: "roles_created_on_join", Detail: "created: " + strings.Join(rep.Created, ", ")})
 	}
 }
