@@ -12,6 +12,8 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/TepqeT/voice-relay/internal/ratelimit"
 )
 
 const panelGuild snowflake.ID = 10
@@ -41,6 +43,8 @@ type fakePanelRest struct {
 	reperm     []snowflake.ID // channels whose overwrites were replaced
 	history    []discord.Message
 	purged     []snowflake.ID // messages deleted
+	createErr  error          // every CreateGuildChannel fails with it
+	createTry  int
 }
 
 func (f *fakePanelRest) GetMessages(_, _, _, _ snowflake.ID, _ int, _ ...rest.RequestOpt) ([]discord.Message, error) {
@@ -52,6 +56,10 @@ func (f *fakePanelRest) DeleteMessage(_, messageID snowflake.ID, _ ...rest.Reque
 }
 
 func (f *fakePanelRest) CreateGuildChannel(guildID snowflake.ID, c discord.GuildChannelCreate, _ ...rest.RequestOpt) (discord.GuildChannel, error) {
+	f.createTry++
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
 	tc := c.(discord.GuildTextChannelCreate)
 	f.created = append(f.created, tc)
 	f.next++
@@ -319,5 +327,44 @@ func TestPanelChannelPurgesOldReports(t *testing.T) {
 	k.purge(context.Background(), panelGuild, now)
 	if len(fr.purged) != 1 || fr.purged[0] != old {
 		t.Fatalf("purged %v, want only the old report %d", fr.purged, old)
+	}
+}
+
+// 2026-11-18: a server removed the bot's right to create channels after its
+// panel channel was gone; the keeper tried again every 15 seconds and logged
+// two refusals each time. A refusal is now retried every few minutes only,
+// and a server that accepts again is back to every tick.
+func TestRefusedPanelRetriedEveryFewMinutesOnly(t *testing.T) {
+	k, fr, _ := newTestKeeper(t, "")
+	k.Ensure(context.Background(), panelGuild) // panel created and known
+	if len(fr.created) != 1 {
+		t.Fatalf("created = %d, want 1", len(fr.created))
+	}
+	// The channel is deleted and the permission removed.
+	k.mu.Lock()
+	id := k.state[panelGuild].ChannelID
+	k.mu.Unlock()
+	fr.caches.RemoveChannel(id)
+	fr.createErr = &rest.Error{Code: 50013, Message: "Missing Permissions"}
+	fr.createTry = 0
+
+	for tick := 1; tick <= 20; tick++ { // five minutes of 15 s ticks
+		k.pass(context.Background(), tick, 1000)
+	}
+	if fr.createTry != 1 {
+		t.Fatalf("creation tried %d times in 20 ticks, want 1 (then every few minutes)", fr.createTry)
+	}
+
+	// Permission given back: the next allowed retry creates it and the
+	// server is no longer marked refused.
+	fr.createErr = nil
+	k.retry = ratelimit.New(time.Millisecond, 1)
+	time.Sleep(5 * time.Millisecond)
+	k.pass(context.Background(), 21, 1000)
+	k.mu.Lock()
+	still := k.refused[panelGuild]
+	k.mu.Unlock()
+	if fr.createTry != 2 || still {
+		t.Fatalf("after the permission came back: tries=%d refused=%v", fr.createTry, still)
 	}
 }

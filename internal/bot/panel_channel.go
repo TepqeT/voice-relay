@@ -83,12 +83,16 @@ type panelKeeper struct {
 	shown map[snowflake.ID]string // last panel sent, to skip identical edits
 	fixed map[snowflake.ID]bool   // overwrites of a created channel refreshed this run
 	retry *ratelimit.Limiter      // spaces the attempts on servers without a panel
+	// refused marks servers where Discord refused to create the panel or its
+	// category (missing permission): retried with retry, not every tick.
+	refused map[snowflake.ID]bool
 }
 
 func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func() snowflake.ID, build func(snowflake.ID) discord.MessageCreate, file string) *panelKeeper {
 	k := &panelKeeper{name: strings.TrimSpace(name), rest: r, caches: caches, selfID: selfID, build: build, file: file,
 		state: map[snowflake.ID]panelState{}, busy: map[snowflake.ID]bool{}, shown: map[snowflake.ID]string{}, fixed: map[snowflake.ID]bool{},
-		retry: ratelimit.New(5*time.Minute, 1)}
+		refused: map[snowflake.ID]bool{},
+		retry:   ratelimit.New(5*time.Minute, 1)}
 	if file != "" {
 		if b, err := statefile.ReadFile(file); err == nil {
 			if err := json.Unmarshal(b, &k.state); err != nil {
@@ -126,12 +130,17 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 		delete(k.busy, guildID)
 		k.mu.Unlock()
 	}()
+	// refused is set when Discord refuses the category or the channel; the
+	// server is then retried every few minutes only (see pass).
+	refused := false
+	defer func() { k.setRefused(guildID, refused) }()
 
 	var parent snowflake.ID
 	if k.home != nil {
 		var err error
 		if parent, err = k.home(ctx, guildID); err != nil {
 			journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "home_category_refused", Detail: "could not create the category: " + err.Error()})
+			refused = true
 		}
 	}
 	if st.Created && st.ChannelID != 0 && !st.Private && k.privateTo(guildID) != 0 {
@@ -149,6 +158,7 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 		}, rest.WithCtx(ctx), rest.WithReason("Voice Relay control panel"))
 		if err != nil {
 			journal.Record(journal.Event{GuildID: guildID, Level: journal.Problem, Kind: "panel_channel_refused", Detail: "could not create the panel channel: " + err.Error()})
+			refused = true
 			return
 		}
 		channelID = ch.ID()
@@ -214,28 +224,58 @@ func (k *panelKeeper) Watch(ctx context.Context, every time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			k.mu.Lock()
-			guilds := make([]snowflake.ID, 0, len(k.state))
-			known := make(map[snowflake.ID]bool, len(k.state))
-			for g := range k.state {
-				guilds = append(guilds, g)
-				known[g] = true
-			}
-			k.mu.Unlock()
-			for _, g := range guilds {
-				k.ensure(ctx, g, tick%forceEvery == 0)
-				if tick%purgeEvery == 0 {
-					k.purge(ctx, g, time.Now())
-				}
-			}
-			// Servers still without a panel (refused at join, permission
-			// fixed since): try again, at most every few minutes each.
-			for _, g := range slices.Collect(k.caches.Guilds()) {
-				if !known[g.ID] && k.retry.Allow(g.ID.String()) {
-					k.Ensure(ctx, g.ID)
-				}
-			}
+			k.pass(ctx, tick, forceEvery)
 		}
+	}
+}
+
+// pass is one Watch tick.
+func (k *panelKeeper) pass(ctx context.Context, tick, forceEvery int) {
+	k.mu.Lock()
+	guilds := make([]snowflake.ID, 0, len(k.state))
+	known := make(map[snowflake.ID]bool, len(k.state))
+	refused := make(map[snowflake.ID]bool, len(k.refused))
+	for g := range k.state {
+		guilds = append(guilds, g)
+		known[g] = true
+	}
+	for g := range k.refused {
+		refused[g] = true
+	}
+	k.mu.Unlock()
+	for _, g := range guilds {
+		// A server that refused the panel (permission removed) is retried
+		// every few minutes, not every tick: on 2026-11-18 one server logged
+		// two refusals every 15 seconds.
+		if refused[g] && !k.retry.Allow(g.String()) {
+			continue
+		}
+		k.ensure(ctx, g, tick%forceEvery == 0)
+		if tick%purgeEvery == 0 {
+			k.purge(ctx, g, time.Now())
+		}
+	}
+	// Servers still without a panel (refused at join, permission
+	// fixed since): try again, at most every few minutes each.
+	for _, g := range slices.Collect(k.caches.Guilds()) {
+		if !known[g.ID] && k.retry.Allow(g.ID.String()) {
+			k.Ensure(ctx, g.ID)
+		}
+	}
+}
+
+// setRefused records whether Discord refused the panel channel of guildID.
+func (k *panelKeeper) setRefused(guildID snowflake.ID, refused bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if refused {
+		if !k.refused[guildID] {
+			// The refusal itself starts the wait before the next attempt.
+			k.retry.Allow(guildID.String())
+		}
+		k.refused[guildID] = true
+	} else {
+		delete(k.refused, guildID)
 	}
 }
 

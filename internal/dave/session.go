@@ -158,6 +158,53 @@ func (s *countingSession) Decrypt(userID godave.UserID, frame []byte, decryptedF
 	return n, err
 }
 
+// Ready always answers true to disgo.
+//
+// disgo v0.20.0 sends and receives nothing while the session is not Ready, and
+// golibdave's Ready is false in two cases where that is wrong for a relay:
+//   - passthrough mode (no end-to-end encryption on the call): frames go out
+//     as plain Opus and would be fine, but the bot stays silent;
+//   - an encryptor left without a key ratchet (see WithEncryptStall): disgo
+//     no longer calls Encrypt, so the stall that triggers the rejoin is never
+//     seen and the bot stays silent until the session ends.
+//
+// On 2026-11-13 five relay bots out of eight never sent a frame for a whole
+// session that way. Answering true restores the v0.19.3 behaviour: every frame
+// goes through Encrypt (plain in passthrough, counted as a failure without a
+// key ratchet) and through Decrypt, which uses the backend's real state.
+//
+// UPSTREAM(disgo v0.20.0): the audio sender and receiver skip frames while
+// conn.DAVE().Ready() is false.
+func (s *countingSession) Ready() bool { return true }
+
+// DAVE states of a bot's outbound audio, for diagnostics.
+const (
+	StateEncrypted   = "encrypted"   // end-to-end encryption up
+	StatePassthrough = "passthrough" // no encryption on the call, plain audio
+	StateNoKey       = "no_key"      // encryption on, frames failing: bot silent
+)
+
+// State reports the backend's real state behind the always-true Ready.
+func (s *countingSession) State() string {
+	switch {
+	case s.Session.Ready():
+		return StateEncrypted
+	case s.encryptFails.Load() > 0:
+		return StateNoKey
+	default:
+		return StatePassthrough
+	}
+}
+
+// StateOf returns the DAVE state of a session built by Instrument, "" for any
+// other session.
+func StateOf(sess godave.Session) string {
+	if st, ok := sess.(interface{ State() string }); ok {
+		return st.State()
+	}
+	return ""
+}
+
 // Encrypt reports the session through onStall once outbound encryption has
 // been failing long enough to mean the bot is silent; see WithEncryptStall.
 func (s *countingSession) Encrypt(ssrc uint32, frame []byte, encryptedFrame []byte) (int, error) {
