@@ -368,3 +368,34 @@ func TestRefusedPanelRetriedEveryFewMinutesOnly(t *testing.T) {
 		t.Fatalf("after the permission came back: tries=%d refused=%v", fr.createTry, still)
 	}
 }
+
+// 2026-11-18: three days after a server uninstalled Voice Relay, the keeper
+// still tried to create its panel every 15 seconds. A server the bot is not
+// in is skipped, and leaving it forgets the panel.
+func TestPanelForgetsServersTheBotLeft(t *testing.T) {
+	k, fr, caches := newTestKeeper(t, filepath.Join(t.TempDir(), "panel.json"))
+	k.Ensure(context.Background(), panelGuild)
+	if len(fr.created) != 1 {
+		t.Fatalf("created = %d, want 1", len(fr.created))
+	}
+	caches.RemoveGuild(panelGuild) // the bot was removed
+	fr.createTry = 0
+	for tick := 1; tick <= 5; tick++ {
+		k.pass(context.Background(), tick, 1000)
+	}
+	if fr.createTry != 0 || len(fr.posted) != 1 {
+		t.Fatalf("worked on a server the bot left: tries=%d posted=%d", fr.createTry, len(fr.posted))
+	}
+	k.Forget(panelGuild)
+	k.mu.Lock()
+	_, kept := k.state[panelGuild]
+	k.mu.Unlock()
+	if kept {
+		t.Fatal("panel state kept after GuildLeave")
+	}
+	again := newPanelKeeper("raid-panel", fr, caches, func() snowflake.ID { return 1 },
+		func(snowflake.ID) discord.MessageCreate { return discord.MessageCreate{} }, k.file)
+	if _, kept := again.state[panelGuild]; kept {
+		t.Fatal("forgotten panel came back from panel.json")
+	}
+}

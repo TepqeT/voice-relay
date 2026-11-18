@@ -41,8 +41,9 @@
 <section class="card">
   <h2>{{t "guild.s2"}}</h2>
   <p class="muted">{{t "guild.s2hint"}}</p>
+  {{if .Status.RelayPresent}}{{if .Status.NextRelay}}<p class="ok">{{t "guild.enoughrelays" .Status.RelayPresent}}</p>{{end}}{{end}}
   {{with .Status.NextRelay}}
-  <p><a class="button" id="next-relay" href="{{.InviteURL}}" rel="noopener" target="_blank">{{t "guild.next" .Name ($.Status.RelayPresent) ($.Status.RelayCount)}}</a></p>
+  <p><a class="button{{if $.Status.RelayPresent}} ghost{{end}}" id="next-relay" href="{{.InviteURL}}" rel="noopener" target="_blank">{{t "guild.next" .Name ($.Status.RelayPresent) ($.Status.RelayCount)}}</a></p>
   <p class="muted">{{t "guild.nexthint"}}</p>
   <script src="/static/guild.js" defer></script>
   {{else}}{{if .Status.RelayBots}}<p class="ok">{{t "guild.allrelays"}}</p>{{end}}{{end}}

@@ -5,6 +5,7 @@ import (
 
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/TepqeT/voice-relay/internal/journal"
 	"github.com/TepqeT/voice-relay/internal/ratelimit"
 	"html"
@@ -1038,5 +1039,32 @@ func TestSearchEngineMetadata(t *testing.T) {
 	code, sitemap := get(t, c, site.URL+"/sitemap.xml")
 	if code != http.StatusOK || !strings.Contains(sitemap, "<loc>http://placeholder/</loc>") || !strings.Contains(sitemap, "<loc>http://placeholder/guide</loc>") || strings.Contains(sitemap, "/servers") {
 		t.Fatalf("sitemap.xml = %d\n%s", code, sitemap)
+	}
+}
+
+// One relay bot is enough to be ready: installs used to stop at the eleven
+// relay bots (twelve Discord authorizations) the site asked for.
+func TestReadyWithOneRelayBot(t *testing.T) {
+	st := GuildStatus{BotPresent: true, Roles: []RoleStatus{{Exists: true}},
+		RelayBots: []BotStatus{{Name: "Relay 1", Present: true}, {Name: "Relay 2"}, {Name: "Relay 3"}}}
+	if !st.Ready() {
+		t.Fatal("one relay bot present must be enough")
+	}
+	st.RelayBots[0].Present = false
+	if st.Ready() {
+		t.Fatal("no relay bot: not ready")
+	}
+}
+
+func TestRelayStepSaysOneIsEnough(t *testing.T) {
+	site, _, c := newTestSite(t)
+	signIn(t, site, c, "good")
+	_, page := get(t, c, site.URL+"/servers/111") // Relay 1 present, Relay 2 to invite
+	want := html.EscapeString(fmt.Sprintf(messages["fr"]["guild.enoughrelays"], 1))
+	if !strings.Contains(page, want) {
+		t.Fatalf("relay step misses %q", want)
+	}
+	if !strings.Contains(page, `class="button ghost" id="next-relay"`) {
+		t.Error("with a relay bot present the next invite is optional (ghost button)")
 	}
 }

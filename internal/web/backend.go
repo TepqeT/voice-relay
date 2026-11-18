@@ -69,10 +69,11 @@ func (g GuildStatus) Ready() bool {
 	if !g.BotPresent || len(g.MissingPermissions) > 0 {
 		return false
 	}
-	for _, h := range g.RelayBots {
-		if !h.Present {
-			return false
-		}
+	// One relay bot is enough: a session opens as many listener channels as
+	// there are relay bots on the server. Asking for all eleven (twelve
+	// Discord authorizations in a row) was where installs stopped.
+	if len(g.RelayBots) > 0 && g.RelayPresent() == 0 {
+		return false
 	}
 	for _, r := range g.Roles {
 		if !r.Exists || r.AboveBot {
