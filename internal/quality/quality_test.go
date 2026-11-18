@@ -283,3 +283,26 @@ func TestRenderEventLabel(t *testing.T) {
 		t.Fatalf("default title changed: %q", Render(r, "fr"))
 	}
 }
+
+// 2026-11-13: relay bots stayed silent in their channels for a whole session
+// and the report blamed "high audio loss". A relay the session watcher saw
+// unable to encrypt while people listened is named as such.
+func TestSilentRelayFinding(t *testing.T) {
+	var r Report
+	r.Verdict = LevelOK
+	r.AttachDiag(diag.Summary{DurationSec: 600, Events: map[string]int{"silent_relay": 1}})
+	found := false
+	for _, f := range r.Findings {
+		if f.Code == "silent_relay" && f.Level == LevelBad {
+			found = true
+		}
+	}
+	if !found || r.Verdict != LevelBad {
+		t.Fatalf("findings = %+v, verdict %s", r.Findings, r.Verdict)
+	}
+	for _, lang := range []string{"fr", "en"} {
+		if out := Render(r, lang); !strings.Contains(out, "DAVE") {
+			t.Errorf("%s render misses the silent relay text:\n%s", lang, out)
+		}
+	}
+}

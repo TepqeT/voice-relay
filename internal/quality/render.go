@@ -62,6 +62,7 @@ var french = texts{
 		"stalls":             "micro-coupures fréquentes dans les salons : machine ou connexion du bot",
 		"voice_servers":      "les salons sont dans des régions Discord différentes : fixer la même région sur tous les salons",
 		"cpu":                "processeur de la machine très chargé",
+		"silent_relay":       "un salon Listener occupé n'a rien reçu pendant au moins 2 minutes (chiffrement DAVE du bot relais bloqué)",
 	},
 	modes: map[string]string{"one_caller": "un caller", "guild_caller": "multi-caller", "one_many_guild_caller": "étoile"},
 }
@@ -103,6 +104,7 @@ var english = texts{
 		"stalls":             "frequent micro-cuts in the channels: bot host or connection",
 		"voice_servers":      "channels are in different Discord regions: set the same region on every channel",
 		"cpu":                "host CPU heavily loaded",
+		"silent_relay":       "an occupied listener channel received nothing for at least 2 minutes (relay bot DAVE encryption stuck)",
 	},
 	modes: map[string]string{"one_caller": "one caller", "guild_caller": "multi-caller", "one_many_guild_caller": "star"},
 }

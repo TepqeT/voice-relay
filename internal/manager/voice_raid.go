@@ -170,6 +170,7 @@ func (m *Service) JoinSession(ctx context.Context, guestGuildID snowflake.ID, ca
 	// Initial pause state (per-cascade + listener check) is seeded by the
 	// router's Recompute inside start(); no separate sync pass needed.
 	m.startSessionIdleWatcher(ctx, cancelFunc, session)
+	m.startRelayHealthWatcher(ctx, session)
 	start()
 
 	speakerCount := countSpeakers(len(setup.Joined), ownerCleanup != nil)
@@ -428,6 +429,7 @@ func (m *Service) StartVoiceRaid(ctx context.Context, guildID snowflake.ID, canc
 	// Initial pause state (per-cascade + listener check) is seeded by the
 	// router's Recompute inside start(); no separate sync pass needed.
 	m.startSessionIdleWatcher(ctx, cancelFunc, session)
+	m.startRelayHealthWatcher(ctx, session)
 	gm.SessionStarted(speakerCount, string(mode))
 	m.beginReport(ctx, guildID, mode, speakerCount)
 	logMsg := "voice raid started"

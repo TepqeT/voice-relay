@@ -2,6 +2,12 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v69
+
+- Relais muets corrigés : depuis disgo v0.20.0, un bot n'émettait et ne captait rien tant que son chiffrement DAVE n'était pas "prêt", ce qui n'arrive jamais en mode non chiffré ni sans clé de chiffrement. Le 13/11 sur server A, 5 relais sur 8 n'ont rien émis pendant toute la session, et la réparation automatique (nouvelle connexion du relais quand le chiffrement échoue) ne se déclenchait plus. La session DAVE répond maintenant toujours "prête" à disgo ; l'audio passe en clair en mode non chiffré et les échecs de chiffrement relancent de nouveau le relais.
+- Diagnostic : toutes les minutes de session, nombre de personnes dans le salon de chaque relais et état de son chiffrement (`relay_health`). Un relais qui ne peut pas chiffrer pendant 2 minutes alors que des gens écoutent est signalé dans le rapport ("silent_relay").
+- Panneau refusé (droit de créer des salons retiré) : le serveur n'est plus retenté toutes les 15 secondes mais toutes les 5 minutes, ce qui arrête le flot de "panel_channel_refused" et "home_category_refused" dans le journal.
+
 ## v68
 
 - Garde-fou de reconnexion (`internal/gatewayguard`) sur le bot principal et les 11 relais : chaque nouvelle session Discord est comptée (`data/gateway-guard.json`, conservé au redémarrage, remis à zéro à chaque nouvelle version). 5 sessions en une heure : message privé au propriétaire de l'application et état des goroutines dans `DIAG_DIR`. 100 en 24 h : la connexion du bot est coupée avant que Discord ne révoque son token (limite vers 1000) ; le site reste en ligne et le bot revient au déploiement suivant.

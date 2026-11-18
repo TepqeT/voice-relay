@@ -195,6 +195,11 @@ func (r *Report) AttachDiag(s diag.Summary) {
 	if s.CPUMaxPct >= cpuWatchPct {
 		r.add("cpu", LevelWatch)
 	}
+	// A relay bot unable to encrypt for two minutes while people sat in its
+	// channel: they heard nothing (manager.startRelayHealthWatcher).
+	if s.Events["silent_relay"] > 0 {
+		r.add("silent_relay", LevelBad)
+	}
 }
 
 // Compute builds the report of guildID between two snapshots. outputs is the
