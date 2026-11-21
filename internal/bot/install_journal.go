@@ -48,7 +48,9 @@ func installListeners(m siteManager, relayIDs func() []snowflake.ID) []bot.Event
 
 // checkInstall records what still blocks guildID.
 func checkInstall(m siteManager, guildID snowflake.ID, name string, relays []snowflake.ID) {
-	createRolesOnJoin(m, guildID, name)
+	if !ProjectStopped { // the bot is about to leave the server
+		createRolesOnJoin(m, guildID, name)
+	}
 	if missing := m.MissingOwnerPermissions(guildID); missing != 0 {
 		journal.Record(journal.Event{GuildID: guildID, Guild: name, Level: journal.Problem, Kind: "missing_permissions",
 			Detail: "main bot lacks: " + strings.Join(permissionKeys(missing), ", ") + " (re-invite it from the site)"})

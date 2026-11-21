@@ -137,6 +137,8 @@ type Bot struct {
 	guard      *gatewayguard.Guard
 	ownerBotID snowflake.ID
 	diagDir    string // goroutine dumps go there; "" = none
+	// siteMgr uninstalls the tool from a server (shutdown.go).
+	siteMgr siteManager
 }
 
 // New creates and configures a new Bot instance. It performs no network I/O —
@@ -320,8 +322,16 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		panel.viewRole = managerSvc.AccessRoleID
 		panel.unlist = managerSvc.RemoveOnboardingDefaults
 		client.AddEventListeners(
-			bot.NewListenerFunc(func(e *events.GuildReady) { go panel.Ensure(context.Background(), e.GuildID) }),
-			bot.NewListenerFunc(func(e *events.GuildJoin) { go panel.Ensure(context.Background(), e.GuildID) }),
+			bot.NewListenerFunc(func(e *events.GuildReady) {
+				if !ProjectStopped {
+					go panel.Ensure(context.Background(), e.GuildID)
+				}
+			}),
+			bot.NewListenerFunc(func(e *events.GuildJoin) {
+				if !ProjectStopped {
+					go panel.Ensure(context.Background(), e.GuildID)
+				}
+			}),
 			bot.NewListenerFunc(func(e *events.GuildLeave) { panel.Forget(e.GuildID) }),
 			bot.NewListenerFunc(func(e *events.GuildChannelDelete) {
 				go panel.OnChannelDeleted(context.Background(), e.GuildID, e.ChannelID)
@@ -370,6 +380,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 
 	b := &Bot{
 		guard:         guard,
+		siteMgr:       managerSvc,
 		ownerBotID:    ownerBotID,
 		diagDir:       cfg.RvR.DiagDir,
 		dataDir:       filepath.Dir(cfg.RvR.Channels.StateFile),
@@ -443,7 +454,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins,
 			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL,
 			Checkout: checkout, SubscriptionRequired: cfg.Web.SubscriptionRequired,
-			StatsFile: filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "stats.json")}, backend, subs)
+			StatsFile: filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "stats.json"), Stopped: ProjectStopped}, backend, subs)
 		if err != nil {
 			return nil, fmt.Errorf("web site: %w", err)
 		}
@@ -492,13 +503,18 @@ func (b *Bot) applyAvatars(ctx context.Context) {
 // and blocks until ctx is cancelled.
 func (b *Bot) Run(ctx context.Context) error {
 	b.installGuardActions(ctx)
+	if ProjectStopped {
+		b.client.AddEventListeners(bot.NewListenerFunc(func(e *events.GuildJoin) { go b.leaveAfterJoin(ctx, e.GuildID) }))
+	}
 	if err := connectPool(ctx, b.poolSvc, b.speakerTokens); err != nil {
 		return err
 	}
 	b.poolSvc.StartWatchdog(ctx, 30*time.Second)
 	go b.applyAvatars(ctx)
 	if b.panel != nil {
-		go b.panel.Watch(ctx, 15*time.Second)
+		if !ProjectStopped {
+			go b.panel.Watch(ctx, 15*time.Second)
+		}
 	}
 	b.poolSvc.StartMetrics()
 	b.daveStats.StartMetrics(b.daveMetrics)
@@ -530,6 +546,9 @@ func (b *Bot) Run(ctx context.Context) error {
 		slog.WarnContext(ctx, "timed out waiting for Ready event, skipping command sync")
 	}
 	b.syncCommands(ctx, guildIDs)
+	if ProjectStopped {
+		go b.uninstallEverywhere(ctx)
+	}
 
 	if selfUser, ok := b.client.Caches.SelfUser(); ok {
 		url := installOwnerURL(selfUser.ID)

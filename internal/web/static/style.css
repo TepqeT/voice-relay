@@ -421,3 +421,7 @@ nav.inline a[aria-current="page"] { font-weight:700; }
   .spot, .g-cursor { opacity:1; }
   .cmd .bubble, .chaos .noise { opacity:1; }
 }
+
+/* project stopped notice (v71) */
+.stopped { max-width:560px; margin:15vh auto; text-align:center; padding:0 16px; }
+.stopped img { margin-bottom:16px; }
