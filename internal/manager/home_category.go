@@ -89,6 +89,25 @@ func (m *Service) EnsureHomeCategory(ctx context.Context, guildID snowflake.ID) 
 	m.home.mu.Lock()
 	defer m.home.mu.Unlock()
 	homes := m.homeLocked()
+	name := strings.TrimSpace(m.channels.opts.Category)
+	if h, ok := homes[guildID]; ok {
+		// CATEGORY was renamed: the category the bot made under the old name
+		// goes (when no session uses it) and the configured one is taken,
+		// an existing category of that name included. A category the server
+		// made is only forgotten, never deleted.
+		if ch, ok := m.ownerClient.Caches.Channel(h.ID); ok && !strings.EqualFold(ch.Name(), name) && !m.PanelStatus(guildID).Running {
+			if h.Created {
+				if err := m.ownerClient.Rest.DeleteChannel(h.ID, rest.WithCtx(ctx), rest.WithReason("Voice Relay: category renamed in the configuration")); err != nil {
+					slog.Warn("home category: old category not deleted", slog.String("guildID", guildID.String()), slog.Any("err", err))
+					return h.ID, nil
+				}
+				m.ownerClient.Caches.RemoveChannel(h.ID)
+			}
+			delete(homes, guildID)
+			m.saveHomeLocked()
+			slog.Info("home category: configured name changed, old category dropped", slog.String("guildID", guildID.String()), slog.String("old", ch.Name()), slog.String("new", name))
+		}
+	}
 	if h, ok := homes[guildID]; ok {
 		if ch, ok := m.ownerClient.Caches.Channel(h.ID); ok && ch.Type() == discord.ChannelTypeGuildCategory {
 			if h.Created && !h.Private && m.AccessRoleID(guildID) != 0 && !m.PanelStatus(guildID).Running {
@@ -110,7 +129,6 @@ func (m *Service) EnsureHomeCategory(ctx context.Context, guildID snowflake.ID) 
 			}
 		}
 	}
-	name := strings.TrimSpace(m.channels.opts.Category)
 	for _, ch := range slices.Collect(m.ownerClient.Caches.ChannelsForGuild(guildID)) {
 		if ch.Type() == discord.ChannelTypeGuildCategory && strings.EqualFold(ch.Name(), name) {
 			homes[guildID] = homeCategory{ID: ch.ID()}

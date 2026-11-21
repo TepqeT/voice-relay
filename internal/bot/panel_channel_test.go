@@ -399,3 +399,45 @@ func TestPanelForgetsServersTheBotLeft(t *testing.T) {
 		t.Fatal("forgotten panel came back from panel.json")
 	}
 }
+
+// PANEL_CHANNEL renamed (control-panel to bot-commands on server A): the
+// channel the bot made under the old name is deleted, and the existing
+// channel of the new name is used as it is.
+func TestPanelMovesToTheRenamedChannel(t *testing.T) {
+	k, fr, caches := newTestKeeper(t, "")
+	k.Ensure(context.Background(), panelGuild)
+	if len(fr.created) != 1 {
+		t.Fatalf("created = %d, want 1", len(fr.created))
+	}
+	old := k.ChannelID(panelGuild)
+	caches.AddChannel(textChannel(t, 555, "bot-commands")) // the server's own channel
+
+	k.name = "bot-commands"
+	k.Ensure(context.Background(), panelGuild)
+
+	if len(fr.deleted) != 1 || fr.deleted[0] != old {
+		t.Fatalf("deleted = %v, want the old panel channel %d", fr.deleted, old)
+	}
+	if got := k.ChannelID(panelGuild); got != 555 {
+		t.Fatalf("panel channel = %d, want the existing bot-commands 555", got)
+	}
+	if len(fr.created) != 1 {
+		t.Fatal("no channel may be created when the configured one exists")
+	}
+	if fr.posted[len(fr.posted)-1] != 555 {
+		t.Fatal("panel not posted in bot-commands")
+	}
+	for _, id := range fr.reperm {
+		if id == 555 {
+			t.Fatal("the server's own channel must keep its permissions")
+		}
+	}
+
+	// A channel the server made is never deleted, only left.
+	k.name = "elsewhere"
+	caches.AddChannel(textChannel(t, 556, "elsewhere"))
+	k.Ensure(context.Background(), panelGuild)
+	if len(fr.deleted) != 1 {
+		t.Fatalf("the server's bot-commands was deleted: %v", fr.deleted)
+	}
+}

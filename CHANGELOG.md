@@ -2,6 +2,11 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v73
+
+- server A : panneau dans le salon existant `bot-commands` (`PANEL_CHANNEL`), salons de session dans la catégorie existante `VOICE` (`CATEGORY`). Le panneau reste en anglais (langue du serveur).
+- Changement de nom de salon ou de catégorie dans la configuration : le bot supprime ceux qu'il avait créés sous l'ancien nom et reprend ceux qui existent sous le nouveau, sans les modifier ni jamais les supprimer (même à la désinstallation).
+
 ## v72
 
 - Un seul serveur : Voice Relay ne sert plus que le serveur 100000000000000072. Il quitte tous les autres au démarrage (même désinstallation que le site, rôles conservés) et tout serveur qui l'ajoute. Sur ce serveur tout fonctionne comme avant : rôles créés à l'arrivée du bot, panneau, sessions. Le site public reste sur "Projet arrêté" ; les invitations passent par des liens directs.

@@ -149,6 +149,27 @@ func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bo
 			refused = true
 		}
 	}
+	// PANEL_CHANNEL was renamed: the channel the bot made under the old name
+	// goes, and the configured one is used (an existing channel of that name
+	// is taken as it is). A channel the server made is only forgotten.
+	if st.ChannelID != 0 && !k.isConfigured(guildID, st.ChannelID) {
+		if ch, ok := k.caches.Channel(st.ChannelID); ok {
+			if st.Created {
+				if k.unlist != nil {
+					k.unlist(ctx, guildID, st.ChannelID)
+				}
+				if err := k.rest.DeleteChannel(st.ChannelID, rest.WithCtx(ctx), rest.WithReason("Voice Relay: panel channel renamed in the configuration")); err != nil {
+					slog.Warn("panel channel: old channel not deleted", slog.String("guildID", guildID.String()), slog.Any("err", err))
+				}
+			}
+			slog.Info("panel channel: configured channel changed, old one dropped", slog.String("guildID", guildID.String()), slog.String("old", ch.Name()))
+			st = panelState{}
+			k.save(guildID, st)
+			k.mu.Lock()
+			delete(k.shown, guildID)
+			k.mu.Unlock()
+		}
+	}
 	if st.Created && st.ChannelID != 0 && !st.Private && k.privateTo(guildID) != 0 {
 		st = k.recreatePrivate(ctx, guildID, st.ChannelID)
 	}
@@ -379,6 +400,20 @@ func (k *panelKeeper) IsPanelChannel(guildID, channelID snowflake.ID) bool {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	return channelID != 0 && k.state[guildID].ChannelID == channelID
+}
+
+// isConfigured reports whether channelID is the configured panel channel (by
+// ID or by name). A channel missing from the cache counts as configured: the
+// lookup below deals with it.
+func (k *panelKeeper) isConfigured(guildID, channelID snowflake.ID) bool {
+	ch, ok := k.caches.Channel(channelID)
+	if !ok {
+		return true
+	}
+	if id, err := snowflake.Parse(k.name); err == nil {
+		return ch.ID() == id
+	}
+	return strings.EqualFold(ch.Name(), strings.ToLower(strings.ReplaceAll(k.name, " ", "-")))
 }
 
 // findChannel returns the panel channel: the remembered one if it still
