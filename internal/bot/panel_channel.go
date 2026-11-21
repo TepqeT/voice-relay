@@ -86,6 +86,9 @@ type panelKeeper struct {
 	// refused marks servers where Discord refused to create the panel or its
 	// category (missing permission): retried with retry, not every tick.
 	refused map[snowflake.ID]bool
+	// allow, when set, limits the panel to the servers it accepts (the
+	// single server Voice Relay still serves).
+	allow func(guildID snowflake.ID) bool
 }
 
 func newPanelKeeper(name string, r panelRest, caches cache.Caches, selfID func() snowflake.ID, build func(snowflake.ID) discord.MessageCreate, file string) *panelKeeper {
@@ -117,6 +120,9 @@ func (k *panelKeeper) Ensure(ctx context.Context, guildID snowflake.ID) {
 // ensure with force set edits the message even when nothing changed, which
 // also notices a message deleted while the bot was not looking.
 func (k *panelKeeper) ensure(ctx context.Context, guildID snowflake.ID, force bool) {
+	if k.allow != nil && !k.allow(guildID) {
+		return
+	}
 	k.mu.Lock()
 	if k.busy[guildID] {
 		k.mu.Unlock()

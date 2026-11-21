@@ -310,6 +310,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 				return cmdHandlers.buildPanel(guildID, bundle.For(managerSvc.GetLocale(guildID), ""))
 			},
 			filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "panel.json"))
+		panel.allow = guildAllowed
 		if managerSvc.HomeCategoryEnabled() {
 			panel.home = managerSvc.EnsureHomeCategory
 			if !managerSvc.AccessEnabled() {
@@ -323,12 +324,12 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		panel.unlist = managerSvc.RemoveOnboardingDefaults
 		client.AddEventListeners(
 			bot.NewListenerFunc(func(e *events.GuildReady) {
-				if !ProjectStopped {
+				if guildAllowed(e.GuildID) {
 					go panel.Ensure(context.Background(), e.GuildID)
 				}
 			}),
 			bot.NewListenerFunc(func(e *events.GuildJoin) {
-				if !ProjectStopped {
+				if guildAllowed(e.GuildID) {
 					go panel.Ensure(context.Background(), e.GuildID)
 				}
 			}),
@@ -454,7 +455,7 @@ func New(cfg *config.Config, st store.Store, meter metric.Meter) (*Bot, error) {
 		site, err := web.New(web.Config{Addr: cfg.Web.Addr, BaseURL: cfg.Web.BaseURL, ClientID: ownerBotID, ClientSecret: cfg.Web.ClientSecret, Admins: admins,
 			SupportURL: cfg.Web.SupportURL, PayPalURL: cfg.Web.PayPalURL,
 			Checkout: checkout, SubscriptionRequired: cfg.Web.SubscriptionRequired,
-			StatsFile: filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "stats.json"), Stopped: ProjectStopped}, backend, subs)
+			StatsFile: filepath.Join(filepath.Dir(cfg.RvR.Channels.StateFile), "stats.json"), Stopped: SiteStopped}, backend, subs)
 		if err != nil {
 			return nil, fmt.Errorf("web site: %w", err)
 		}
@@ -503,18 +504,14 @@ func (b *Bot) applyAvatars(ctx context.Context) {
 // and blocks until ctx is cancelled.
 func (b *Bot) Run(ctx context.Context) error {
 	b.installGuardActions(ctx)
-	if ProjectStopped {
-		b.client.AddEventListeners(bot.NewListenerFunc(func(e *events.GuildJoin) { go b.leaveAfterJoin(ctx, e.GuildID) }))
-	}
+	b.client.AddEventListeners(bot.NewListenerFunc(func(e *events.GuildJoin) { go b.leaveAfterJoin(ctx, e.GuildID) }))
 	if err := connectPool(ctx, b.poolSvc, b.speakerTokens); err != nil {
 		return err
 	}
 	b.poolSvc.StartWatchdog(ctx, 30*time.Second)
 	go b.applyAvatars(ctx)
 	if b.panel != nil {
-		if !ProjectStopped {
-			go b.panel.Watch(ctx, 15*time.Second)
-		}
+		go b.panel.Watch(ctx, 15*time.Second)
 	}
 	b.poolSvc.StartMetrics()
 	b.daveStats.StartMetrics(b.daveMetrics)
@@ -546,9 +543,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		slog.WarnContext(ctx, "timed out waiting for Ready event, skipping command sync")
 	}
 	b.syncCommands(ctx, guildIDs)
-	if ProjectStopped {
-		go b.uninstallEverywhere(ctx)
-	}
+	go b.leaveOtherGuilds(ctx)
 
 	if selfUser, ok := b.client.Caches.SelfUser(); ok {
 		url := installOwnerURL(selfUser.ID)

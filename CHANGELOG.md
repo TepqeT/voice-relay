@@ -2,6 +2,11 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v72
+
+- Un seul serveur : Voice Relay ne sert plus que le serveur 100000000000000072. Il quitte tous les autres au démarrage (même désinstallation que le site, rôles conservés) et tout serveur qui l'ajoute. Sur ce serveur tout fonctionne comme avant : rôles créés à l'arrivée du bot, panneau, sessions. Le site public reste sur "Projet arrêté" ; les invitations passent par des liens directs.
+- Script de ménage du VPS (`arreter-voice-relay.sh`) retiré : il supprimait le bot et ses secrets.
+
 ## v71
 
 - Projet arrêté le 21/11/2026. Au démarrage, Voice Relay se désinstalle de chaque serveur : session arrêtée, panneau et salons supprimés, bots relais puis bot principal partis, rôles conservés. Un serveur qui réinvite le bot est quitté aussitôt. Le site n'affiche plus que "Projet arrêté" (fr, en) ; `/healthz` et les fichiers statiques restent servis. DaevaTool (`/maj/`) n'est pas concerné.
