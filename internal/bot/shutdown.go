@@ -10,33 +10,46 @@ import (
 	"github.com/TepqeT/voice-relay/internal/journal"
 )
 
-// ProjectStopped: Voice Relay was discontinued on 2026-11-21. At start the
-// tool uninstalls itself from every server (session stopped, channels and
-// panel deleted, relay bots and main bot leave; roles are kept), leaves any
-// server that adds it again, and the site shows "project stopped".
-const ProjectStopped = true
+// Since 2026-11-21 Voice Relay serves a single server. Everywhere else it
+// uninstalls itself at start (session stopped, channels and panel deleted,
+// relay bots and main bot leave; roles are kept) and leaves any server that
+// adds it. The public site only shows "project stopped".
+
+// OnlyGuild is the one server Voice Relay still serves.
+const OnlyGuild snowflake.ID = 100000000000000072
+
+// SiteStopped replaces every page of the public site with the notice.
+const SiteStopped = true
+
+// guildAllowed reports whether Voice Relay works in guildID.
+func guildAllowed(guildID snowflake.ID) bool { return guildID == OnlyGuild }
 
 // guildsSettle is how long the main bot waits after start for the servers it
-// is in to reach its cache before it uninstalls from them.
+// is in to reach its cache before it leaves the other ones.
 var guildsSettle = 30 * time.Second
 
-// uninstallEverywhere removes the tool from every server the main bot is in.
-func (b *Bot) uninstallEverywhere(ctx context.Context) {
+// leaveOtherGuilds uninstalls from every server but OnlyGuild.
+func (b *Bot) leaveOtherGuilds(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 		return
 	case <-time.After(guildsSettle):
 	}
-	guilds := b.siteMgr.OwnerGuilds()
-	slog.InfoContext(ctx, "project stopped: uninstalling from every server", slog.Int("servers", len(guilds)))
-	for _, g := range guilds {
+	for _, g := range b.siteMgr.OwnerGuilds() {
+		if guildAllowed(g.ID) {
+			continue
+		}
+		slog.InfoContext(ctx, "single server: leaving a server", slog.String("guildID", g.ID.String()))
 		b.uninstallGuild(ctx, g.ID, g.Name)
 	}
 }
 
-// leaveAfterJoin uninstalls from a server that added the main bot after the
-// project stopped (an old invite link).
+// leaveAfterJoin uninstalls from a server that added the main bot when it is
+// not OnlyGuild (an old invite link).
 func (b *Bot) leaveAfterJoin(ctx context.Context, guildID snowflake.ID) {
+	if guildAllowed(guildID) {
+		return
+	}
 	select {
 	case <-ctx.Done():
 		return
@@ -55,9 +68,9 @@ func (b *Bot) uninstallGuild(ctx context.Context, guildID snowflake.ID, name str
 	}
 	rep, err := b.siteMgr.Uninstall(uctx, guildID)
 	if err != nil && !rep.OwnerLeft {
-		journal.Record(journal.Event{GuildID: guildID, Guild: name, Level: journal.Problem, Kind: "shutdown_uninstall_failed", Detail: err.Error()})
+		journal.Record(journal.Event{GuildID: guildID, Guild: name, Level: journal.Problem, Kind: "single_server_uninstall_failed", Detail: err.Error()})
 		return
 	}
-	journal.Record(journal.Event{GuildID: guildID, Guild: name, Kind: "shutdown_uninstalled",
-		Detail: "project stopped: tool removed from the server"})
+	journal.Record(journal.Event{GuildID: guildID, Guild: name, Kind: "single_server_left",
+		Detail: "not the server Voice Relay serves: tool removed"})
 }

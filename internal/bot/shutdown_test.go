@@ -24,21 +24,37 @@ func (u *uninstallManager) Uninstall(_ context.Context, g snowflake.ID) (manager
 	return manager.UninstallReport{OwnerLeft: true}, nil
 }
 
-// The project is stopped: the tool leaves every server it is in.
-func TestUninstallEverywhere(t *testing.T) {
+// Voice Relay serves one server: it leaves every other one and keeps that one.
+func TestLeaveOtherGuildsKeepsTheOnlyServer(t *testing.T) {
 	old := guildsSettle
 	guildsSettle = time.Millisecond
 	t.Cleanup(func() { guildsSettle = old })
-	m := &uninstallManager{guilds: []manager.GuildRef{{ID: 7001, Name: "A"}, {ID: 7002, Name: "B"}}}
+	m := &uninstallManager{guilds: []manager.GuildRef{{ID: 7001, Name: "A"}, {ID: OnlyGuild, Name: "Kept"}, {ID: 7002, Name: "B"}}}
 	b := &Bot{siteMgr: m}
-	b.uninstallEverywhere(context.Background())
+	b.leaveOtherGuilds(context.Background())
+	if len(m.done) != 2 || m.done[0] != 7001 || m.done[1] != 7002 {
+		t.Fatalf("uninstalled %v, want 7001 and 7002 only", m.done)
+	}
+	if !hasKind(journal.ForGuild(7001, 5), "single_server_left") {
+		t.Error("leave not journaled")
+	}
+
+	// A join on the kept server is not undone.
+	b.leaveAfterJoin(context.Background(), OnlyGuild)
 	if len(m.done) != 2 {
-		t.Fatalf("uninstalled %v, want both servers", m.done)
+		t.Fatalf("the kept server was uninstalled after a join: %v", m.done)
 	}
-	if !hasKind(journal.ForGuild(7001, 5), "shutdown_uninstalled") {
-		t.Error("uninstall not journaled")
+	if !guildAllowed(OnlyGuild) || guildAllowed(7001) {
+		t.Fatal("guildAllowed")
 	}
-	if !ProjectStopped {
-		t.Error("the project is stopped")
+}
+
+// The panel is kept only on the served server.
+func TestPanelOnlyOnTheServedServer(t *testing.T) {
+	k, fr, _ := newTestKeeper(t, "")
+	k.allow = func(g snowflake.ID) bool { return g != panelGuild }
+	k.Ensure(context.Background(), panelGuild)
+	if len(fr.created) != 0 {
+		t.Fatalf("panel created on a server Voice Relay no longer serves")
 	}
 }
