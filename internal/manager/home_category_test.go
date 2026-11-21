@@ -132,3 +132,30 @@ func TestHomeCategoryRecreatedPrivate(t *testing.T) {
 	}
 	_ = hr
 }
+
+// CATEGORY renamed (Voice Relay to VOICE on server A): the category the bot
+// made is deleted and the server's existing VOICE category is taken as it is.
+func TestHomeCategoryFollowsARename(t *testing.T) {
+	m, hr, caches := homeService(t, t.TempDir())
+	ctx := context.Background()
+	old, _ := m.EnsureHomeCategory(ctx, 10)
+	caches.AddChannel(categoryChannel(t, old, 10, "RvR"))
+	caches.AddChannel(categoryChannel(t, 900, 10, "VOICE")) // the server's own
+
+	m.channels.opts.Category = "VOICE"
+	got, err := m.EnsureHomeCategory(ctx, 10)
+	if err != nil || got != 900 {
+		t.Fatalf("got %d err %v, want the existing VOICE category 900", got, err)
+	}
+	if len(hr.deleted) != 1 || hr.deleted[0] != old {
+		t.Fatalf("deleted %v, want the old bot category %d", hr.deleted, old)
+	}
+	if len(hr.created) != 1 {
+		t.Fatal("no category may be created when VOICE exists")
+	}
+	// Uninstall leaves the server's category alone.
+	m.RemoveHomeCategory(ctx, 10)
+	if len(hr.deleted) != 1 {
+		t.Fatalf("the server's VOICE category was deleted: %v", hr.deleted)
+	}
+}

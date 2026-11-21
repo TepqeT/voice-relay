@@ -43,11 +43,11 @@ x-relay-env: &relay-env
   SQUAD_LEAD_KEY: always
   DYNAMIC_CHANNELS: "true"
   # Categorie permanente : salon du panneau + salons vocaux de la session.
-  CATEGORY: "Voice Relay"
+  CATEGORY: "VOICE"                # server A : catégorie existante, reprise telle quelle
   # Salon texte ou le panneau de commande reste affiche en permanence ; cree
   # par le bot s'il manque, en lecture seule pour les membres. Langue du
   # serveur choisie dans /setup, anglais par defaut.
-  PANEL_CHANNEL: "control-panel"
+  PANEL_CHANNEL: "bot-commands"    # server A : salon existant, repris tel quel
   SPEAKER_CHANNEL: "Speaker"
   LISTENER_CHANNEL: "Listener"
   # Un salon Listener par bot relais disponible (11 aujourd'hui) ; un nombre
