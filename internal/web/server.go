@@ -57,6 +57,9 @@ type Config struct {
 	// StatsFile keeps the site's daily counters (data/stats.json); "" keeps
 	// them in memory.
 	StatsFile string
+	// Stopped replaces every page with the "project stopped" notice (Voice
+	// Relay was discontinued on 2026-11-21).
+	Stopped bool
 }
 
 // Server is the administration site.
@@ -274,6 +277,10 @@ func (s *Server) Handler() http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		if s.secure {
 			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		if s.cfg.Stopped && r.URL.Path != "/healthz" && !strings.HasPrefix(r.URL.Path, "/static/") {
+			s.serveStopped(w, r)
+			return
 		}
 		s.mux.ServeHTTP(w, r)
 	})

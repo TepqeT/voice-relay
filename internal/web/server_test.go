@@ -1068,3 +1068,44 @@ func TestRelayStepSaysOneIsEnough(t *testing.T) {
 		t.Error("with a relay bot present the next invite is optional (ghost button)")
 	}
 }
+
+// Voice Relay was stopped on 2026-11-21: every page shows the notice, the
+// health check and the static files keep working.
+func TestStoppedSiteShowsOnlyTheNotice(t *testing.T) {
+	subs, _ := subscription.Open("")
+	s, err := New(Config{Addr: ":0", BaseURL: "http://placeholder", ClientID: 42, ClientSecret: "secret", Stopped: true}, &fakeBackend{}, subs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.pageLimit, s.actionLimit = ratelimit.New(time.Microsecond, 1000), ratelimit.New(time.Microsecond, 1000)
+	site := httptest.NewServer(s.Handler())
+	t.Cleanup(site.Close)
+	c := site.Client()
+	for _, p := range []string{"/", "/guide", "/servers", "/admin", "/login"} {
+		req, _ := http.NewRequest(http.MethodGet, site.URL+p, nil)
+		req.Header.Set("Accept-Language", "fr")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), "Projet arrêté") || hasInlineScript(string(b)) {
+			t.Errorf("%s: %d\n%s", p, resp.StatusCode, b)
+		}
+	}
+	if code, body := get(t, c, site.URL+"/healthz"); code != http.StatusOK || body != "ok" {
+		t.Errorf("healthz = %d %q", code, body)
+	}
+	if code, _ := get(t, c, site.URL+"/static/style.css"); code != http.StatusOK {
+		t.Errorf("style.css = %d", code)
+	}
+	req, _ := http.NewRequest(http.MethodGet, site.URL+"/", nil)
+	req.Header.Set("Accept-Language", "en")
+	resp, _ := c.Do(req)
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(b), "Project stopped") {
+		t.Error("English notice missing")
+	}
+}

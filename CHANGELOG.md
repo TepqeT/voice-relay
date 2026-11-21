@@ -2,6 +2,10 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v71
+
+- Projet arrêté le 21/11/2026. Au démarrage, Voice Relay se désinstalle de chaque serveur : session arrêtée, panneau et salons supprimés, bots relais puis bot principal partis, rôles conservés. Un serveur qui réinvite le bot est quitté aussitôt. Le site n'affiche plus que "Projet arrêté" (fr, en) ; `/healthz` et les fichiers statiques restent servis. DaevaTool (`/maj/`) n'est pas concerné.
+
 ## v70
 
 - Installation plus courte : un seul bot relais suffit. Le site ne réclame plus les 11 relais (12 autorisations Discord d'affilée), il explique "un bot relais = un salon Listener, invitez seulement le nombre de salons voulus" et considère le serveur prêt dès 1 relais. Textes du guide et de l'accueil mis à jour.
