@@ -2,6 +2,10 @@
 
 La version courante est dans `internal/version/version.go` (`Fork`). Une entrée par livraison.
 
+## v74
+
+- Le serveur servi n'est plus écrit dans le code : `ONLY_GUILD` dans `deploy/ovh/.env`. Sans cette valeur, le bot ne quitte aucun serveur.
+
 ## v73
 
 - server A : panneau dans le salon existant `bot-commands` (`PANEL_CHANNEL`), salons de session dans la catégorie existante `VOICE` (`CATEGORY`). Le panneau reste en anglais (langue du serveur).

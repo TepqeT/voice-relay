@@ -3,6 +3,8 @@ package bot
 import (
 	"context"
 	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/disgoorg/snowflake/v2"
@@ -15,14 +17,26 @@ import (
 // relay bots and main bot leave; roles are kept) and leaves any server that
 // adds it. The public site only shows "project stopped".
 
-// OnlyGuild is the one server Voice Relay still serves.
-const OnlyGuild snowflake.ID = 100000000000000072
+// OnlyGuild is the one server Voice Relay still serves, read from ONLY_GUILD
+// (deploy/ovh/.env) so the server's ID stays out of the public code. Unset
+// or invalid: 0, and Voice Relay leaves no server (see guildAllowed).
+var OnlyGuild = parseOnlyGuild(os.Getenv("ONLY_GUILD"))
+
+func parseOnlyGuild(v string) snowflake.ID {
+	id, err := snowflake.Parse(strings.TrimSpace(v))
+	if err != nil {
+		return 0
+	}
+	return id
+}
 
 // SiteStopped replaces every page of the public site with the notice.
 const SiteStopped = true
 
-// guildAllowed reports whether Voice Relay works in guildID.
-func guildAllowed(guildID snowflake.ID) bool { return guildID == OnlyGuild }
+// guildAllowed reports whether Voice Relay works in guildID. Without
+// ONLY_GUILD every server is allowed: a missing setting must never make the
+// bot uninstall itself from the server it serves.
+func guildAllowed(guildID snowflake.ID) bool { return OnlyGuild == 0 || guildID == OnlyGuild }
 
 // guildsSettle is how long the main bot waits after start for the servers it
 // is in to reach its cache before it leaves the other ones.
@@ -34,6 +48,10 @@ func (b *Bot) leaveOtherGuilds(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	case <-time.After(guildsSettle):
+	}
+	if OnlyGuild == 0 {
+		slog.WarnContext(ctx, "single server: ONLY_GUILD not set, no server is left")
+		return
 	}
 	for _, g := range b.siteMgr.OwnerGuilds() {
 		if guildAllowed(g.ID) {

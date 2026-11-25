@@ -26,9 +26,9 @@ func (u *uninstallManager) Uninstall(_ context.Context, g snowflake.ID) (manager
 
 // Voice Relay serves one server: it leaves every other one and keeps that one.
 func TestLeaveOtherGuildsKeepsTheOnlyServer(t *testing.T) {
-	old := guildsSettle
-	guildsSettle = time.Millisecond
-	t.Cleanup(func() { guildsSettle = old })
+	old, oldGuild := guildsSettle, OnlyGuild
+	guildsSettle, OnlyGuild = time.Millisecond, 9001
+	t.Cleanup(func() { guildsSettle, OnlyGuild = old, oldGuild })
 	m := &uninstallManager{guilds: []manager.GuildRef{{ID: 7001, Name: "A"}, {ID: OnlyGuild, Name: "Kept"}, {ID: 7002, Name: "B"}}}
 	b := &Bot{siteMgr: m}
 	b.leaveOtherGuilds(context.Background())
@@ -46,6 +46,22 @@ func TestLeaveOtherGuildsKeepsTheOnlyServer(t *testing.T) {
 	}
 	if !guildAllowed(OnlyGuild) || guildAllowed(7001) {
 		t.Fatal("guildAllowed")
+	}
+}
+
+// ONLY_GUILD missing or invalid: no server is left, every server is allowed.
+func TestOnlyGuildUnsetLeavesNothing(t *testing.T) {
+	if parseOnlyGuild("") != 0 || parseOnlyGuild("abc") != 0 || parseOnlyGuild(" 42 ") != 42 {
+		t.Fatal("parseOnlyGuild")
+	}
+	oldSettle, oldGuild := guildsSettle, OnlyGuild
+	guildsSettle, OnlyGuild = time.Millisecond, 0
+	t.Cleanup(func() { guildsSettle, OnlyGuild = oldSettle, oldGuild })
+	m := &uninstallManager{guilds: []manager.GuildRef{{ID: 7001, Name: "A"}}}
+	b := &Bot{siteMgr: m}
+	b.leaveOtherGuilds(context.Background())
+	if len(m.done) != 0 || !guildAllowed(7001) {
+		t.Fatalf("ONLY_GUILD unset: uninstalled %v", m.done)
 	}
 }
 
